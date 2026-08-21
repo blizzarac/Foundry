@@ -729,6 +729,50 @@ function centerOf(k) {
   return { x: hexX(q, r), y: hexY(q, r) };
 }
 
+/* static terrain pre-rendered once per map — phones can't afford 600+
+   hex fills per frame */
+let terrain = null;
+function buildTerrainCache(g) {
+  const S = 2; // cache pixels per world unit
+  const span = (MAP_R + 1.5) * NEIGHBOR_DIST;
+  const tc = document.createElement("canvas");
+  tc.width = Math.ceil(span * 2 * S);
+  tc.height = Math.ceil(span * 2 * S);
+  const c = tc.getContext("2d");
+  c.setTransform(S, 0, 0, S, span * S, span * S);
+  for (const t of g.tiles.values()) {
+    const x = hexX(t.q, t.r), y = hexY(t.q, t.r);
+    hexPath(c, x, y, 1.02);
+    if (t.rock) {
+      c.fillStyle = shadeColor("#2a2a31", t.shade);
+      c.fill();
+      hexPath(c, x, y, 0.62);
+      c.fillStyle = shadeColor("#222228", t.shade);
+      c.fill();
+    } else {
+      c.fillStyle = shadeColor(FLOOR_COLORS[t.floor], t.shade);
+      c.fill();
+      if (t.ore) {
+        c.fillStyle = RES_COLORS[t.ore];
+        for (let i = 0; i < 3; i++) {
+          const a = TAU * i / 3 + t.shade * 40;
+          c.beginPath();
+          c.arc(x + Math.cos(a) * HEX * 0.38, y + Math.sin(a) * HEX * 0.38, HEX * 0.14, 0, TAU);
+          c.fill();
+        }
+      }
+    }
+  }
+  c.strokeStyle = "#00000030";
+  c.lineWidth = 1;
+  for (const t of g.tiles.values()) {
+    if (t.rock) continue;
+    hexPath(c, hexX(t.q, t.r), hexY(t.q, t.r));
+    c.stroke();
+  }
+  terrain = { canvas: tc, span, seed: g.seed };
+}
+
 function draw(g) {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.fillStyle = "#17171c";
@@ -736,37 +780,9 @@ function draw(g) {
   ctx.setTransform(cam.zoom * DPR, 0, 0, cam.zoom * DPR,
     (W / 2 - cam.x * cam.zoom) * DPR, (H / 2 - cam.y * cam.zoom) * DPR);
 
-  /* terrain */
-  for (const t of g.tiles.values()) {
-    const x = hexX(t.q, t.r), y = hexY(t.q, t.r);
-    hexPath(ctx, x, y, 1.02);
-    if (t.rock) {
-      ctx.fillStyle = shadeColor("#2a2a31", t.shade);
-      ctx.fill();
-      hexPath(ctx, x, y, 0.62);
-      ctx.fillStyle = shadeColor("#222228", t.shade);
-      ctx.fill();
-    } else {
-      ctx.fillStyle = shadeColor(FLOOR_COLORS[t.floor], t.shade);
-      ctx.fill();
-      if (t.ore) {
-        ctx.fillStyle = RES_COLORS[t.ore];
-        for (let i = 0; i < 3; i++) {
-          const a = TAU * i / 3 + t.shade * 40;
-          ctx.beginPath();
-          ctx.arc(x + Math.cos(a) * HEX * 0.38, y + Math.sin(a) * HEX * 0.38, HEX * 0.14, 0, TAU);
-          ctx.fill();
-        }
-      }
-    }
-  }
-  ctx.strokeStyle = "#00000030";
-  ctx.lineWidth = 1;
-  for (const t of g.tiles.values()) {
-    if (t.rock) continue;
-    hexPath(ctx, hexX(t.q, t.r), hexY(t.q, t.r));
-    ctx.stroke();
-  }
+  /* terrain (cached) */
+  if (!terrain || terrain.seed !== g.seed) buildTerrainCache(g);
+  ctx.drawImage(terrain.canvas, -terrain.span, -terrain.span, terrain.span * 2, terrain.span * 2);
 
   /* spawn markers — upcoming wave's fronts glow orange */
   const pulse = 0.75 + 0.25 * Math.sin(g.time * 4);
@@ -868,7 +884,16 @@ function draw(g) {
   ctx.globalAlpha = 1;
 
   /* build ghost */
-  if (ui.tool && ui.hover && !g.over) {
+  if (ui.tool === "demolish" && ui.hover && !g.over) {
+    const t = g.tiles.get(key(ui.hover.q, ui.hover.r));
+    if (t) {
+      const x = hexX(t.q, t.r), y = hexY(t.q, t.r);
+      hexPath(ctx, x, y);
+      ctx.strokeStyle = t.building && t.building.type !== "core" ? "#e06060" : "#e0606050";
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+    }
+  } else if (ui.tool && ui.hover && !g.over) {
     const { q, r } = ui.hover;
     const t = g.tiles.get(key(q, r));
     if (t) {
@@ -1053,10 +1078,15 @@ function drawBuilding(c, b, time) {
 /* ================================ UI/INPUT ============================= */
 const ui = {
   tool: null, hover: null,
-  panning: false, painting: false, erasing: false,
   lastPaint: null,
   keys: {},
 };
+
+const DEMOLISH_DEF = {
+  name: "Demolish", key: "X", cost: {},
+  desc: "Remove a building for a 60% refund. On desktop, right-drag demolishes directly.",
+};
+const toolDef = type => type === "demolish" ? DEMOLISH_DEF : BLOCKS[type];
 
 function showMsg(text) {
   const el = document.getElementById("msg");
@@ -1069,8 +1099,8 @@ function showMsg(text) {
 function buildToolbar() {
   const bar = document.getElementById("toolbar");
   bar.innerHTML = "";
-  for (const type of TOOL_ORDER) {
-    const def = BLOCKS[type];
+  for (const type of [...TOOL_ORDER, "demolish"]) {
+    const def = toolDef(type);
     const el = document.createElement("div");
     el.className = "tool";
     el.dataset.type = type;
@@ -1079,7 +1109,19 @@ function buildToolbar() {
     const icx = ic.getContext("2d");
     icx.translate(34, 34);
     icx.scale(34 / (HEX * 1.25), 34 / (HEX * 1.25));
-    drawBuilding(icx, { type, x: 0, y: 0, hp: 1, maxHp: 1, flash: 0, angle: -0.5, mineT: 0, online: true }, 0.2);
+    if (type === "demolish") {
+      hexPath(icx, 0, 0, 0.96);
+      icx.fillStyle = "#4a2f2f";
+      icx.fill();
+      icx.strokeStyle = "#e06060";
+      icx.lineWidth = 4;
+      icx.beginPath();
+      icx.moveTo(-HEX * 0.4, -HEX * 0.4); icx.lineTo(HEX * 0.4, HEX * 0.4);
+      icx.moveTo(HEX * 0.4, -HEX * 0.4); icx.lineTo(-HEX * 0.4, HEX * 0.4);
+      icx.stroke();
+    } else {
+      drawBuilding(icx, { type, x: 0, y: 0, hp: 1, maxHp: 1, flash: 0, angle: -0.5, mineT: 0, online: true }, 0.2);
+    }
     const name = document.createElement("div");
     name.className = "tname";
     name.textContent = def.name;
@@ -1108,8 +1150,12 @@ function buildToolbar() {
 function refreshToolbar() {
   for (const el of document.querySelectorAll(".tool")) {
     const type = el.dataset.type;
-    const def = BLOCKS[type];
+    const def = toolDef(type);
     el.classList.toggle("selected", ui.tool === type);
+    if (type === "demolish") {
+      el.querySelector(".tcost").textContent = "60% back";
+      continue;
+    }
     const parts = Object.entries(def.cost).map(([r, n]) =>
       `<span class="${game.res[r] >= n ? "" : "no"}">${n} ${r === "titanium" ? "titan" : r}</span>`);
     el.querySelector(".tcost").innerHTML = parts.join(" ") || "free";
@@ -1165,7 +1211,7 @@ function refreshHud(g) {
 
 /* placement */
 function tryBuild(g, q, r) {
-  if (!ui.tool || !canPlace(g, ui.tool, q, r)) return false;
+  if (!ui.tool || ui.tool === "demolish" || !canPlace(g, ui.tool, q, r)) return false;
   placeBuilding(g, ui.tool, q, r, false);
   refreshToolbar();
   return true;
@@ -1179,48 +1225,93 @@ function tryDemolish(g, q, r) {
   return false;
 }
 
-/* mouse */
-canvas.addEventListener("mousedown", ev => {
+/* pointer input — unified mouse + touch.
+   One finger / left-drag: paint with a tool selected, pan without one.
+   Two fingers: pinch zoom + pan. Right-drag or Demolish tool: erase. */
+const pointers = new Map();   // pointerId -> {x, y}
+let pinch = null;             // {d0, zoom0, w0} while two fingers are down
+let pmode = null;             // 'pan' | 'paint' | 'erase'
+
+function pinchState() {
+  const [a, b] = [...pointers.values()];
+  return { d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+}
+
+canvas.addEventListener("pointerdown", ev => {
+  ev.preventDefault();
+  try { canvas.setPointerCapture(ev.pointerId); } catch (e) { /* synthetic events */ }
+  pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
   if (game.over) return;
-  if (ev.button === 1 || (ev.button === 0 && ui.keys[" "])) {
-    ui.panning = true;
-    ev.preventDefault();
+  if (pointers.size === 2) {
+    pmode = null;
+    ui.lastPaint = null;
+    const s = pinchState();
+    pinch = { d0: s.d, zoom0: cam.zoom, w0: screenToWorld(s.mx, s.my) };
     return;
   }
-  const w = screenToWorld(ev.clientX, ev.clientY);
-  const h = pixelToHex(w.x, w.y);
-  if (ev.button === 0) {
-    if (ui.tool) {
-      ui.painting = true;
-      ui.lastPaint = h;
-      tryBuild(game, h.q, h.r);
-    }
-  } else if (ev.button === 2) {
-    ui.erasing = true;
-    tryDemolish(game, h.q, h.r);
-  }
-});
-canvas.addEventListener("mousemove", ev => {
-  if (ui.panning) {
-    cam.x -= ev.movementX / cam.zoom;
-    cam.y -= ev.movementY / cam.zoom;
-    return;
-  }
+  if (pointers.size > 2) return;
   const w = screenToWorld(ev.clientX, ev.clientY);
   const h = pixelToHex(w.x, w.y);
   ui.hover = h;
-  if (ui.painting && ui.tool) {
+  if (ev.button === 1 || ui.keys[" "]) {
+    pmode = "pan";
+  } else if (ev.button === 2 || ui.tool === "demolish") {
+    pmode = "erase";
+    tryDemolish(game, h.q, h.r);
+  } else if (ui.tool) {
+    pmode = "paint";
+    ui.lastPaint = h;
+    tryBuild(game, h.q, h.r);
+  } else {
+    pmode = "pan";
+  }
+});
+
+canvas.addEventListener("pointermove", ev => {
+  const prev = pointers.get(ev.pointerId);
+  if (!prev) {
+    // no button down: pure mouse hover
+    const w = screenToWorld(ev.clientX, ev.clientY);
+    ui.hover = pixelToHex(w.x, w.y);
+    return;
+  }
+  const cur = { x: ev.clientX, y: ev.clientY };
+  pointers.set(ev.pointerId, cur);
+  if (pinch && pointers.size >= 2) {
+    const s = pinchState();
+    cam.zoom = clamp(pinch.zoom0 * s.d / Math.max(pinch.d0, 1), 0.35, 3.5);
+    cam.x = pinch.w0.x - (s.mx - W / 2) / cam.zoom;
+    cam.y = pinch.w0.y - (s.my - H / 2) / cam.zoom;
+    return;
+  }
+  if (pmode === "pan") {
+    cam.x -= (cur.x - prev.x) / cam.zoom;
+    cam.y -= (cur.y - prev.y) / cam.zoom;
+    return;
+  }
+  const w = screenToWorld(cur.x, cur.y);
+  const h = pixelToHex(w.x, w.y);
+  ui.hover = h;
+  if (pmode === "paint" && ui.tool && ui.tool !== "demolish") {
     if (!ui.lastPaint || ui.lastPaint.q !== h.q || ui.lastPaint.r !== h.r) {
       ui.lastPaint = h;
       tryBuild(game, h.q, h.r);
     }
+  } else if (pmode === "erase") {
+    tryDemolish(game, h.q, h.r);
   }
-  if (ui.erasing) tryDemolish(game, h.q, h.r);
 });
-window.addEventListener("mouseup", () => {
-  ui.panning = false; ui.painting = false; ui.erasing = false; ui.lastPaint = null;
-});
+
+function endPointer(ev) {
+  pointers.delete(ev.pointerId);
+  if (pointers.size < 2) pinch = null;
+  if (pointers.size === 0) { pmode = null; ui.lastPaint = null; }
+  if (ev.pointerType === "touch") ui.hover = null; // no lingering ghost after a tap
+}
+canvas.addEventListener("pointerup", endPointer);
+canvas.addEventListener("pointercancel", endPointer);
 canvas.addEventListener("contextmenu", ev => ev.preventDefault());
+document.addEventListener("gesturestart", ev => ev.preventDefault()); // iOS page zoom
 canvas.addEventListener("wheel", ev => {
   ev.preventDefault();
   const before = screenToWorld(ev.clientX, ev.clientY);
@@ -1236,6 +1327,8 @@ window.addEventListener("keydown", ev => {
   const k = ev.key.toLowerCase();
   if (k === "escape") {
     selectTool(null);
+  } else if (k === "x") {
+    selectTool(ui.tool === "demolish" ? null : "demolish");
   } else if (k === "p") {
     game.paused = !game.paused;
     showMsg(game.paused ? "Paused" : "Resumed");
@@ -1301,6 +1394,6 @@ requestAnimationFrame(frame);
 // exposed for debugging / testing
 window.GAME = {
   get game() { return game; },
-  tick, placeBuilding, destroyBuilding, canPlace, newGame, callWave, rebuildNets, wouldBeOnline,
+  tick, placeBuilding, destroyBuilding, canPlace, newGame, callWave, rebuildNets, wouldBeOnline, cam,
   setGame(g) { game = g; },
 };

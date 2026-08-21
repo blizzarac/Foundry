@@ -1,6 +1,6 @@
 # Hexfoundry
 
-A [Mindustry](https://mindustrygame.github.io/)-inspired **network-defense game on a hexagonal grid**. Plain HTML5 canvas, zero dependencies.
+A [Mindustry](https://mindustrygame.github.io/)-inspired **network-defense game on a hexagonal grid**. Plain HTML5 canvas, zero dependencies. Plays on desktop and phone touch screens.
 
 **Play it:** open `index.html`, or via GitHub Pages once enabled for this repo.
 
@@ -20,14 +20,22 @@ Why hexagons: your base is a territory of six-way adjacencies, and the *shape* o
 6. Feeling ahead? **Call the wave early** for bonus copper. Between waves, everything slowly self-repairs.
 7. Wave 15 comes from **every front at once**. You get warned, and extra time to redeploy. Win it and endless mode awaits.
 
-| Input | Action |
+| Desktop | Action |
 |---|---|
-| Left-click / drag | build (paint) |
-| Right-click / drag | demolish (60% refund) |
+| Left-click / drag | build (paint) — with no tool selected, drag pans |
+| Right-click / drag, or `X` tool | demolish (60% refund) |
 | `1`–`5` | select block |
 | Mouse wheel | zoom |
 | Middle-drag / Space-drag / `WASD` | pan |
 | `P` | pause · `Esc` deselect |
+
+| Touch | Action |
+|---|---|
+| Tap / drag with a tool selected | build (paint a line) |
+| Drag with no tool selected | pan |
+| Two-finger pinch | zoom + pan |
+| Demolish tool, then tap/drag | remove buildings (60% refund) |
+| Tap the selected tool again | deselect |
 
 ## Under the hood
 
