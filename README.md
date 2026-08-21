@@ -1,37 +1,40 @@
 # Hexfoundry
 
-A tiny [Mindustry](https://mindustrygame.github.io/)-inspired base-defense / factory game — on a **hexagonal grid**.
-
-Mine ore with drills, haul it to your core on conveyor chains, and hold off ever-growing enemy waves with turrets and walls. Plain HTML5 canvas, zero dependencies, runs anywhere.
+A [Mindustry](https://mindustrygame.github.io/)-inspired **network-defense game on a hexagonal grid**. Plain HTML5 canvas, zero dependencies.
 
 **Play it:** open `index.html`, or via GitHub Pages once enabled for this repo.
 
-## How to play
+## The idea
 
-1. **Drill** (`2`) — place on an ore vein (orange = copper, blue = titanium).
-2. **Conveyor** (`1`) — chain from the drill to the golden core. Drag to paint a line; conveyors auto-rotate along your drag. `R` rotates manually.
-3. **Sting turret** (`3`) — cheap and fast. Build a few before the first wave hits.
-4. **Lance turret** (`4`) — long-range heavy hitter; needs titanium.
-5. **Wall** (`5`) — enemies path around obstacles when they can, and chew through them when it's the short way — use walls to funnel them into your turrets.
+Everything you build must be **connected to your core** through a chain of adjacent structures. Drills only mine while online; their ore travels the network home as pulses. Turrets **consume resources per shot** from your stockpile — defense drains the same pool that builds. Survive 15 waves and the foundry holds.
 
-Enemies pour in from the pulsing red hexes on the map rim and march on your core. Each kill pays a small copper bounty. Waves scale forever; every fourth wave brings brutes. The run ends when the core falls.
+Why hexagons: your base is a territory of six-way adjacencies, and the *shape* of that territory is the game. Long tentacles to distant ore are cheap but sever easily. Meshes are robust but expensive. Rock chokepoints are worth fighting for. Raiders exist to make you feel all of this.
+
+## How it plays
+
+1. **Drill** (`2`) an ore vein near the core, chaining **Links** (`1`) back to it — watch the pulses flow home.
+2. Read the wave preview in the top bar: *what's coming, from where, and when.* Mass **Stings** (`3`) on that approach.
+3. Guns eat copper per shot. If your income can't feed your guns, they go quiet mid-wave — the economy IS the defense.
+4. From wave 5, **raiders** hunt your network instead of your core. Armor arteries with **Walls** (`5`) — enemies path around obstacles when they can, and chew through when it's genuinely shorter.
+5. Titanium only spawns far out. Stretching (and holding) that artery unlocks the **Lance** (`4`) — splash artillery that burns titanium per shot.
+6. Feeling ahead? **Call the wave early** for bonus copper. Between waves, everything slowly self-repairs.
+7. Wave 15 comes from **every front at once**. You get warned, and extra time to redeploy. Win it and endless mode awaits.
 
 | Input | Action |
 |---|---|
 | Left-click / drag | build (paint) |
-| Right-click / drag | demolish (50% refund) |
+| Right-click / drag | demolish (60% refund) |
 | `1`–`5` | select block |
-| `R` | rotate |
 | Mouse wheel | zoom |
 | Middle-drag / Space-drag / `WASD` | pan |
-| `P` | pause |
-| `Esc` | deselect |
+| `P` | pause · `Esc` deselect |
 
 ## Under the hood
 
-- Pointy-top hexes with axial coordinates; cube rounding for pixel→hex picking.
+- Pointy-top hexes, axial coordinates, cube rounding for picking.
 - Procedural maps: seeded value-noise terrain, random-walk ore veins, reachability-checked spawn points spread around the rim.
-- Enemy pathfinding is a Dijkstra flow field from the core where buildings cost extra — so units flow around your defenses, or breach them when that's genuinely shorter. The field recomputes on every build/destroy.
-- Conveyor items are positions on a belt with spacing constraints; drills round-robin their output into adjacent belts or the core.
+- **Connectivity** is a BFS from the core across conducting buildings; its parent tree is the path resource pulses follow home. Cut an artery and everything downstream goes dark — in-flight cargo is lost.
+- **Pathfinding** is two Dijkstra flow fields where buildings cost extra (walls most of all): one seeded at the core (grunts, brutes), one multi-seeded at all your structures (raiders). Enemies route around defenses, or breach them when that's genuinely shorter. Both fields recompute on every build/destroy.
+- Balance was tuned against scripted bots in headless Chromium: an AFK player dies on wave 2, a naive static build reaches mid-game, and a competent concentrated defense can clear all 15.
 
 Everything lives in three files: `index.html`, `style.css`, `game.js`.

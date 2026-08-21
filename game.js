@@ -1,8 +1,18 @@
 /* =========================================================================
-   HEXFOUNDRY — a tiny Mindustry-like on a hexagonal grid
-   Mine ore with drills, haul it to your core on conveyors, and hold off
-   ever-growing enemy waves with turrets and walls.
-   No dependencies, plain canvas.
+   HEXFOUNDRY — a hex-grid network-defense game, Mindustry-inspired.
+
+   The design in one paragraph: everything you build must be CONNECTED to
+   your core through a chain of adjacent structures. Drills only mine while
+   online; their ore travels as pulses along the network to the core.
+   Turrets consume resources per shot from your stockpile — defense drains
+   the same pool that builds. Enemies come in three kinds: grunts march on
+   the core, brutes tank, and raiders hunt your network's arteries. Survive
+   15 waves (previewed, callable early for a bounty) and you win.
+
+   Why hexes: your base is a territory of six-way adjacencies. The SHAPE of
+   the network is the game — long tentacles to distant ore are cheap but
+   sever easily; meshes are robust but expensive; rock chokepoints are
+   worth fighting for.
    ========================================================================= */
 "use strict";
 
@@ -22,7 +32,6 @@ function mulberry32(seed) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-// deterministic 2d hash noise + 2-octave value noise
 function makeNoise(seed) {
   const hash = (x, y) => {
     let h = Math.imul(x, 374761393) + Math.imul(y, 668265263) + seed;
@@ -41,9 +50,9 @@ function makeNoise(seed) {
 }
 
 /* ------------------------------------------------------------- hex math */
-const HEX = 24;                       // hex circumradius (pointy-top)
+const HEX = 24;
 const DIRS = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
-const NEIGHBOR_DIST = SQ3 * HEX;      // distance between adjacent centers
+const NEIGHBOR_DIST = SQ3 * HEX;
 
 const key = (q, r) => q + "," + r;
 const hexX = (q, r) => HEX * (SQ3 * q + SQ3 / 2 * r);
@@ -53,7 +62,6 @@ const hexDist = (q, r) => (Math.abs(q) + Math.abs(r) + Math.abs(q + r)) / 2;
 function pixelToHex(x, y) {
   const qf = (SQ3 / 3 * x - y / 3) / HEX;
   const rf = (2 / 3 * y) / HEX;
-  // cube rounding
   const sf = -qf - rf;
   let q = Math.round(qf), r = Math.round(rf), s = Math.round(sf);
   const dq = Math.abs(q - qf), dr = Math.abs(r - rf), ds = Math.abs(s - sf);
@@ -61,13 +69,6 @@ function pixelToHex(x, y) {
   else if (dr > ds) r = -q - s;
   return { q, r };
 }
-// unit vector pointing from a tile center toward neighbor in direction d
-const DIRVEC = DIRS.map(([dq, dr]) => {
-  const x = hexX(dq, dr), y = hexY(dq, dr);
-  const l = Math.hypot(x, y);
-  return { x: x / l, y: y / l };
-});
-// hexagon outline points (pointy-top)
 const HEXPTS = [];
 for (let i = 0; i < 6; i++) {
   const a = TAU * (i + 0.5) / 6 + Math.PI / 6;
@@ -85,45 +86,43 @@ function hexPath(ctx, x, y, scale = 1) {
 
 /* ------------------------------------------------------------- content */
 const RES_COLORS = { copper: "#d99d73", titanium: "#8da7c6" };
+const CORE_KEY = key(0, 0);
+const FINAL_WAVE = 15;
+const PULSE_SPEED = 5;        // hexes per second along the network
+const DRILL_TIMES = { copper: 2.0, titanium: 3.2 };
 
 const BLOCKS = {
   core: {
-    name: "Core", hp: 1400, cost: {},
-    desc: "Your heart. Stores resources. Protect it at all costs.",
-    buildable: false,
+    name: "Core", hp: 1500, cost: {}, conducts: true, buildable: false,
+    desc: "Your heart and your bank. Everything must connect back to it.",
   },
-  conveyor: {
-    name: "Conveyor", hp: 60, cost: { copper: 1 },
-    desc: "Moves items one hex at a time. Chain them from drills to the core. Auto-rotates while dragging.",
-    key: "1",
+  link: {
+    name: "Link", hp: 80, cost: { copper: 4 }, conducts: true, key: "1",
+    desc: "Cheap connective tissue. Chains your buildings back to the core. Fragile — raiders love cutting these. Armor important arteries with walls.",
   },
   drill: {
-    name: "Drill", hp: 110, cost: { copper: 12 },
-    desc: "Place on an ore vein. Mines it and feeds adjacent conveyors or the core.",
-    key: "2", needsOre: true,
+    name: "Drill", hp: 110, cost: { copper: 12 }, conducts: true, key: "2", needsOre: true,
+    desc: "Place on an ore vein. Mines only while connected to the core; ore travels the network as pulses.",
+    stat: "copper 1 per 2s · titanium 1 per 3.2s",
   },
-  duo: {
-    name: "Sting turret", hp: 140, cost: { copper: 30 },
-    desc: "Fast light turret. Your bread and butter defense.",
-    key: "3", turret: { range: 120, reload: 0.45, dmg: 7, pspeed: 400 },
+  sting: {
+    name: "Sting", hp: 170, cost: { copper: 25 }, conducts: true, key: "3",
+    turret: { range: 124, reload: 0.5, dmg: 9, pspeed: 400, ammo: "copper", ammoCost: 0.4, aoe: 0 },
+    desc: "Fast light turret. Eats copper from your stockpile with every shot — guns go quiet when the bank runs dry.",
+    stat: "9 dmg · 0.4 copper / shot",
   },
-  lancer: {
-    name: "Lance turret", hp: 200, cost: { copper: 60, titanium: 25 },
-    desc: "Slow, long-range, heavy hits. Needs titanium to build.",
-    key: "4", turret: { range: 190, reload: 1.15, dmg: 27, pspeed: 560 },
+  lance: {
+    name: "Lance", hp: 240, cost: { copper: 50, titanium: 20 }, conducts: true, key: "4",
+    turret: { range: 190, reload: 1.1, dmg: 32, pspeed: 560, ammo: "titanium", ammoCost: 0.6, aoe: 24 },
+    desc: "Long-range artillery with splash. Burns titanium per shot — a titanium supply line is a weapon.",
+    stat: "32 dmg, splash · 0.6 titanium / shot",
   },
   wall: {
-    name: "Wall", hp: 340, cost: { copper: 8 },
-    desc: "Tough obstacle. Enemies prefer walking around it - or chew through if it is the short way.",
-    key: "5",
+    name: "Wall", hp: 380, cost: { copper: 6 }, conducts: false, key: "5",
+    desc: "Inert armor — does NOT conduct. Plate your arteries, plug rock chokepoints, funnel enemies into gunfire. They go around when they can, chew through when it's shorter.",
   },
 };
-const TOOL_ORDER = ["conveyor", "drill", "duo", "lancer", "wall"];
-
-const CONVEYOR_SPEED = 1.7;   // tiles per second
-const ITEM_GAP = 0.34;        // min spacing between items on a belt
-const BELT_CAP = 3;
-const DRILL_TIME = 2.2;       // seconds per item (copper)
+const TOOL_ORDER = ["link", "drill", "sting", "lance", "wall"];
 const MAP_R = 14;
 
 /* ---------------------------------------------------------- game state */
@@ -137,19 +136,23 @@ function newGame(seed) {
     enemies: [],
     projectiles: [],
     particles: [],
+    pulses: [],
     pendingSpawns: [],
     spawnPoints: [],
-    res: { copper: 70, titanium: 0 },
+    res: { copper: 80, titanium: 0 },
     wave: 0,
-    waveTimer: 50,
+    waveTimer: 60,
+    nextWave: null,
     core: null,
-    flow: new Map(),        // key -> cost-to-core
-    time: 0,
-    over: false,
-    paused: false,
+    flowCore: new Map(),
+    flowStruct: new Map(),
+    parents: new Map(),
+    time: 0, kills: 0, lost: 0,
+    over: false, won: false, endless: false, paused: false,
   };
   genMap(g);
-  computeFlow(g);
+  rebuildNets(g);
+  g.nextWave = waveComp(g, 1);
   return g;
 }
 
@@ -163,7 +166,7 @@ function genMap(g) {
       const x = hexX(q, r), y = hexY(q, r);
       const n = noise(x * 0.011, y * 0.011);
       const d = hexDist(q, r);
-      const rock = n > 0.62 && d > 3 && d < MAP_R; // keep center + rim open
+      const rock = n > 0.62 && d > 3 && d < MAP_R;
       let floor = "stone";
       if (n < 0.36) floor = "sand";
       else if (n < 0.5) floor = "grass";
@@ -174,7 +177,6 @@ function genMap(g) {
     }
   }
 
-  // ore veins via random walks
   const floorTiles = [...g.tiles.values()].filter(t => !t.rock);
   const walkVein = (start, ore, len) => {
     let t = start;
@@ -184,23 +186,24 @@ function genMap(g) {
       t = g.tiles.get(key(t.q + dq, t.r + dr));
     }
   };
-  for (let i = 0; i < 11; i++)
+  // copper: one starter vein close in, the rest scattered mid/far
+  const near = floorTiles.filter(t => { const d = hexDist(t.q, t.r); return d >= 2 && d <= 4; });
+  walkVein(near[(rng() * near.length) | 0], "copper", 7);
+  for (let i = 0; i < 10; i++)
     walkVein(floorTiles[(rng() * floorTiles.length) | 0], "copper", 5 + (rng() * 5) | 0);
-  for (let i = 0; i < 5; i++) {
-    const far = floorTiles.filter(t => hexDist(t.q, t.r) > 6);
+  // titanium: always a reach — mid-to-far only, so unlocking the Lance
+  // means stretching (and defending) a long artery
+  for (let i = 0; i < 6; i++) {
+    const far = floorTiles.filter(t => hexDist(t.q, t.r) >= 7);
     walkVein(far[(rng() * far.length) | 0], "titanium", 4 + (rng() * 4) | 0);
   }
-  // guarantee a starter copper vein near the core
-  const near = floorTiles.filter(t => { const d = hexDist(t.q, t.r); return d >= 2 && d <= 4; });
-  walkVein(near[(rng() * near.length) | 0], "copper", 6);
 
-  // core at the center
-  const center = g.tiles.get(key(0, 0));
+  const center = g.tiles.get(CORE_KEY);
   center.rock = false; center.ore = null;
-  g.core = placeBuilding(g, "core", 0, 0, 0, true);
+  g.core = placeBuilding(g, "core", 0, 0, true);
 
-  // spawn points: reachable tiles on the rim, spread apart
-  const reach = bfsReachable(g, key(0, 0));
+  // spawn points: reachable rim tiles, spread apart
+  const reach = bfsReachable(g, CORE_KEY);
   const rim = [...g.tiles.values()]
     .filter(t => !t.rock && hexDist(t.q, t.r) >= MAP_R - 1 && reach.has(key(t.q, t.r)));
   const angleOf = t => Math.atan2(hexY(t.q, t.r), hexX(t.q, t.r));
@@ -211,7 +214,7 @@ function genMap(g) {
       let best = null, bestScore = -1;
       for (const t of rim) {
         const score = Math.min(...picked.map(p => {
-          let da = Math.abs(angleOf(t) - angleOf(p));
+          const da = Math.abs(angleOf(t) - angleOf(p));
           return Math.min(da, TAU - da);
         }));
         if (score > bestScore) { bestScore = score; best = t; }
@@ -237,15 +240,40 @@ function bfsReachable(g, startKey) {
   return seen;
 }
 
-/* ---------------------------------------------------- flow field (path) */
-// Dijkstra from the core over walkable tiles. Buildings cost extra, so
-// enemies route around defenses when possible but breach when it's shorter.
-function computeFlow(g) {
+/* --------------------------------------------- network + flow fields */
+// Connectivity BFS from the core across conducting buildings. Sets
+// b.online and a parent tree that resource pulses follow home.
+function computeNetwork(g) {
+  g.parents = new Map();
+  for (const b of g.buildings) b.online = false;
+  if (!g.core) return;
+  g.core.online = true;
+  const queue = [CORE_KEY];
+  const seen = new Set([CORE_KEY]);
+  let qi = 0;
+  while (qi < queue.length) {
+    const k = queue[qi++];
+    const t = g.tiles.get(k);
+    for (const [dq, dr] of DIRS) {
+      const nk = key(t.q + dq, t.r + dr);
+      if (seen.has(nk)) continue;
+      const nt = g.tiles.get(nk);
+      if (!nt || !nt.building || !BLOCKS[nt.building.type].conducts) continue;
+      seen.add(nk);
+      nt.building.online = true;
+      g.parents.set(nk, k);
+      queue.push(nk);
+    }
+  }
+}
+
+// Dijkstra field: enemies descend it. Buildings cost extra so they route
+// around defenses but breach when that's genuinely shorter.
+function dijkstraField(g, sources) {
   const dist = new Map();
-  const frontier = [[key(0, 0), 0]];
-  dist.set(key(0, 0), 0);
+  const frontier = [];
+  for (const k of sources) { dist.set(k, 0); frontier.push([k, 0]); }
   while (frontier.length) {
-    // linear-scan min (map is small; only recomputed on build/destroy)
     let mi = 0;
     for (let i = 1; i < frontier.length; i++) if (frontier[i][1] < frontier[mi][1]) mi = i;
     const [k, d] = frontier.splice(mi, 1)[0];
@@ -264,24 +292,32 @@ function computeFlow(g) {
       }
     }
   }
-  g.flow = dist;
+  return dist;
+}
+
+function rebuildNets(g) {
+  computeNetwork(g);
+  g.flowCore = dijkstraField(g, [CORE_KEY]);
+  // raiders home in on your nearest structure (core included)
+  const structKeys = g.buildings.filter(b => b.type !== "wall").map(b => key(b.q, b.r));
+  g.flowStruct = dijkstraField(g, structKeys.length ? structKeys : [CORE_KEY]);
 }
 
 /* ------------------------------------------------------------ buildings */
-function placeBuilding(g, type, q, r, dir, free) {
+function placeBuilding(g, type, q, r, free) {
   const t = g.tiles.get(key(q, r));
   const def = BLOCKS[type];
   const b = {
-    type, q, r, dir: dir || 0,
+    type, q, r,
     x: hexX(q, r), y: hexY(q, r),
     hp: def.hp, maxHp: def.hp,
-    items: [], buffer: null, mineT: 0, outDir: 0,
-    cool: 0, angle: 0, target: null, flash: 0,
+    online: false, mineT: 0,
+    cool: 0, angle: Math.random() * TAU, muzzle: 0, dry: 0, flash: 0,
   };
   t.building = b;
   g.buildings.push(b);
   if (!free) for (const res in def.cost) g.res[res] -= def.cost[res];
-  computeFlow(g);
+  rebuildNets(g);
   return b;
 }
 
@@ -292,12 +328,12 @@ function destroyBuilding(g, b, refund) {
   if (i >= 0) g.buildings.splice(i, 1);
   if (refund) {
     const def = BLOCKS[b.type];
-    for (const res in def.cost) g.res[res] += Math.floor(def.cost[res] / 2);
+    for (const res in def.cost) g.res[res] += Math.floor(def.cost[res] * 0.6);
   } else {
     burst(g, b.x, b.y, "#f0a050", 14, 90);
   }
-  if (b.type === "core") gameOver(g);
-  computeFlow(g);
+  if (b.type === "core") { gameOver(g); return; }
+  rebuildNets(g);
 }
 
 function canPlace(g, type, q, r) {
@@ -309,146 +345,160 @@ function canPlace(g, type, q, r) {
   return true;
 }
 
-function affordable(g, type) {
-  const def = BLOCKS[type];
-  for (const res in def.cost) if (g.res[res] < def.cost[res]) return false;
-  return true;
-}
-
 function damageBuilding(g, b, dmg) {
   b.hp -= dmg;
   b.flash = 0.12;
   if (b.hp <= 0) destroyBuilding(g, b, false);
 }
 
-/* ------------------------------------------------------------- economy */
-function acceptItem(g, b, res) {
-  if (b.type === "core") {
-    g.res[res] += 1;
-    burst(g, b.x, b.y, RES_COLORS[res], 2, 40);
-    return true;
-  }
-  if (b.type === "conveyor") {
-    if (b.items.length >= BELT_CAP) return false;
-    const tail = b.items[b.items.length - 1];
-    if (tail && tail.t < ITEM_GAP) return false;
-    b.items.push({ res, t: 0 });
-    return true;
+// would this tile connect to the online network?
+function wouldBeOnline(g, q, r) {
+  for (const [dq, dr] of DIRS) {
+    const nt = g.tiles.get(key(q + dq, r + dr));
+    if (nt && nt.building && nt.building.online && BLOCKS[nt.building.type].conducts) return true;
   }
   return false;
 }
 
-function updateConveyor(g, b, dt) {
-  if (!b.items.length) return;
-  // items kept sorted front (highest t) first
-  for (let i = 0; i < b.items.length; i++) {
-    const it = b.items[i];
-    const maxT = i === 0 ? 1 : b.items[i - 1].t - ITEM_GAP;
-    it.t = Math.min(it.t + CONVEYOR_SPEED * dt, Math.max(maxT, it.t));
-  }
-  const front = b.items[0];
-  if (front.t >= 1) {
-    const [dq, dr] = DIRS[b.dir];
-    const nt = g.tiles.get(key(b.q + dq, b.r + dr));
-    if (nt && nt.building && acceptItem(g, nt.building, front.res)) b.items.shift();
+/* --------------------------------------------------- production/pulses */
+function updateDrill(g, b, dt) {
+  if (!b.online) return;
+  const t = g.tiles.get(key(b.q, b.r));
+  if (!t.ore) return;
+  b.mineT += dt;
+  if (b.mineT >= DRILL_TIMES[t.ore]) {
+    b.mineT = 0;
+    const next = g.parents.get(key(b.q, b.r));
+    if (next) g.pulses.push({ node: key(b.q, b.r), next, t: 0, res: t.ore });
   }
 }
 
-function updateDrill(g, b, dt) {
-  const t = g.tiles.get(key(b.q, b.r));
-  if (!t.ore) return;
-  const speed = t.ore === "titanium" ? 1 / 1.5 : 1;
-  if (!b.buffer) {
-    b.mineT += dt * speed;
-    if (b.mineT >= DRILL_TIME) { b.mineT = 0; b.buffer = t.ore; }
-  }
-  if (b.buffer) {
-    for (let i = 0; i < 6; i++) {
-      const d = (b.outDir + i) % 6;
-      const [dq, dr] = DIRS[d];
-      const nt = g.tiles.get(key(b.q + dq, b.r + dr));
-      if (nt && nt.building && acceptItem(g, nt.building, b.buffer)) {
-        b.buffer = null;
-        b.outDir = (d + 1) % 6;
+function nodeAlive(g, k) {
+  if (k === CORE_KEY) return true;
+  const t = g.tiles.get(k);
+  return !!(t && t.building && BLOCKS[t.building.type].conducts && t.building.online);
+}
+
+function updatePulses(g, dt) {
+  for (let i = g.pulses.length - 1; i >= 0; i--) {
+    const p = g.pulses[i];
+    // network changed under us? drop the cargo, visibly
+    if (!nodeAlive(g, p.node) || !nodeAlive(g, p.next)) {
+      const pos = pulsePos(g, p);
+      burst(g, pos.x, pos.y, "#777788", 4, 50);
+      g.lost++;
+      g.pulses.splice(i, 1);
+      continue;
+    }
+    p.t += dt * PULSE_SPEED;
+    while (p.t >= 1) {
+      p.t -= 1;
+      p.node = p.next;
+      if (p.node === CORE_KEY) {
+        g.res[p.res] += 1;
+        burst(g, 0, 0, RES_COLORS[p.res], 2, 40);
+        g.pulses.splice(i, 1);
         break;
       }
+      p.next = g.parents.get(p.node);
+      if (!p.next) { g.pulses.splice(i, 1); g.lost++; break; }
     }
   }
 }
+function pulsePos(g, p) {
+  const [aq, ar] = p.node.split(",").map(Number);
+  const [bq, br] = p.next.split(",").map(Number);
+  return {
+    x: lerp(hexX(aq, ar), hexX(bq, br), p.t),
+    y: lerp(hexY(aq, ar), hexY(bq, br), p.t),
+  };
+}
 
+/* -------------------------------------------------------------- turrets */
 function updateTurret(g, b, dt) {
   const def = BLOCKS[b.type].turret;
   b.cool -= dt;
-  // acquire nearest living enemy in range
+  b.dry = Math.max(0, b.dry - dt);
   let best = null, bestD = def.range * def.range;
   for (const e of g.enemies) {
     const d = dist2(e.x, e.y, b.x, b.y);
     if (d < bestD) { bestD = d; best = e; }
   }
-  b.target = best;
-  if (best) {
-    b.angle = Math.atan2(best.y - b.y, best.x - b.x);
-    if (b.cool <= 0) {
-      b.cool = def.reload;
-      g.projectiles.push({
-        x: b.x + Math.cos(b.angle) * HEX * 0.6,
-        y: b.y + Math.sin(b.angle) * HEX * 0.6,
-        vx: Math.cos(b.angle) * def.pspeed,
-        vy: Math.sin(b.angle) * def.pspeed,
-        dmg: def.dmg, life: def.range / def.pspeed + 0.12,
-        heavy: b.type === "lancer",
-      });
-      b.muzzle = 0.06;
-    }
-  }
+  if (!best) return;
+  b.angle = Math.atan2(best.y - b.y, best.x - b.x);
+  if (b.cool > 0) return;
+  if (!b.online) { b.dry = 0.4; return; }
+  if (g.res[def.ammo] < def.ammoCost) { b.dry = 0.4; return; }
+  g.res[def.ammo] -= def.ammoCost;
+  b.cool = def.reload;
+  b.muzzle = 0.06;
+  g.projectiles.push({
+    x: b.x + Math.cos(b.angle) * HEX * 0.6,
+    y: b.y + Math.sin(b.angle) * HEX * 0.6,
+    vx: Math.cos(b.angle) * def.pspeed,
+    vy: Math.sin(b.angle) * def.pspeed,
+    dmg: def.dmg, aoe: def.aoe, life: def.range / def.pspeed + 0.12,
+    heavy: b.type === "lance",
+  });
 }
 
 /* -------------------------------------------------------------- enemies */
-function spawnEnemy(g, sp, brute) {
+const ENEMY_KINDS = {
+  grunt:  { label: "grunt",  color: "#b04048", eye: "#f0d0d0" },
+  raider: { label: "raider", color: "#c26a35", eye: "#ffe8c0" },
+  brute:  { label: "brute",  color: "#8f3038", eye: "#f0d0d0" },
+};
+
+function spawnEnemy(g, sp, kind) {
   const n = g.wave;
-  const hpScale = 30 * Math.pow(1.17, n) + 8 * n;
-  const jitter = (Math.random() - 0.5) * HEX;
-  g.enemies.push({
-    x: hexX(sp.q, sp.r) + jitter, y: hexY(sp.q, sp.r) + jitter,
-    hp: brute ? hpScale * 4 : hpScale,
-    maxHp: brute ? hpScale * 4 : hpScale,
-    speed: brute ? 24 : 34 + Math.min(n, 12),
-    dmg: brute ? 20 : 8,
-    size: brute ? HEX * 0.62 : HEX * 0.38,
-    atk: 0, angle: 0, brute,
+  const hp = 28 * Math.pow(1.13, n) + 5 * n;
+  const jitter = () => (Math.random() - 0.5) * HEX;
+  const base = {
+    x: hexX(sp.q, sp.r) + jitter(), y: hexY(sp.q, sp.r) + jitter(),
+    kind, atk: 0, angle: 0,
+  };
+  if (kind === "brute") Object.assign(base, {
+    hp: hp * 4, maxHp: hp * 4, speed: 22, dmg: 24, atkTime: 0.9, size: HEX * 0.62, bounty: 12,
   });
+  else if (kind === "raider") Object.assign(base, {
+    hp: hp * 0.6, maxHp: hp * 0.6, speed: 46, dmg: 14, atkTime: 0.55, size: HEX * 0.34, bounty: 5,
+  });
+  else Object.assign(base, {
+    hp, maxHp: hp, speed: 32 + Math.min(n * 0.8, 14), dmg: 8, atkTime: 0.7, size: HEX * 0.38, bounty: 2,
+  });
+  g.enemies.push(base);
 }
 
 function updateEnemy(g, e, dt) {
   e.atk -= dt;
+  const field = e.kind === "raider" ? g.flowStruct : g.flowCore;
   const h = pixelToHex(e.x, e.y);
   const myKey = key(h.q, h.r);
-  // pick the neighbor closest to the core along the flow field
-  let bestK = null, bestD = g.flow.has(myKey) ? g.flow.get(myKey) : Infinity;
-  let bestT = null;
+  let bestK = null, bestD = field.has(myKey) ? field.get(myKey) : Infinity;
   for (const [dq, dr] of DIRS) {
     const nk = key(h.q + dq, h.r + dr);
-    if (!g.flow.has(nk)) continue;
-    if (g.flow.get(nk) < bestD) { bestD = g.flow.get(nk); bestK = nk; }
+    if (!field.has(nk)) continue;
+    if (field.get(nk) < bestD) { bestD = field.get(nk); bestK = nk; }
   }
-  if (bestK) bestT = g.tiles.get(bestK);
+  const bestT = bestK ? g.tiles.get(bestK) : null;
 
-  // something in the way (or the core itself)? attack it when close
-  let attackTarget = null;
-  if (bestT && bestT.building) attackTarget = bestT.building;
+  let target = null;
+  if (bestT && bestT.building) target = bestT.building;
   const myTile = g.tiles.get(myKey);
-  if (myTile && myTile.building && myTile.building.type !== "core") attackTarget = myTile.building;
+  if (myTile && myTile.building && myTile.building.type !== "core") target = myTile.building;
+  // raider standing on its prize (dist 0 tile) attacks it
+  if (!target && e.kind === "raider" && myTile && myTile.building) target = myTile.building;
 
-  if (attackTarget) {
-    const d = Math.hypot(attackTarget.x - e.x, attackTarget.y - e.y);
-    e.angle = Math.atan2(attackTarget.y - e.y, attackTarget.x - e.x);
+  if (target) {
+    const d = Math.hypot(target.x - e.x, target.y - e.y);
+    e.angle = Math.atan2(target.y - e.y, target.x - e.x);
     if (d > NEIGHBOR_DIST * 0.72) {
       e.x += Math.cos(e.angle) * e.speed * dt;
       e.y += Math.sin(e.angle) * e.speed * dt;
     } else if (e.atk <= 0) {
-      e.atk = 0.7;
-      damageBuilding(g, attackTarget, e.dmg);
-      burst(g, attackTarget.x, attackTarget.y, "#e06060", 3, 60);
+      e.atk = e.atkTime;
+      burst(g, target.x, target.y, "#e06060", 3, 60);
+      damageBuilding(g, target, e.dmg);
       if (game.over) return;
     }
   } else if (bestT) {
@@ -457,7 +507,7 @@ function updateEnemy(g, e, dt) {
     e.x += Math.cos(e.angle) * e.speed * dt;
     e.y += Math.sin(e.angle) * e.speed * dt;
   }
-  // gentle separation so packs don't stack into one blob
+  // separation
   for (const o of g.enemies) {
     if (o === e) continue;
     const dx = e.x - o.x, dy = e.y - o.y;
@@ -470,22 +520,57 @@ function updateEnemy(g, e, dt) {
   }
 }
 
+/* ---------------------------------------------------------------- waves */
+function waveComp(g, n) {
+  const final = n === FINAL_WAVE && !g.endless;
+  const grunts = Math.min(4 + Math.round(n * 1.5), 28);
+  const raiders = n >= 5 ? Math.floor((n - 2) / 3) : 0;
+  const brutes = n % 4 === 0 ? Math.floor(n / 4) : 0;
+  const spawnIdxs = (final || (g.endless && n % 5 === 0))
+    ? g.spawnPoints.map((_, i) => i)
+    : [(n - 1) % Math.max(g.spawnPoints.length, 1)];
+  return { n, grunts, raiders, brutes, spawnIdxs, final };
+}
+
+function compText(c) {
+  const parts = [];
+  if (c.grunts) parts.push(c.grunts + " grunt" + (c.grunts > 1 ? "s" : ""));
+  if (c.brutes) parts.push(c.brutes + " brute" + (c.brutes > 1 ? "s" : ""));
+  if (c.raiders) parts.push(c.raiders + " raider" + (c.raiders > 1 ? "s" : "") + " ⚠");
+  return parts.join(", ");
+}
+
+function compass(x, y) {
+  const names = ["E", "SE", "S", "SW", "W", "NW", "N", "NE"];
+  const idx = ((Math.round(Math.atan2(y, x) / (TAU / 8)) % 8) + 8) % 8;
+  return names[idx];
+}
+
 function startWave(g) {
-  g.wave++;
-  const n = g.wave;
-  const count = Math.min(4 + Math.round(n * 1.6), 42);
-  for (let i = 0; i < count; i++) {
-    const sp = g.spawnPoints[i % g.spawnPoints.length];
-    g.pendingSpawns.push({ at: g.time + i * 0.65, sp, brute: false });
-  }
-  if (n % 4 === 0) {
-    for (let i = 0; i < Math.floor(n / 4); i++) {
-      const sp = g.spawnPoints[i % g.spawnPoints.length];
-      g.pendingSpawns.push({ at: g.time + 2 + i * 1.4, sp, brute: true });
-    }
-  }
-  g.waveTimer = Math.max(24, 40 - n * 0.4);
-  showMsg("Wave " + n + " incoming!");
+  const c = g.nextWave || waveComp(g, g.wave + 1);
+  g.wave = c.n;
+  const sps = c.spawnIdxs.map(i => g.spawnPoints[i]);
+  const push = (kind, count, delay0, gap) => {
+    for (let i = 0; i < count; i++)
+      g.pendingSpawns.push({ at: g.time + delay0 + i * gap, sp: sps[i % sps.length], kind });
+  };
+  push("grunt", c.grunts, 0, 0.65);
+  push("raider", c.raiders, 1.2, 1.1);
+  push("brute", c.brutes, 2.5, 1.5);
+  g.waveTimer = c.final ? 9999 : Math.max(28, 46 - c.n * 1.2);
+  g.nextWave = (c.n >= FINAL_WAVE && !g.endless) ? null : waveComp(g, c.n + 1);
+  // the all-fronts finale is telegraphed a wave ahead — grant time to redeploy
+  if (g.nextWave && g.nextWave.final) g.waveTimer += 35;
+  showMsg(c.final ? "FINAL WAVE — they come from every front!" : "Wave " + c.n + " incoming!");
+}
+
+function callWave(g) {
+  if (g.over || g.won || !g.nextWave) return;
+  if (g.enemies.length || g.pendingSpawns.length) return;
+  const bonus = Math.floor(g.waveTimer * 0.8);
+  g.res.copper += bonus;
+  if (bonus > 0) showMsg("+" + bonus + " copper for calling it early");
+  g.waveTimer = 0.01;
 }
 
 /* -------------------------------------------------------------- effects */
@@ -505,13 +590,17 @@ function tick(g, dt) {
   if (g.over || g.paused) return;
   g.time += dt;
 
+  const waveActive = g.enemies.length > 0 || g.pendingSpawns.length > 0;
+
   // waves
-  g.waveTimer -= dt;
-  if (g.waveTimer <= 0) startWave(g);
+  if (g.nextWave) {
+    g.waveTimer -= dt;
+    if (g.waveTimer <= 0) startWave(g);
+  }
   for (let i = g.pendingSpawns.length - 1; i >= 0; i--) {
     if (g.time >= g.pendingSpawns[i].at) {
       const s = g.pendingSpawns.splice(i, 1)[0];
-      spawnEnemy(g, s.sp, s.brute);
+      spawnEnemy(g, s.sp, s.kind);
     }
   }
 
@@ -519,10 +608,13 @@ function tick(g, dt) {
   for (const b of g.buildings) {
     b.flash = Math.max(0, b.flash - dt);
     if (b.muzzle) b.muzzle = Math.max(0, b.muzzle - dt);
-    if (b.type === "conveyor") updateConveyor(g, b, dt);
-    else if (b.type === "drill") updateDrill(g, b, dt);
+    if (b.type === "drill") updateDrill(g, b, dt);
     else if (BLOCKS[b.type].turret) updateTurret(g, b, dt);
+    // quiet self-repair between waves
+    if (!waveActive && b.hp < b.maxHp) b.hp = Math.min(b.maxHp, b.hp + 9 * dt);
   }
+
+  updatePulses(g, dt);
 
   // projectiles
   for (let i = g.projectiles.length - 1; i >= 0; i--) {
@@ -532,7 +624,11 @@ function tick(g, dt) {
     for (const e of g.enemies) {
       if (dist2(p.x, p.y, e.x, e.y) < (e.size + 3) * (e.size + 3)) {
         e.hp -= p.dmg;
-        burst(g, p.x, p.y, p.heavy ? "#9db8f0" : "#f0d060", p.heavy ? 6 : 3, 70);
+        if (p.aoe) {
+          for (const o of g.enemies)
+            if (o !== e && dist2(p.x, p.y, o.x, o.y) < p.aoe * p.aoe) o.hp -= p.dmg * 0.6;
+        }
+        burst(g, p.x, p.y, p.heavy ? "#9db8f0" : "#f0d060", p.heavy ? 7 : 3, 70);
         hit = true;
         break;
       }
@@ -545,12 +641,19 @@ function tick(g, dt) {
     const e = g.enemies[i];
     if (e.hp <= 0) {
       g.enemies.splice(i, 1);
-      g.res.copper += e.brute ? 10 : 2;
+      g.res.copper += e.bounty;
+      g.kills++;
       burst(g, e.x, e.y, "#e06060", 10, 90);
       continue;
     }
     updateEnemy(g, e, dt);
     if (g.over) return;
+  }
+
+  // victory: final wave cleared
+  if (!g.won && !g.endless && g.wave >= FINAL_WAVE &&
+      g.enemies.length === 0 && g.pendingSpawns.length === 0) {
+    victory(g);
   }
 
   // particles
@@ -563,11 +666,31 @@ function tick(g, dt) {
   }
 }
 
+function statsText(g) {
+  const mins = Math.floor(g.time / 60), secs = Math.floor(g.time % 60);
+  return `${g.kills} kills · ${mins}m ${String(secs).padStart(2, "0")}s · ${g.lost} pulses lost to cut arteries`;
+}
+
 function gameOver(g) {
   if (g.over) return;
   g.over = true;
+  const t = document.getElementById("overlay-title");
+  t.textContent = "Core destroyed";
+  t.className = "lost";
   document.getElementById("overlay-text").textContent =
-    "Your foundry fell on wave " + Math.max(g.wave, 1) + ".";
+    "Your foundry fell on wave " + Math.max(g.wave, 1) + ".\n" + statsText(g);
+  document.getElementById("continue-btn").classList.add("hidden");
+  document.getElementById("overlay").classList.remove("hidden");
+}
+
+function victory(g) {
+  g.won = true;
+  const t = document.getElementById("overlay-title");
+  t.textContent = "The foundry holds";
+  t.className = "won";
+  document.getElementById("overlay-text").textContent =
+    "You survived all " + FINAL_WAVE + " waves.\n" + statsText(g);
+  document.getElementById("continue-btn").classList.remove("hidden");
   document.getElementById("overlay").classList.remove("hidden");
 }
 
@@ -596,11 +719,14 @@ const FLOOR_COLORS = { stone: "#43434d", sand: "#6b5f4a", grass: "#4c5e45" };
 function screenToWorld(sx, sy) {
   return { x: (sx - W / 2) / cam.zoom + cam.x, y: (sy - H / 2) / cam.zoom + cam.y };
 }
-
 function shadeColor(hex, amt) {
   const n = parseInt(hex.slice(1), 16);
-  let r = (n >> 16) + amt * 255, g2 = ((n >> 8) & 255) + amt * 255, b = (n & 255) + amt * 255;
+  const r = (n >> 16) + amt * 255, g2 = ((n >> 8) & 255) + amt * 255, b = (n & 255) + amt * 255;
   return `rgb(${clamp(r | 0, 0, 255)},${clamp(g2 | 0, 0, 255)},${clamp(b | 0, 0, 255)})`;
+}
+function centerOf(k) {
+  const [q, r] = k.split(",").map(Number);
+  return { x: hexX(q, r), y: hexY(q, r) };
 }
 
 function draw(g) {
@@ -634,7 +760,6 @@ function draw(g) {
       }
     }
   }
-  /* faint grid */
   ctx.strokeStyle = "#00000030";
   ctx.lineWidth = 1;
   for (const t of g.tiles.values()) {
@@ -643,32 +768,70 @@ function draw(g) {
     ctx.stroke();
   }
 
-  /* spawn markers */
+  /* spawn markers — upcoming wave's fronts glow orange */
   const pulse = 0.75 + 0.25 * Math.sin(g.time * 4);
-  for (const sp of g.spawnPoints) {
+  const upcoming = new Set((g.nextWave ? g.nextWave.spawnIdxs : []));
+  g.spawnPoints.forEach((sp, i) => {
     hexPath(ctx, hexX(sp.q, sp.r), hexY(sp.q, sp.r), 0.85);
-    ctx.strokeStyle = `rgba(224,96,96,${pulse})`;
-    ctx.lineWidth = 2.5;
+    if (upcoming.has(i)) {
+      ctx.strokeStyle = `rgba(240,160,60,${pulse})`;
+      ctx.lineWidth = 3.5;
+    } else {
+      ctx.strokeStyle = `rgba(224,96,96,${0.35 + 0.15 * pulse})`;
+      ctx.lineWidth = 2;
+    }
+    ctx.stroke();
+  });
+
+  /* network edges */
+  ctx.lineWidth = 2;
+  for (const [k, pk] of g.parents) {
+    const a = centerOf(k), b = centerOf(pk);
+    ctx.strokeStyle = "#6fb8a840";
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
     ctx.stroke();
   }
 
   /* buildings */
   for (const b of g.buildings) drawBuilding(ctx, b, g.time);
 
+  /* resource pulses */
+  for (const p of g.pulses) {
+    const pos = pulsePos(g, p);
+    ctx.fillStyle = RES_COLORS[p.res];
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, 4.5, 0, TAU);
+    ctx.fill();
+    ctx.strokeStyle = "#ffffff50";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
   /* enemies */
   for (const e of g.enemies) {
+    const k = ENEMY_KINDS[e.kind];
     ctx.save();
     ctx.translate(e.x, e.y);
     ctx.rotate(e.angle);
-    ctx.fillStyle = e.brute ? "#8f3038" : "#b04048";
+    ctx.fillStyle = k.color;
     ctx.beginPath();
-    ctx.moveTo(e.size, 0);
-    ctx.lineTo(-e.size * 0.7, e.size * 0.75);
-    ctx.lineTo(-e.size * 0.35, 0);
-    ctx.lineTo(-e.size * 0.7, -e.size * 0.75);
+    if (e.kind === "raider") {
+      // slim fast dart
+      ctx.moveTo(e.size * 1.3, 0);
+      ctx.lineTo(-e.size * 0.8, e.size * 0.55);
+      ctx.lineTo(-e.size * 0.4, 0);
+      ctx.lineTo(-e.size * 0.8, -e.size * 0.55);
+    } else {
+      ctx.moveTo(e.size, 0);
+      ctx.lineTo(-e.size * 0.7, e.size * 0.75);
+      ctx.lineTo(-e.size * 0.35, 0);
+      ctx.lineTo(-e.size * 0.7, -e.size * 0.75);
+    }
     ctx.closePath();
     ctx.fill();
-    ctx.fillStyle = "#f0d0d0";
+    ctx.fillStyle = k.eye;
     ctx.beginPath();
     ctx.arc(e.size * 0.25, 0, e.size * 0.22, 0, TAU);
     ctx.fill();
@@ -719,13 +882,34 @@ function draw(g) {
         ctx.lineWidth = 1.5;
         ctx.stroke();
       }
+      // preview the connections this conductor would make
+      if (def.conducts) {
+        for (const [dq, dr] of DIRS) {
+          const nt = g.tiles.get(key(q + dq, r + dr));
+          if (nt && nt.building && nt.building.online && BLOCKS[nt.building.type].conducts) {
+            ctx.strokeStyle = "#70e080a0";
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(hexX(q + dq, r + dr), hexY(q + dq, r + dr));
+            ctx.stroke();
+          }
+        }
+      }
       ctx.globalAlpha = 0.55;
-      drawBuilding(ctx, { type: ui.tool, x, y, dir: ui.dir, items: [], hp: 1, maxHp: 1, flash: 0, angle: 0, mineT: 0 }, g.time);
+      drawBuilding(ctx, { type: ui.tool, x, y, hp: 1, maxHp: 1, flash: 0, angle: -0.5, mineT: 0, online: true }, g.time);
       ctx.globalAlpha = 1;
       hexPath(ctx, x, y);
-      ctx.strokeStyle = ok ? "#70e080" : "#e06060";
+      const offline = ok && def.conducts && !wouldBeOnline(g, q, r);
+      ctx.strokeStyle = !ok ? "#e06060" : offline ? "#e0b060" : "#70e080";
       ctx.lineWidth = 2;
       ctx.stroke();
+      if (offline) {
+        ctx.fillStyle = "#e0b060";
+        ctx.font = "bold 9px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("offline", x, y - HEX - 6);
+      }
     }
   } else if (ui.hover && !g.over) {
     const t = g.tiles.get(key(ui.hover.q, ui.hover.r));
@@ -740,7 +924,6 @@ function draw(g) {
 
 function drawBuilding(c, b, time) {
   const x = b.x, y = b.y;
-  const def = BLOCKS[b.type];
   switch (b.type) {
     case "core": {
       hexPath(c, x, y, 1.12);
@@ -758,36 +941,18 @@ function drawBuilding(c, b, time) {
       c.fill();
       break;
     }
-    case "conveyor": {
-      hexPath(c, x, y, 0.96);
-      c.fillStyle = "#33333c";
+    case "link": {
+      hexPath(c, x, y, 0.55);
+      c.fillStyle = "#2f4a45";
       c.fill();
-      const v = DIRVEC[b.dir];
-      // animated chevrons
-      c.strokeStyle = "#55555f";
-      c.lineWidth = 3;
-      const anim = (time * CONVEYOR_SPEED) % 0.5;
-      for (let i = 0; i < 2; i++) {
-        const t = anim + i * 0.5;
-        const px = x + v.x * (t - 0.5) * NEIGHBOR_DIST * 0.8;
-        const py = y + v.y * (t - 0.5) * NEIGHBOR_DIST * 0.8;
-        const nx = -v.y, ny = v.x;
-        c.beginPath();
-        c.moveTo(px - v.x * 4 + nx * 5, py - v.y * 4 + ny * 5);
-        c.lineTo(px + v.x * 2, py + v.y * 2);
-        c.lineTo(px - v.x * 4 - nx * 5, py - v.y * 4 - ny * 5);
-        c.stroke();
-      }
-      // items
-      for (const it of b.items) {
-        const px = x + v.x * (it.t - 0.5) * NEIGHBOR_DIST;
-        const py = y + v.y * (it.t - 0.5) * NEIGHBOR_DIST;
-        c.fillStyle = RES_COLORS[it.res];
-        c.fillRect(px - 4, py - 4, 8, 8);
-        c.strokeStyle = "#00000060";
-        c.lineWidth = 1;
-        c.strokeRect(px - 4, py - 4, 8, 8);
-      }
+      c.strokeStyle = "#6fb8a8";
+      c.lineWidth = 1.5;
+      hexPath(c, x, y, 0.55);
+      c.stroke();
+      c.fillStyle = b.online ? "#8fe0cc" : "#556";
+      c.beginPath();
+      c.arc(x, y, HEX * 0.16, 0, TAU);
+      c.fill();
       break;
     }
     case "drill": {
@@ -796,7 +961,7 @@ function drawBuilding(c, b, time) {
       c.fill();
       c.save();
       c.translate(x, y);
-      c.rotate(time * 2.2);
+      c.rotate(b.online ? time * 2.2 : 0.4);
       c.fillStyle = "#7a705c";
       for (let i = 0; i < 3; i++) {
         c.rotate(TAU / 3);
@@ -808,15 +973,15 @@ function drawBuilding(c, b, time) {
         c.fill();
       }
       c.restore();
-      c.fillStyle = b.buffer ? RES_COLORS[b.buffer] : "#2c2c33";
+      c.fillStyle = "#2c2c33";
       c.beginPath();
       c.arc(x, y, HEX * 0.22, 0, TAU);
       c.fill();
       break;
     }
-    case "duo":
-    case "lancer": {
-      const heavy = b.type === "lancer";
+    case "sting":
+    case "lance": {
+      const heavy = b.type === "lance";
       hexPath(c, x, y, 0.96);
       c.fillStyle = heavy ? "#3a4252" : "#45454e";
       c.fill();
@@ -839,6 +1004,13 @@ function drawBuilding(c, b, time) {
         c.fill();
       }
       c.restore();
+      // dry-fire warning
+      if (b.dry > 0 && Math.floor(time * 6) % 2 === 0) {
+        c.strokeStyle = "#e06060";
+        c.lineWidth = 2;
+        hexPath(c, x, y, 0.96);
+        c.stroke();
+      }
       break;
     }
     case "wall": {
@@ -851,7 +1023,19 @@ function drawBuilding(c, b, time) {
       break;
     }
   }
-  // damage flash + hp bar
+  // offline conductors dim out and complain loudly
+  if (b.online === false && BLOCKS[b.type].conducts && b.type !== "core") {
+    hexPath(c, x, y, 0.96);
+    c.fillStyle = "#17171c99";
+    c.fill();
+    if (Math.floor(time * 2) % 2 === 0) {
+      c.fillStyle = "#e0b060";
+      c.font = "bold 14px sans-serif";
+      c.textAlign = "center";
+      c.textBaseline = "middle";
+      c.fillText("!", x, y);
+    }
+  }
   if (b.flash > 0) {
     hexPath(c, x, y, 0.96);
     c.fillStyle = `rgba(255,120,120,${b.flash * 4})`;
@@ -868,7 +1052,7 @@ function drawBuilding(c, b, time) {
 
 /* ================================ UI/INPUT ============================= */
 const ui = {
-  tool: null, dir: 0, hover: null,
+  tool: null, hover: null,
   panning: false, painting: false, erasing: false,
   lastPaint: null,
   keys: {},
@@ -879,10 +1063,9 @@ function showMsg(text) {
   el.textContent = text;
   el.classList.add("show");
   clearTimeout(el._t);
-  el._t = setTimeout(() => el.classList.remove("show"), 2200);
+  el._t = setTimeout(() => el.classList.remove("show"), 2600);
 }
 
-/* toolbar */
 function buildToolbar() {
   const bar = document.getElementById("toolbar");
   bar.innerHTML = "";
@@ -896,7 +1079,7 @@ function buildToolbar() {
     const icx = ic.getContext("2d");
     icx.translate(34, 34);
     icx.scale(34 / (HEX * 1.25), 34 / (HEX * 1.25));
-    drawBuilding(icx, { type, x: 0, y: 0, dir: 0, items: [], hp: 1, maxHp: 1, flash: 0, angle: -0.5, mineT: 0 }, 0.2);
+    drawBuilding(icx, { type, x: 0, y: 0, hp: 1, maxHp: 1, flash: 0, angle: -0.5, mineT: 0, online: true }, 0.2);
     const name = document.createElement("div");
     name.className = "tname";
     name.textContent = def.name;
@@ -904,12 +1087,14 @@ function buildToolbar() {
     cost.className = "tcost";
     el.append(ic, name, cost);
     el.addEventListener("click", () => selectTool(ui.tool === type ? null : type));
-    el.addEventListener("mouseenter", ev => {
+    el.addEventListener("mouseenter", () => {
       const tip = document.getElementById("tooltip");
-      tip.innerHTML = `<b>${def.name}</b> [${def.key}] — ${Object.entries(def.cost).map(([r, n]) => n + " " + r).join(", ") || "free"}<br>${def.desc}`;
+      tip.innerHTML = `<b>${def.name}</b> [${def.key}] — ${Object.entries(def.cost).map(([r, n]) => n + " " + r).join(", ") || "free"}`
+        + (def.stat ? `<br><span class="stat">${def.stat}</span>` : "")
+        + `<br>${def.desc}`;
       tip.style.display = "block";
       const rect = el.getBoundingClientRect();
-      tip.style.left = clamp(rect.left, 8, W - 246) + "px";
+      tip.style.left = clamp(rect.left, 8, W - 266) + "px";
       tip.style.bottom = (H - rect.top + 8) + "px";
       tip.style.top = "auto";
     });
@@ -936,14 +1121,44 @@ function selectTool(type) {
   refreshToolbar();
 }
 
+function incomeRate(g, res) {
+  let rate = 0;
+  for (const b of g.buildings) {
+    if (b.type !== "drill" || !b.online) continue;
+    const t = g.tiles.get(key(b.q, b.r));
+    if (t.ore === res) rate += 1 / DRILL_TIMES[res];
+  }
+  return rate;
+}
+
 function refreshHud(g) {
   document.getElementById("res-copper").textContent = Math.floor(g.res.copper);
   document.getElementById("res-titanium").textContent = Math.floor(g.res.titanium);
+  const rc = incomeRate(g, "copper"), rt = incomeRate(g, "titanium");
+  document.getElementById("rate-copper").textContent = rc > 0 ? "+" + rc.toFixed(1) + "/s" : "";
+  document.getElementById("rate-titanium").textContent = rt > 0 ? "+" + rt.toFixed(1) + "/s" : "";
   document.getElementById("wave-num").textContent = g.wave;
-  const wt = document.getElementById("wave-timer");
-  wt.textContent = g.enemies.length || g.pendingSpawns.length
-    ? g.enemies.length + " enemies"
-    : "next: " + Math.ceil(g.waveTimer) + "s";
+  document.getElementById("wave-final").textContent = g.endless ? "∞" : FINAL_WAVE;
+
+  const pv = document.getElementById("wave-preview");
+  const btn = document.getElementById("call-wave");
+  const active = g.enemies.length || g.pendingSpawns.length;
+  if (active) {
+    pv.textContent = g.enemies.length + " enemies on the field";
+    btn.disabled = true;
+  } else if (g.nextWave) {
+    const c = g.nextWave;
+    const dirs = c.spawnIdxs.map(i => {
+      const sp = g.spawnPoints[i];
+      return compass(hexX(sp.q, sp.r), hexY(sp.q, sp.r));
+    }).join("+");
+    pv.textContent = (c.final ? "FINAL: " : "in " + Math.ceil(g.waveTimer) + "s: ") +
+      compText(c) + " from " + (c.final ? "ALL SIDES" : dirs);
+    btn.disabled = false;
+  } else {
+    pv.textContent = "all waves cleared";
+    btn.disabled = true;
+  }
   document.getElementById("core-hp").style.width =
     (g.core ? clamp(g.core.hp / g.core.maxHp, 0, 1) * 100 : 0) + "%";
 }
@@ -951,7 +1166,7 @@ function refreshHud(g) {
 /* placement */
 function tryBuild(g, q, r) {
   if (!ui.tool || !canPlace(g, ui.tool, q, r)) return false;
-  placeBuilding(g, ui.tool, q, r, ui.dir, false);
+  placeBuilding(g, ui.tool, q, r, false);
   refreshToolbar();
   return true;
 }
@@ -996,16 +1211,6 @@ canvas.addEventListener("mousemove", ev => {
   ui.hover = h;
   if (ui.painting && ui.tool) {
     if (!ui.lastPaint || ui.lastPaint.q !== h.q || ui.lastPaint.r !== h.r) {
-      // auto-rotate conveyors along the drag direction
-      if (ui.tool === "conveyor" && ui.lastPaint) {
-        const dq = h.q - ui.lastPaint.q, dr = h.r - ui.lastPaint.r;
-        const di = DIRS.findIndex(d => d[0] === dq && d[1] === dr);
-        if (di >= 0) {
-          ui.dir = di;
-          const prev = game.tiles.get(key(ui.lastPaint.q, ui.lastPaint.r));
-          if (prev && prev.building && prev.building.type === "conveyor") prev.building.dir = di;
-        }
-      }
       ui.lastPaint = h;
       tryBuild(game, h.q, h.r);
     }
@@ -1029,9 +1234,7 @@ canvas.addEventListener("wheel", ev => {
 window.addEventListener("keydown", ev => {
   ui.keys[ev.key] = true;
   const k = ev.key.toLowerCase();
-  if (k === "r") {
-    ui.dir = (ui.dir + 1) % 6;
-  } else if (k === "escape") {
+  if (k === "escape") {
     selectTool(null);
   } else if (k === "p") {
     game.paused = !game.paused;
@@ -1044,13 +1247,30 @@ window.addEventListener("keydown", ev => {
 });
 window.addEventListener("keyup", ev => { ui.keys[ev.key] = false; });
 
-document.getElementById("restart-btn").addEventListener("click", () => {
+document.getElementById("call-wave").addEventListener("click", () => callWave(game));
+
+function restart() {
   document.getElementById("overlay").classList.add("hidden");
   game = newGame();
   fitCamera();
   selectTool(null);
-  showMsg("A new foundry rises.");
+  introMsgs();
+}
+document.getElementById("restart-btn").addEventListener("click", restart);
+document.getElementById("continue-btn").addEventListener("click", () => {
+  document.getElementById("overlay").classList.add("hidden");
+  game.endless = true;
+  game.won = false;
+  game.nextWave = waveComp(game, game.wave + 1);
+  game.waveTimer = 40;
+  showMsg("Endless mode — how long can the foundry hold?");
 });
+
+function introMsgs() {
+  showMsg("Drills mine only while CONNECTED to the core — chain Links back to it.");
+  setTimeout(() => { if (game.time < 20 && !game.over) showMsg("Turrets eat copper per shot. Income sustains your guns."); }, 7000);
+  setTimeout(() => { if (game.time < 30 && !game.over) showMsg("The orange rim hex is where the next wave enters. Get ready."); }, 14000);
+}
 
 /* ------------------------------------------------------------ main loop */
 let lastTime = performance.now();
@@ -1070,17 +1290,17 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-/* -------------------------------------------------------------- boot */
+/* ---------------------------------------------------------------- boot */
 game = newGame();
 fitCamera();
 buildToolbar();
 refreshToolbar();
-showMsg("Build drills on ore, conveyors to the core, turrets before the wave!");
+introMsgs();
 requestAnimationFrame(frame);
 
 // exposed for debugging / testing
 window.GAME = {
   get game() { return game; },
-  tick, placeBuilding, canPlace, newGame,
+  tick, placeBuilding, destroyBuilding, canPlace, newGame, callWave, rebuildNets, wouldBeOnline,
   setGame(g) { game = g; },
 };

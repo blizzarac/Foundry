@@ -11,24 +11,26 @@
 <canvas id="game"></canvas>
 
 <div id="topbar">
-  <div class="res"><span class="dot copper"></span><span id="res-copper">0</span></div>
-  <div class="res"><span class="dot titanium"></span><span id="res-titanium">0</span></div>
+  <div class="res"><span class="dot copper"></span><span id="res-copper">0</span><span class="rate" id="rate-copper"></span></div>
+  <div class="res"><span class="dot titanium"></span><span id="res-titanium">0</span><span class="rate" id="rate-titanium"></span></div>
   <div class="sep"></div>
-  <div class="res">Wave <span id="wave-num">0</span></div>
-  <div class="res" id="wave-timer">next: 45s</div>
+  <div class="res">Wave <span id="wave-num">0</span><span class="dim">/</span><span id="wave-final">15</span></div>
+  <div class="res dim" id="wave-preview">…</div>
+  <button id="call-wave">Call wave ▸</button>
   <div class="sep"></div>
   <div class="corebar"><div id="core-hp"></div></div>
 </div>
 
 <div id="toolbar"></div>
 <div id="tooltip"></div>
-<div id="hint">left-click: build &nbsp;·&nbsp; right-click: demolish &nbsp;·&nbsp; R: rotate &nbsp;·&nbsp; wheel: zoom &nbsp;·&nbsp; drag / WASD: pan &nbsp;·&nbsp; Esc: deselect</div>
+<div id="hint">left-drag: build &nbsp;·&nbsp; right-drag: demolish (60% back) &nbsp;·&nbsp; wheel: zoom &nbsp;·&nbsp; middle-drag / WASD: pan &nbsp;·&nbsp; P: pause &nbsp;·&nbsp; Esc: deselect</div>
 
 <div id="overlay" class="hidden">
   <div id="overlay-box">
     <h1 id="overlay-title">Core destroyed</h1>
-    <p id="overlay-text">Your foundry fell on wave 1.</p>
-    <button id="restart-btn">Rebuild</button>
+    <p id="overlay-text"></p>
+    <button id="continue-btn" class="hidden">Keep playing (endless)</button>
+    <button id="restart-btn">New map</button>
   </div>
 </div>
 
