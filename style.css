@@ -1,0 +1,98 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: #17171c;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  color: #e8e8ef;
+  user-select: none;
+}
+
+#game { display: block; width: 100vw; height: 100vh; cursor: crosshair; }
+
+/* ---------- top bar ---------- */
+#topbar {
+  position: fixed; top: 0; left: 0; right: 0;
+  display: flex; align-items: center; gap: 18px;
+  padding: 8px 16px;
+  background: linear-gradient(#20202add, #20202a99);
+  border-bottom: 1px solid #3a3a46;
+  font-size: 15px;
+  pointer-events: none;
+}
+.res { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+.dot { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.dot.copper   { background: #d99d73; }
+.dot.titanium { background: #8da7c6; }
+.sep { width: 1px; height: 18px; background: #3a3a46; }
+#wave-timer { color: #9a9aa8; font-weight: 400; }
+.corebar {
+  width: 160px; height: 12px; border-radius: 6px;
+  background: #101014; border: 1px solid #3a3a46; overflow: hidden;
+}
+#core-hp { height: 100%; width: 100%; background: linear-gradient(90deg, #e8b34c, #f5d06e); transition: width .2s; }
+
+/* ---------- build toolbar ---------- */
+#toolbar {
+  position: fixed; bottom: 34px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 8px;
+  padding: 8px;
+  background: #20202add;
+  border: 1px solid #3a3a46; border-radius: 12px;
+}
+.tool {
+  width: 74px; padding: 7px 4px 5px;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  background: #2a2a34; border: 1px solid #3a3a46; border-radius: 9px;
+  cursor: pointer; text-align: center;
+}
+.tool:hover { background: #34343f; }
+.tool.selected { background: #4d3f22; border-color: #e8b34c; }
+.tool canvas { width: 34px; height: 34px; }
+.tool .tname { font-size: 11px; font-weight: 600; }
+.tool .tcost { font-size: 10px; color: #b8b8c4; }
+.tool .tcost .no { color: #e06060; }
+.tool .key {
+  position: absolute; margin-left: -58px; margin-top: -4px;
+  font-size: 9px; color: #77778a;
+}
+
+/* ---------- misc ui ---------- */
+#hint {
+  position: fixed; bottom: 8px; left: 50%; transform: translateX(-50%);
+  font-size: 11px; color: #74748a; white-space: nowrap;
+}
+#tooltip {
+  position: fixed; pointer-events: none; display: none;
+  background: #101016ee; border: 1px solid #3a3a46; border-radius: 8px;
+  padding: 8px 10px; font-size: 12px; max-width: 230px; z-index: 20;
+  line-height: 1.45;
+}
+#tooltip b { color: #e8b34c; }
+#msg {
+  position: fixed; top: 54px; left: 50%; transform: translateX(-50%);
+  font-size: 14px; font-weight: 600; color: #f0c060;
+  text-shadow: 0 1px 4px #000;
+  opacity: 0; transition: opacity .3s;
+  pointer-events: none;
+}
+#msg.show { opacity: 1; }
+
+/* ---------- game over ---------- */
+#overlay {
+  position: fixed; inset: 0; background: #0a0a0ecc;
+  display: flex; align-items: center; justify-content: center; z-index: 50;
+}
+#overlay.hidden { display: none; }
+#overlay-box {
+  background: #20202a; border: 1px solid #3a3a46; border-radius: 16px;
+  padding: 36px 48px; text-align: center;
+}
+#overlay-box h1 { color: #e06060; margin-bottom: 10px; font-size: 28px; }
+#overlay-box p { color: #b8b8c4; margin-bottom: 22px; }
+#restart-btn {
+  background: #e8b34c; color: #17171c; border: 0; border-radius: 9px;
+  padding: 10px 30px; font-size: 16px; font-weight: 700; cursor: pointer;
+}
+#restart-btn:hover { background: #f5d06e; }

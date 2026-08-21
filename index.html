@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hexfoundry</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><polygon points='50,3 93,26 93,74 50,97 7,74 7,26' fill='%23e8b34c'/></svg>">
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="topbar">
+  <div class="res"><span class="dot copper"></span><span id="res-copper">0</span></div>
+  <div class="res"><span class="dot titanium"></span><span id="res-titanium">0</span></div>
+  <div class="sep"></div>
+  <div class="res">Wave <span id="wave-num">0</span></div>
+  <div class="res" id="wave-timer">next: 45s</div>
+  <div class="sep"></div>
+  <div class="corebar"><div id="core-hp"></div></div>
+</div>
+
+<div id="toolbar"></div>
+<div id="tooltip"></div>
+<div id="hint">left-click: build &nbsp;·&nbsp; right-click: demolish &nbsp;·&nbsp; R: rotate &nbsp;·&nbsp; wheel: zoom &nbsp;·&nbsp; drag / WASD: pan &nbsp;·&nbsp; Esc: deselect</div>
+
+<div id="overlay" class="hidden">
+  <div id="overlay-box">
+    <h1 id="overlay-title">Core destroyed</h1>
+    <p id="overlay-text">Your foundry fell on wave 1.</p>
+    <button id="restart-btn">Rebuild</button>
+  </div>
+</div>
+
+<div id="msg"></div>
+
+<script src="game.js"></script>
+</body>
+</html>
