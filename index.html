@@ -22,6 +22,7 @@
   <button id="call-wave">Call wave ▸</button>
   <div class="sep"></div>
   <div class="corebar"><div id="core-hp"></div></div>
+  <button id="menu-open" title="Levels">☰</button>
 </div>
 
 <div id="toolbar"></div>
@@ -32,8 +33,19 @@
   <div id="overlay-box">
     <h1 id="overlay-title">Core destroyed</h1>
     <p id="overlay-text"></p>
+    <button id="next-btn" class="hidden">Next level ▸</button>
     <button id="continue-btn" class="hidden">Keep playing (endless)</button>
-    <button id="restart-btn">New map</button>
+    <button id="restart-btn">Retry level</button>
+    <button id="menu-btn" class="secondary">Levels</button>
+  </div>
+</div>
+
+<div id="menu" class="hidden">
+  <div id="menu-box">
+    <h1>HEX<span>FOUNDRY</span></h1>
+    <p class="sub">Mine the ore. Link it home. Hold the line.</p>
+    <button id="menu-resume" class="hidden">▸ Resume game</button>
+    <div id="level-list"></div>
   </div>
 </div>
 

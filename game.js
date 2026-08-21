@@ -87,7 +87,6 @@ function hexPath(ctx, x, y, scale = 1) {
 /* ------------------------------------------------------------- content */
 const RES_COLORS = { copper: "#d99d73", titanium: "#8da7c6" };
 const CORE_KEY = key(0, 0);
-const FINAL_WAVE = 15;
 const PULSE_SPEED = 5;        // hexes per second along the network
 const DRILL_TIMES = { copper: 2.0, titanium: 3.2 };
 
@@ -123,14 +122,151 @@ const BLOCKS = {
   },
 };
 const TOOL_ORDER = ["link", "drill", "sting", "lance", "wall"];
-const MAP_R = 14;
+
+/* -------------------------------------------------------------- levels */
+// A campaign of fixed-seed, hand-tested maps with scripted wave tables.
+// Random generation decides too much of a run's difficulty; here every
+// level is a known quantity, tuned and verified winnable, and each one
+// introduces exactly one new threat.
+// wv(grunts, raiders, brutes, spawn) — spawn: point index or "all"
+const wv = (g, r, b, s) => ({ grunts: g, raiders: r, brutes: b, spawn: s });
+
+const LEVELS = [
+  {
+    name: "First Light", tagline: "Chain Links to ore, drill it, gun down the raid.",
+    seed: 103, mapR: 9, spawnCount: 1, hpMul: 0.85,
+    gen: { copper: 6, titanium: 0 },
+    start: { copper: 90, titanium: 0 },
+    blocks: ["link", "drill", "sting", "wall"],
+    waves: [wv(4, 0, 0, 0), wv(6, 0, 0, 0), wv(9, 0, 0, 0), wv(12, 0, 0, 0), wv(15, 0, 0, "all")],
+    intro: "Drills mine only while CONNECTED to the core — chain Links back to it.",
+  },
+  {
+    name: "Copper Hills", tagline: "Two fronts. Watch the preview, meet them ready.",
+    seed: 214, mapR: 11, spawnCount: 2, hpMul: 0.9,
+    gen: { copper: 8, titanium: 0 },
+    start: { copper: 80, titanium: 0 },
+    blocks: ["link", "drill", "sting", "wall"],
+    waves: [wv(5, 0, 0, 0), wv(7, 0, 0, 1), wv(9, 0, 0, 0), wv(10, 0, 1, 1),
+            wv(12, 0, 0, 0), wv(14, 0, 1, 1), wv(16, 0, 2, "all")],
+    intro: "Brutes are slow and very tough. The wave preview tells you which front is next.",
+  },
+  {
+    name: "Raider Moor", tagline: "They are not coming for the core. They are coming for your arteries.",
+    seed: 337, mapR: 12, spawnCount: 2, hpMul: 0.95,
+    gen: { copper: 9, titanium: 0 },
+    start: { copper: 80, titanium: 0 },
+    blocks: ["link", "drill", "sting", "wall"],
+    waves: [wv(5, 0, 0, 0), wv(6, 1, 0, 1), wv(8, 1, 0, 0), wv(9, 2, 0, 1),
+            wv(10, 2, 1, 0), wv(12, 3, 0, 1), wv(13, 3, 1, 0), wv(15, 4, 2, "all")],
+    intro: "Raiders hunt your NETWORK, not your core. Armor exposed links with walls.",
+  },
+  {
+    name: "The Narrows", tagline: "A rock ring with three gates. Make the gates a mistake.",
+    seed: 452, mapR: 12, spawnCount: 2, hpMul: 0.95,
+    gen: { copper: 8, titanium: 0 },
+    start: { copper: 80, titanium: 0 },
+    blocks: TOOL_ORDER,
+    shape: shapeNarrows,
+    waves: [wv(6, 0, 0, 0), wv(8, 0, 0, 1), wv(9, 1, 0, 0), wv(11, 0, 1, 1),
+            wv(12, 2, 0, 0), wv(14, 1, 1, 1), wv(15, 2, 1, 0), wv(16, 3, 2, 1),
+            wv(18, 3, 2, 0), wv(20, 4, 3, "all")],
+    intro: "Enemies must funnel through the gates. Titanium waits outside the ring — the Lance is unlocked.",
+  },
+  {
+    name: "Titan Reach", tagline: "The titanium is far, the raiders many. Hold the line you stretch.",
+    seed: 568, mapR: 13, spawnCount: 3, hpMul: 1.0,
+    gen: { copper: 8, titanium: 7, titanMin: 9 },
+    start: { copper: 80, titanium: 0 },
+    blocks: TOOL_ORDER,
+    waves: [wv(6, 0, 0, 0), wv(8, 1, 0, 1), wv(10, 1, 0, 2), wv(11, 2, 1, 0),
+            wv(12, 3, 0, 1), wv(14, 3, 1, 2), wv(15, 4, 1, 0), wv(16, 4, 2, 1),
+            wv(18, 5, 2, 2), wv(19, 5, 2, 0), wv(20, 6, 3, 1), wv(22, 6, 3, "all")],
+    intro: "A long artery is a promise you have to keep. The Lance is worth it.",
+  },
+  {
+    name: "The Crucible", tagline: "Everything, from everywhere. The foundry holds — or it doesn't.",
+    seed: 691, mapR: 14, spawnCount: 3, hpMul: 1.1,
+    gen: { copper: 10, titanium: 6, titanMin: 7 },
+    start: { copper: 80, titanium: 0 },
+    blocks: TOOL_ORDER,
+    waves: null, // formula table, 15 waves — the full arc
+    intro: "Fifteen waves. The last one comes from every front at once.",
+  },
+];
+
+const SKIRMISH = {
+  name: "Skirmish", tagline: "A random map, the full 15-wave arc. No two alike.",
+  seed: undefined, mapR: 14, spawnCount: 3, hpMul: 1.0,
+  gen: { copper: 10, titanium: 6, titanMin: 7 },
+  start: { copper: 80, titanium: 0 },
+  blocks: TOOL_ORDER,
+  waves: null,
+  intro: "Uncharted ground. Scout the ore, pick your chokepoints.",
+};
+
+// formula table for Crucible/Skirmish — the original tuned 15-wave arc
+function formulaWaves() {
+  const t = [];
+  for (let n = 1; n <= 15; n++) {
+    t.push(wv(
+      Math.min(4 + Math.round(n * 1.5), 28),
+      n >= 5 ? Math.floor((n - 2) / 3) : 0,
+      n % 4 === 0 ? Math.floor(n / 4) : 0,
+      n === 15 ? "all" : (n - 1) % 3,
+    ));
+  }
+  return t;
+}
+
+// The Narrows: a rock ring at distance 6 with three gates, titanium
+// seeded outside the ring so reaching it means holding a gate.
+function shapeNarrows(g, rng) {
+  const gates = [0.4, 2.5, 4.6]; // gate center angles
+  const angTo = (t, ga) => {
+    const a = (Math.atan2(hexY(t.q, t.r), hexX(t.q, t.r)) + TAU) % TAU;
+    const da = Math.abs(a - ga);
+    return Math.min(da, TAU - da);
+  };
+  for (const t of g.tiles.values()) {
+    const d = hexDist(t.q, t.r);
+    const nearGate = Math.min(...gates.map(ga => angTo(t, ga)));
+    // solid two-tile ring...
+    if ((d === 6 || d === 7) && nearGate >= 0.26) { t.rock = true; t.ore = null; }
+    // ...with guaranteed-open gate passages (noise rock cleared too)
+    else if (d >= 5 && d <= 8 && nearGate < 0.26) t.rock = false;
+    // clear ambient noise-rock near the ring so the fortress reads clean
+    else if (d >= 3 && d <= 9) t.rock = false;
+  }
+  // titanium pockets beyond the ring, near two of the gates
+  for (const t of g.tiles.values()) {
+    if (t.rock || t.ore) continue;
+    const d = hexDist(t.q, t.r);
+    if (d < 9 || d > 11) continue;
+    for (const ga of [0.4, 2.5]) {
+      if (angTo(t, ga) < 0.22 && rng() < 0.55) t.ore = "titanium";
+    }
+  }
+}
 
 /* ---------------------------------------------------------- game state */
 let game = null;
 
-function newGame(seed) {
+// arg: a level object for campaign play; a number for a seeded skirmish
+// (kept for tests); undefined for a random skirmish
+function newGame(arg) {
+  const level = (arg && typeof arg === "object") ? arg : SKIRMISH;
+  const seed = typeof arg === "number" ? arg
+    : level.seed !== undefined ? level.seed
+    : (Math.random() * 1e9) | 0;
+  const waveTable = level.waves ? level.waves : formulaWaves();
   const g = {
-    seed: seed === undefined ? (Math.random() * 1e9) | 0 : seed,
+    seed,
+    level,
+    levelIndex: LEVELS.indexOf(level),
+    mapR: level.mapR,
+    waveTable,
+    finalWave: waveTable.length,
     tiles: new Map(),
     buildings: [],
     enemies: [],
@@ -139,7 +275,7 @@ function newGame(seed) {
     pulses: [],
     pendingSpawns: [],
     spawnPoints: [],
-    res: { copper: 80, titanium: 0 },
+    res: { copper: level.start.copper, titanium: level.start.titanium },
     wave: 0,
     waveTimer: 60,
     nextWave: null,
@@ -159,14 +295,16 @@ function newGame(seed) {
 function genMap(g) {
   const rng = mulberry32(g.seed);
   const noise = makeNoise((g.seed ^ 0x9e3779b9) | 0);
+  const R = g.mapR;
+  const cfg = g.level.gen;
 
-  for (let q = -MAP_R; q <= MAP_R; q++) {
-    for (let r = -MAP_R; r <= MAP_R; r++) {
-      if (hexDist(q, r) > MAP_R) continue;
+  for (let q = -R; q <= R; q++) {
+    for (let r = -R; r <= R; r++) {
+      if (hexDist(q, r) > R) continue;
       const x = hexX(q, r), y = hexY(q, r);
       const n = noise(x * 0.011, y * 0.011);
       const d = hexDist(q, r);
-      const rock = n > 0.62 && d > 3 && d < MAP_R;
+      const rock = n > 0.62 && d > 3 && d < R;
       let floor = "stone";
       if (n < 0.36) floor = "sand";
       else if (n < 0.5) floor = "grass";
@@ -189,14 +327,18 @@ function genMap(g) {
   // copper: one starter vein close in, the rest scattered mid/far
   const near = floorTiles.filter(t => { const d = hexDist(t.q, t.r); return d >= 2 && d <= 4; });
   walkVein(near[(rng() * near.length) | 0], "copper", 7);
-  for (let i = 0; i < 10; i++)
+  for (let i = 0; i < cfg.copper; i++)
     walkVein(floorTiles[(rng() * floorTiles.length) | 0], "copper", 5 + (rng() * 5) | 0);
   // titanium: always a reach — mid-to-far only, so unlocking the Lance
   // means stretching (and defending) a long artery
-  for (let i = 0; i < 6; i++) {
-    const far = floorTiles.filter(t => hexDist(t.q, t.r) >= 7);
+  const titanMin = cfg.titanMin || 7;
+  for (let i = 0; i < cfg.titanium; i++) {
+    const far = floorTiles.filter(t => hexDist(t.q, t.r) >= titanMin);
     walkVein(far[(rng() * far.length) | 0], "titanium", 4 + (rng() * 4) | 0);
   }
+
+  // level-specific terrain sculpting (chokepoints, ore pockets, ...)
+  if (g.level.shape) g.level.shape(g, rng);
 
   const center = g.tiles.get(CORE_KEY);
   center.rock = false; center.ore = null;
@@ -205,12 +347,12 @@ function genMap(g) {
   // spawn points: reachable rim tiles, spread apart
   const reach = bfsReachable(g, CORE_KEY);
   const rim = [...g.tiles.values()]
-    .filter(t => !t.rock && hexDist(t.q, t.r) >= MAP_R - 1 && reach.has(key(t.q, t.r)));
+    .filter(t => !t.rock && hexDist(t.q, t.r) >= R - 1 && reach.has(key(t.q, t.r)));
   const angleOf = t => Math.atan2(hexY(t.q, t.r), hexX(t.q, t.r));
   const picked = [];
   if (rim.length) {
     picked.push(rim[(rng() * rim.length) | 0]);
-    while (picked.length < 3 && picked.length < rim.length) {
+    while (picked.length < g.level.spawnCount && picked.length < rim.length) {
       let best = null, bestScore = -1;
       for (const t of rim) {
         const score = Math.min(...picked.map(p => {
@@ -337,6 +479,7 @@ function destroyBuilding(g, b, refund) {
 }
 
 function canPlace(g, type, q, r) {
+  if (!g.level.blocks.includes(type)) return false;
   const t = g.tiles.get(key(q, r));
   if (!t || t.rock || t.building) return false;
   const def = BLOCKS[type];
@@ -451,11 +594,11 @@ const ENEMY_KINDS = {
 
 function spawnEnemy(g, sp, kind) {
   const n = g.wave;
-  const hp = 28 * Math.pow(1.13, n) + 5 * n;
+  const hp = (28 * Math.pow(1.13, n) + 5 * n) * g.level.hpMul;
   const jitter = () => (Math.random() - 0.5) * HEX;
   const base = {
     x: hexX(sp.q, sp.r) + jitter(), y: hexY(sp.q, sp.r) + jitter(),
-    kind, atk: 0, angle: 0,
+    kind, atk: 0, angle: 0, age: 0,
   };
   if (kind === "brute") Object.assign(base, {
     hp: hp * 4, maxHp: hp * 4, speed: 22, dmg: 24, atkTime: 0.9, size: HEX * 0.62, bounty: 12,
@@ -471,7 +614,11 @@ function spawnEnemy(g, sp, kind) {
 
 function updateEnemy(g, e, dt) {
   e.atk -= dt;
-  const field = e.kind === "raider" ? g.flowStruct : g.flowCore;
+  e.age += dt;
+  // raiders that have harassed the periphery too long lose patience and
+  // charge the core — no wave can be stalled forever by rebuilding bait
+  const enraged = e.kind === "raider" && e.age > 75;
+  const field = e.kind === "raider" && !enraged ? g.flowStruct : g.flowCore;
   const h = pixelToHex(e.x, e.y);
   const myKey = key(h.q, h.r);
   let bestK = null, bestD = field.has(myKey) ? field.get(myKey) : Infinity;
@@ -522,14 +669,22 @@ function updateEnemy(g, e, dt) {
 
 /* ---------------------------------------------------------------- waves */
 function waveComp(g, n) {
-  const final = n === FINAL_WAVE && !g.endless;
+  const nsp = Math.max(g.spawnPoints.length, 1);
+  const allIdxs = g.spawnPoints.map((_, i) => i);
+  if (n <= g.waveTable.length) {
+    const w = g.waveTable[n - 1];
+    return {
+      n, grunts: w.grunts, raiders: w.raiders, brutes: w.brutes,
+      spawnIdxs: w.spawn === "all" ? allIdxs : [w.spawn % nsp],
+      final: n === g.waveTable.length && !g.endless,
+    };
+  }
+  // endless: past the table, fall back to the scaling formula
   const grunts = Math.min(4 + Math.round(n * 1.5), 28);
   const raiders = n >= 5 ? Math.floor((n - 2) / 3) : 0;
   const brutes = n % 4 === 0 ? Math.floor(n / 4) : 0;
-  const spawnIdxs = (final || (g.endless && n % 5 === 0))
-    ? g.spawnPoints.map((_, i) => i)
-    : [(n - 1) % Math.max(g.spawnPoints.length, 1)];
-  return { n, grunts, raiders, brutes, spawnIdxs, final };
+  const spawnIdxs = n % 5 === 0 ? allIdxs : [(n - 1) % nsp];
+  return { n, grunts, raiders, brutes, spawnIdxs, final: false };
 }
 
 function compText(c) {
@@ -558,7 +713,7 @@ function startWave(g) {
   push("raider", c.raiders, 1.2, 1.1);
   push("brute", c.brutes, 2.5, 1.5);
   g.waveTimer = c.final ? 9999 : Math.max(28, 46 - c.n * 1.2);
-  g.nextWave = (c.n >= FINAL_WAVE && !g.endless) ? null : waveComp(g, c.n + 1);
+  g.nextWave = (c.n >= g.finalWave && !g.endless) ? null : waveComp(g, c.n + 1);
   // the all-fronts finale is telegraphed a wave ahead — grant time to redeploy
   if (g.nextWave && g.nextWave.final) g.waveTimer += 35;
   showMsg(c.final ? "FINAL WAVE — they come from every front!" : "Wave " + c.n + " incoming!");
@@ -651,7 +806,7 @@ function tick(g, dt) {
   }
 
   // victory: final wave cleared
-  if (!g.won && !g.endless && g.wave >= FINAL_WAVE &&
+  if (!g.won && !g.endless && g.wave >= g.finalWave &&
       g.enemies.length === 0 && g.pendingSpawns.length === 0) {
     victory(g);
   }
@@ -671,6 +826,11 @@ function statsText(g) {
   return `${g.kills} kills · ${mins}m ${String(secs).padStart(2, "0")}s · ${g.lost} pulses lost to cut arteries`;
 }
 
+function setOverlayButtons(v) {
+  for (const id of ["continue-btn", "next-btn", "restart-btn", "menu-btn"])
+    document.getElementById(id).classList.toggle("hidden", !v[id]);
+}
+
 function gameOver(g) {
   if (g.over) return;
   g.over = true;
@@ -679,18 +839,27 @@ function gameOver(g) {
   t.className = "lost";
   document.getElementById("overlay-text").textContent =
     "Your foundry fell on wave " + Math.max(g.wave, 1) + ".\n" + statsText(g);
-  document.getElementById("continue-btn").classList.add("hidden");
+  document.getElementById("restart-btn").textContent =
+    g.levelIndex >= 0 ? "Retry level" : "New map";
+  setOverlayButtons({ "restart-btn": true, "menu-btn": true });
   document.getElementById("overlay").classList.remove("hidden");
 }
 
 function victory(g) {
   g.won = true;
+  markDone(g.levelIndex);
   const t = document.getElementById("overlay-title");
-  t.textContent = "The foundry holds";
+  t.textContent = g.levelIndex >= 0 ? g.level.name + " holds" : "The foundry holds";
   t.className = "won";
   document.getElementById("overlay-text").textContent =
-    "You survived all " + FINAL_WAVE + " waves.\n" + statsText(g);
-  document.getElementById("continue-btn").classList.remove("hidden");
+    "You survived all " + g.finalWave + " waves.\n" + statsText(g);
+  const hasNext = g.levelIndex >= 0 && g.levelIndex + 1 < LEVELS.length;
+  document.getElementById("restart-btn").textContent =
+    g.levelIndex >= 0 ? "Retry level" : "New map";
+  setOverlayButtons({
+    "next-btn": hasNext, "continue-btn": true,
+    "restart-btn": !hasNext, "menu-btn": true,
+  });
   document.getElementById("overlay").classList.remove("hidden");
 }
 
@@ -709,7 +878,7 @@ window.addEventListener("resize", resize);
 resize();
 
 function fitCamera() {
-  const span = (MAP_R * 2 + 2) * NEIGHBOR_DIST;
+  const span = (game.mapR * 2 + 2) * NEIGHBOR_DIST;
   cam.zoom = Math.min(W, H) / span * 1.08;
   cam.x = 0; cam.y = 0;
 }
@@ -734,7 +903,7 @@ function centerOf(k) {
 let terrain = null;
 function buildTerrainCache(g) {
   const S = 2; // cache pixels per world unit
-  const span = (MAP_R + 1.5) * NEIGHBOR_DIST;
+  const span = (g.mapR + 1.5) * NEIGHBOR_DIST;
   const tc = document.createElement("canvas");
   tc.width = Math.ceil(span * 2 * S);
   tc.height = Math.ceil(span * 2 * S);
@@ -744,11 +913,19 @@ function buildTerrainCache(g) {
     const x = hexX(t.q, t.r), y = hexY(t.q, t.r);
     hexPath(c, x, y, 1.02);
     if (t.rock) {
-      c.fillStyle = shadeColor("#2a2a31", t.shade);
+      // rock must read as terrain, not as dark floor: lighter ridged cap
+      c.fillStyle = shadeColor("#23232a", t.shade);
       c.fill();
-      hexPath(c, x, y, 0.62);
-      c.fillStyle = shadeColor("#222228", t.shade);
+      hexPath(c, x, y, 0.78);
+      c.fillStyle = shadeColor("#5b5b66", t.shade);
       c.fill();
+      hexPath(c, x, y, 0.45);
+      c.fillStyle = shadeColor("#73737f", t.shade);
+      c.fill();
+      hexPath(c, x, y, 0.95);
+      c.strokeStyle = "#191920";
+      c.lineWidth = 1.5;
+      c.stroke();
     } else {
       c.fillStyle = shadeColor(FLOOR_COLORS[t.floor], t.shade);
       c.fill();
@@ -1099,7 +1276,8 @@ function showMsg(text) {
 function buildToolbar() {
   const bar = document.getElementById("toolbar");
   bar.innerHTML = "";
-  for (const type of [...TOOL_ORDER, "demolish"]) {
+  const avail = TOOL_ORDER.filter(t => game.level.blocks.includes(t));
+  for (const type of [...avail, "demolish"]) {
     const def = toolDef(type);
     const el = document.createElement("div");
     el.className = "tool";
@@ -1184,7 +1362,7 @@ function refreshHud(g) {
   document.getElementById("rate-copper").textContent = rc > 0 ? "+" + rc.toFixed(1) + "/s" : "";
   document.getElementById("rate-titanium").textContent = rt > 0 ? "+" + rt.toFixed(1) + "/s" : "";
   document.getElementById("wave-num").textContent = g.wave;
-  document.getElementById("wave-final").textContent = g.endless ? "∞" : FINAL_WAVE;
+  document.getElementById("wave-final").textContent = g.endless ? "∞" : g.finalWave;
 
   const pv = document.getElementById("wave-preview");
   const btn = document.getElementById("call-wave");
@@ -1326,7 +1504,9 @@ window.addEventListener("keydown", ev => {
   ui.keys[ev.key] = true;
   const k = ev.key.toLowerCase();
   if (k === "escape") {
-    selectTool(null);
+    if (!document.getElementById("menu").classList.contains("hidden")) {
+      if (game && !game.over && !game.backdrop) hideMenu(true);
+    } else selectTool(null);
   } else if (k === "x") {
     selectTool(ui.tool === "demolish" ? null : "demolish");
   } else if (k === "p") {
@@ -1342,14 +1522,75 @@ window.addEventListener("keyup", ev => { ui.keys[ev.key] = false; });
 
 document.getElementById("call-wave").addEventListener("click", () => callWave(game));
 
-function restart() {
-  document.getElementById("overlay").classList.add("hidden");
-  game = newGame();
-  fitCamera();
-  selectTool(null);
-  introMsgs();
+/* ------------------------------------------------ campaign progress */
+function loadProgress() {
+  try { return JSON.parse(localStorage.getItem("hexfoundry") || "{}"); }
+  catch (e) { return {}; }
 }
-document.getElementById("restart-btn").addEventListener("click", restart);
+function saveProgress(p) {
+  try { localStorage.setItem("hexfoundry", JSON.stringify(p)); } catch (e) { /* private mode */ }
+}
+function levelDone(i) { return !!((loadProgress().done || [])[i]); }
+function markDone(i) {
+  if (i < 0) return;
+  const p = loadProgress();
+  p.done = p.done || [];
+  p.done[i] = true;
+  saveProgress(p);
+}
+function levelUnlocked(i) { return i === 0 || levelDone(i - 1); }
+
+/* --------------------------------------------------------- level menu */
+function showMenu() {
+  if (game) game.paused = true;
+  const list = document.getElementById("level-list");
+  list.innerHTML = "";
+  const mkCard = (lv, i) => {
+    const unlocked = i < 0 || levelUnlocked(i);
+    const el = document.createElement("div");
+    el.className = "level" + (unlocked ? "" : " locked");
+    const num = i < 0 ? "∞" : levelDone(i) ? "✓" : String(i + 1);
+    const waves = lv.waves ? lv.waves.length : 15;
+    el.innerHTML =
+      `<div class="lnum${i >= 0 && levelDone(i) ? " ldone" : ""}">${num}</div>` +
+      `<div class="lbody"><div class="lname">${lv.name}</div>` +
+      `<div class="ltag">${unlocked ? lv.tagline : "Locked — clear the previous level."}</div></div>` +
+      `<div class="lwaves">${waves} waves</div>`;
+    if (unlocked) el.addEventListener("click", () => startLevel(lv));
+    return el;
+  };
+  LEVELS.forEach((lv, i) => list.appendChild(mkCard(lv, i)));
+  list.appendChild(mkCard(SKIRMISH, -1));
+  const resume = document.getElementById("menu-resume");
+  resume.classList.toggle("hidden", !(game && !game.over && !game.won && !game.backdrop));
+  document.getElementById("menu").classList.remove("hidden");
+}
+function hideMenu(resume) {
+  document.getElementById("menu").classList.add("hidden");
+  if (resume && game) game.paused = false;
+}
+document.getElementById("menu-resume").addEventListener("click", () => hideMenu(true));
+document.getElementById("menu-open").addEventListener("click", showMenu);
+
+function startLevel(lv) {
+  hideMenu(false);
+  document.getElementById("overlay").classList.add("hidden");
+  game = newGame(lv);
+  fitCamera();
+  buildToolbar();
+  selectTool(null);
+  const label = game.levelIndex >= 0 ? "Level " + (game.levelIndex + 1) + ": " + lv.name : lv.name;
+  showMsg(label + " — " + lv.intro);
+  if (game.levelIndex === 0 || lv === SKIRMISH) introHints();
+}
+
+document.getElementById("restart-btn").addEventListener("click", () => startLevel(game.level));
+document.getElementById("next-btn").addEventListener("click", () =>
+  startLevel(LEVELS[game.levelIndex + 1]));
+document.getElementById("menu-btn").addEventListener("click", () => {
+  document.getElementById("overlay").classList.add("hidden");
+  showMenu();
+});
 document.getElementById("continue-btn").addEventListener("click", () => {
   document.getElementById("overlay").classList.add("hidden");
   game.endless = true;
@@ -1359,10 +1600,9 @@ document.getElementById("continue-btn").addEventListener("click", () => {
   showMsg("Endless mode — how long can the foundry hold?");
 });
 
-function introMsgs() {
-  showMsg("Drills mine only while CONNECTED to the core — chain Links back to it.");
-  setTimeout(() => { if (game.time < 20 && !game.over) showMsg("Turrets eat copper per shot. Income sustains your guns."); }, 7000);
-  setTimeout(() => { if (game.time < 30 && !game.over) showMsg("The orange rim hex is where the next wave enters. Get ready."); }, 14000);
+function introHints() {
+  setTimeout(() => { if (game.time > 1 && game.time < 25 && !game.over) showMsg("Turrets eat copper per shot. Income sustains your guns."); }, 9000);
+  setTimeout(() => { if (game.time > 1 && game.time < 35 && !game.over) showMsg("The orange rim hex is where the next wave enters. Get ready."); }, 17000);
 }
 
 /* ------------------------------------------------------------ main loop */
@@ -1384,16 +1624,19 @@ function frame(now) {
 }
 
 /* ---------------------------------------------------------------- boot */
-game = newGame();
+game = newGame(SKIRMISH);   // quiet backdrop behind the menu
+game.paused = true;
+game.backdrop = true;
 fitCamera();
 buildToolbar();
 refreshToolbar();
-introMsgs();
+showMenu();
 requestAnimationFrame(frame);
 
 // exposed for debugging / testing
 window.GAME = {
   get game() { return game; },
   tick, placeBuilding, destroyBuilding, canPlace, newGame, callWave, rebuildNets, wouldBeOnline, cam,
+  LEVELS, SKIRMISH, startLevel,
   setGame(g) { game = g; },
 };

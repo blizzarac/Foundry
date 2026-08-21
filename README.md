@@ -10,6 +10,19 @@ Everything you build must be **connected to your core** through a chain of adjac
 
 Why hexagons: your base is a territory of six-way adjacencies, and the *shape* of that territory is the game. Long tentacles to distant ore are cheap but sever easily. Meshes are robust but expensive. Rock chokepoints are worth fighting for. Raiders exist to make you feel all of this.
 
+## The campaign
+
+Random maps put too much of a run's difficulty in the generator's hands, so the game is built around **six fixed, hand-tested levels**, each introducing one new threat:
+
+1. **First Light** — the core loop: drill, link, defend. Forgiving.
+2. **Copper Hills** — two fronts and the first brutes; learn to read the wave preview.
+3. **Raider Moor** — raiders hunt your network; learn to armor arteries.
+4. **The Narrows** — a rock fortress with three gates; learn to funnel. Titanium and the Lance unlock here.
+5. **Titan Reach** — far titanium, heavy raids; hold a long supply line.
+6. **The Crucible** — the full fifteen-wave arc, finale from every front.
+
+Progress saves in your browser; clearing a level unlocks the next. Every level is verified winnable by scripted playtests (and the early ones by deliberately sloppy ones). **Skirmish** — a random map with the full arc — stays available for replay value.
+
 ## How it plays
 
 1. **Drill** (`2`) an ore vein near the core, chaining **Links** (`1`) back to it — watch the pulses flow home.
@@ -43,6 +56,7 @@ Why hexagons: your base is a territory of six-way adjacencies, and the *shape* o
 - Procedural maps: seeded value-noise terrain, random-walk ore veins, reachability-checked spawn points spread around the rim.
 - **Connectivity** is a BFS from the core across conducting buildings; its parent tree is the path resource pulses follow home. Cut an artery and everything downstream goes dark — in-flight cargo is lost.
 - **Pathfinding** is two Dijkstra flow fields where buildings cost extra (walls most of all): one seeded at the core (grunts, brutes), one multi-seeded at all your structures (raiders). Enemies route around defenses, or breach them when that's genuinely shorter. Both fields recompute on every build/destroy.
-- Balance was tuned against scripted bots in headless Chromium: an AFK player dies on wave 2, a naive static build reaches mid-game, and a competent concentrated defense can clear all 15.
+- Balance is tuned against scripted bots in headless Chromium: a competent bot (BFS link routing, threat-side turret placement, walls) must clear every campaign level; a naive bot (six turrets, no walls, no preview-reading) must clear the first three and fail from The Narrows on.
+- Raiders that harass the periphery too long enrage and charge the core, so no wave can be stalled forever by rebuilding sacrificial bait.
 
 Everything lives in three files: `index.html`, `style.css`, `game.js`.

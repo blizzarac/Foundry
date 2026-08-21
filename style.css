@@ -117,6 +117,60 @@ html, body {
 #overlay-box button.hidden { display: none; }
 #continue-btn { background: #4c5e45 !important; color: #d8e8d0 !important; }
 #continue-btn:hover { background: #5d7355 !important; }
+#overlay-box button.secondary { background: #2a2a34; color: #b8b8c4; border: 1px solid #3a3a46; }
+#overlay-box button.secondary:hover { background: #34343f; }
+
+/* ---------- topbar menu button ---------- */
+#menu-open {
+  pointer-events: auto; margin-left: 10px;
+  background: #2a2a34; color: #b8b8c4; border: 1px solid #3a3a46;
+  border-radius: 7px; padding: 3px 10px; font-size: 15px; cursor: pointer;
+}
+#menu-open:hover { background: #34343f; }
+
+/* ---------- level menu ---------- */
+#menu {
+  position: fixed; inset: 0; background: #0e0e13dd;
+  display: flex; align-items: center; justify-content: center; z-index: 60;
+  overflow-y: auto;
+}
+#menu.hidden { display: none; }
+#menu-box {
+  width: min(480px, 94vw);
+  max-height: 92vh; overflow-y: auto;
+  background: #1c1c24; border: 1px solid #3a3a46; border-radius: 16px;
+  padding: 26px 24px;
+}
+#menu-box h1 {
+  text-align: center; font-size: 30px; letter-spacing: 3px; color: #e8b34c;
+}
+#menu-box h1 span { color: #8da7c6; }
+#menu-box .sub { text-align: center; color: #9a9aa8; font-size: 13px; margin: 4px 0 16px; }
+#menu-resume {
+  display: block; width: 100%; margin-bottom: 12px;
+  background: #4c5e45; color: #d8e8d0; border: 0; border-radius: 9px;
+  padding: 10px; font-size: 14px; font-weight: 700; cursor: pointer;
+}
+#menu-resume.hidden { display: none; }
+#level-list { display: flex; flex-direction: column; gap: 8px; }
+.level {
+  display: flex; align-items: center; gap: 12px;
+  background: #24242e; border: 1px solid #3a3a46; border-radius: 10px;
+  padding: 10px 14px; cursor: pointer;
+}
+.level:hover { background: #2c2c38; border-color: #55556a; }
+.level.locked { opacity: 0.45; cursor: default; }
+.level.locked:hover { background: #24242e; border-color: #3a3a46; }
+.lnum {
+  width: 34px; height: 34px; border-radius: 8px; flex-shrink: 0;
+  background: #2f2f3a; color: #e8b34c; font-weight: 700; font-size: 16px;
+  display: flex; align-items: center; justify-content: center;
+}
+.lnum.ldone { background: #3a4c36; color: #8fe08f; }
+.lbody { flex: 1; min-width: 0; }
+.lname { font-weight: 700; font-size: 15px; }
+.ltag { font-size: 11.5px; color: #9a9aa8; line-height: 1.35; }
+.lwaves { font-size: 11px; color: #77778a; white-space: nowrap; }
 
 /* ---------- small screens / touch ---------- */
 @media (max-width: 720px) {
