@@ -32,22 +32,21 @@
   <button id="btn-parry" title="Deflector field: negate an adjacent strike and overload the attacker (2 power) [F]">Deflect</button>
   <button id="btn-flask" title="Inject a repair cell: restores integrity, but it costs the turn [H]">Repair</button>
   <button id="btn-wait" title="Vent heat: hold position, +2 power [Space]">Vent</button>
-  <button id="btn-ledger" title="Chassis Ledger [B]">Ledger 0/0GB</button>
+  <button id="btn-gear" title="Equipment [B]">Gear</button>
   <button id="btn-rest" class="hidden rest">Dock at repair bay</button>
 </div>
 
 <div id="inv" class="overlay hidden">
-  <div class="box ledger-box">
-    <h2>Chassis Ledger</h2>
-    <div class="ledger-cap-row"><span id="ledger-cap">0 / 0 GB</span></div>
-    <div class="ledger-cap-bar"><div id="ledger-cap-fill"></div></div>
-    <p id="ledger-note" class="stats"></p>
-    <div id="ledger-board" class="ledger-board"></div>
-    <div id="ledger-sheet" class="ledger-sheet"></div>
+  <div class="box gear-box">
+    <h2>Equipment</h2>
+    <p id="gear-note" class="stats"></p>
+    <div id="gear-slots"></div>
+    <h3>Backpack</h3>
+    <div id="gear-pack"></div>
+    <h3>Currency</h3>
+    <div id="gear-currency"></div>
     <h3>Tools</h3>
-    <div id="ledger-tools"></div>
-    <h3>Cargo — unbonded chips</h3>
-    <div id="ledger-cargo"></div>
+    <div id="gear-tools"></div>
     <button id="inv-close" class="secondary">Close</button>
   </div>
 </div>
@@ -62,8 +61,8 @@
       <div><b>Power</b> drives strikes, dashes and deflects; moving and venting restore it.</div>
       <div><b>Deflect</b> an adjacent attacker as it swings to overload it — then counterstrike for double. Hit an exposed core from behind for critical damage.</div>
       <div><b>Repair bays</b> restore integrity, refill cells and sell upgrades — but docking reinitializes the sector, and everything respawns.</div>
-      <div>Your inventory is your body: <b>chips</b> bond into a network rooted at your core. A chip only works while bonded home, and every chip carries a <b>provenance ledger</b> — its history IS its stats, and that history costs storage you have to host.</div>
-      <div>Caches and elite units carry chips. Bonding is free — unless hostiles have you in sensor range, then it costs your turn.</div>
+      <div><b>Loot</b> drops in grades: Normal, <b>Magic</b> (up to 2 modifiers), <b>Rare</b> (up to 4) and a few <b>Uniques</b>. Equip one weapon, plating, sensor, drive and utility module each.</div>
+      <div><b>Currency orbs</b> from caches and elite machines craft your gear — transmute, augment, alchemy, regal, exalt, chaos. Swapping or crafting is free — unless hostiles have you in sensor range, then it costs your turn.</div>
       <div>Fall, and your cores scatter where you died. Your next frame can reclaim them from the wreck.</div>
       <div><b>Hover or hold</b> on any machine to read its attack pattern.</div>
     </div>
@@ -98,10 +97,6 @@
   <div class="box">
     <h2>Repair bay · fabrication</h2>
     <div id="shop-items"></div>
-    <div class="audit-row">
-      <button id="btn-audit">Run audit</button>
-      <p id="audit-note" class="stats"></p>
-    </div>
     <button id="shop-close">Undock</button>
   </div>
 </div>
@@ -109,7 +104,7 @@
 <div id="terminal" class="overlay hidden">
   <div class="box">
     <h2 class="terminal-title">CORRUPTED TERMINAL</h2>
-    <p>It offers a firmware patch. It always takes something back.</p>
+    <p>It fabricates powerful gear. It always takes something back.</p>
     <div id="terminal-items"></div>
     <button id="terminal-leave" class="secondary">Disconnect</button>
   </div>
