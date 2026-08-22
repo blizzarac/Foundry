@@ -32,7 +32,19 @@
   <button id="btn-parry" title="Parry: negate an adjacent strike and stagger the attacker (2 stamina) [F]">Parry</button>
   <button id="btn-flask" title="Drink the ember flask: heal, but it costs the turn [H]">Flask</button>
   <button id="btn-wait" title="Hold your ground: +2 stamina [Space]">Wait</button>
+  <button id="btn-bag" title="Your gear [B]">Bag 0/6</button>
   <button id="btn-rest" class="hidden rest">Rest at bonfire</button>
+</div>
+
+<div id="inv" class="overlay hidden">
+  <div class="box inv-box">
+    <h2>Your gear</h2>
+    <p id="inv-note" class="stats"></p>
+    <div id="inv-equipped"></div>
+    <h3>Bag</h3>
+    <div id="inv-bag"></div>
+    <button id="inv-close" class="secondary">Close</button>
+  </div>
 </div>
 
 <div id="menu" class="overlay">
@@ -44,10 +56,10 @@
       <div><b>Stamina</b> fuels attacks, rolls and parries; stepping and waiting restore it.</div>
       <div><b>Parry</b> an adjacent attacker as it strikes to stagger it — then make it pay. Strike from behind for backstabs.</div>
       <div><b>Bonfires</b> heal, refill your flask and sell upgrades — but the floor stirs back to life.</div>
+      <div><b>Loot the dark</b>: chests and elites carry weapons, charms and tools. Swapping gear is free — unless enemies are watching, then it costs your turn.</div>
       <div>Die, and your souls stain the floor where you fell. The next you may reclaim them.</div>
       <div><b>Hover or hold</b> on any enemy to learn its moveset.</div>
     </div>
-    <div id="weapon-select"></div>
     <button id="begin-btn">Descend</button>
     <p id="stain-note" class="stain"></p>
     <p id="menu-stats" class="stats"></p>

@@ -71,17 +71,35 @@ html, body {
 #inspect .i-good { color: #a0d890; font-weight: 600; }
 #inspect .i-trait { color: #9a938c; margin-top: 3px; }
 
-/* ---------------- weapon select ---------------- */
-#weapon-select { display: flex; gap: 8px; margin-bottom: 16px; }
-.weapon {
-  flex: 1; padding: 10px 8px; cursor: pointer; text-align: left;
-  background: #26222b; border: 1px solid #4a4452; border-radius: 10px;
-}
-.weapon:hover { background: #322d38; }
-.weapon.chosen { border-color: #ff9a3c; background: #362a20; }
-.weapon b { display: block; font-size: 12.5px; color: #f0c690; margin-bottom: 3px; }
-.weapon span { font-size: 10.5px; color: #9a938c; line-height: 1.35; display: block; }
 .shrine-title { color: #b58ade !important; }
+
+/* ---------------- inventory ---------------- */
+.inv-box { text-align: left; max-height: 88vh; overflow-y: auto; }
+.inv-box h2 { text-align: center; }
+.inv-box h3 { color: #b8afa4; font-size: 13px; margin: 12px 0 6px; }
+.inv-box #inv-close { display: block; margin: 14px auto 0; }
+#inv-equipped, #inv-bag { display: flex; flex-direction: column; gap: 6px; }
+.item-card {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: #26222b; border: 1px solid #4a4452; border-radius: 10px;
+  padding: 8px 12px;
+}
+.item-card.equipped { border-color: #7a6a4a; background: #2b2620; }
+.item-card.empty-slot {
+  justify-content: center; color: #6a645e; font-size: 12px;
+  border-style: dashed; background: none;
+}
+.item-info b { color: #f0c690; font-size: 13px; display: block; }
+.item-info span { color: #9a938c; font-size: 11px; line-height: 1.35; display: block; }
+.item-btns { display: flex; gap: 6px; flex-shrink: 0; }
+.item-btns button {
+  background: #322d38 !important; color: #ddd6ce !important;
+  border: 1px solid #4a4452 !important; border-radius: 8px !important;
+  padding: 6px 12px !important; font-size: 12px !important; margin: 0 !important;
+}
+.item-btns button:hover:not(:disabled) { background: #3d3844 !important; }
+.item-btns button:disabled { opacity: 0.35; }
+#btn-bag { min-width: 76px; }
 
 /* ---------------- log ---------------- */
 #log {

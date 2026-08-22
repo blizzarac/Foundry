@@ -119,29 +119,85 @@ const FLOORS = [
 ];
 const FLASK_HEAL = 8;
 const ELITE_TYPES = ["brute", "stalker", "warden"];
-const WEAPONS = {
-  sword:  { name: "Ember sword", dmg: 2, atkCost: 1, rollCost: 2, bsBonus: 2,
+
+/* ------------------------------------------------------------ items */
+const BAG_SIZE = 6;
+const WEAPON_BASES = {
+  sword:  { name: "Sword",  dmg: 2, atkCost: 1, rollCost: 2, bsBonus: 2,
             desc: "Balanced. The knight's answer to everything." },
-  dagger: { name: "Ash dagger",  dmg: 1, atkCost: 1, rollCost: 1, bsBonus: 4,
+  dagger: { name: "Dagger", dmg: 1, atkCost: 1, rollCost: 1, bsBonus: 4,
             desc: "Nimble: rolls cost 1. Weak swings, lethal backstabs (+4)." },
-  axe:    { name: "Grave axe",   dmg: 4, atkCost: 2, rollCost: 2, bsBonus: 2, cleave: true,
+  axe:    { name: "Axe",    dmg: 4, atkCost: 2, rollCost: 2, bsBonus: 2, cleave: true,
             desc: "Heavy swings (2 stamina) cleave a three-hex arc." },
+  spear:  { name: "Spear",  dmg: 2, atkCost: 1, rollCost: 2, bsBonus: 2, reach: true,
+            desc: "Reach: strike two hexes down a line — outside most claws." },
 };
+const PLUS_NAMES = ["", "Keen ", "Brutal ", "Master "];
+const AFFIXES = {
+  leech: { label: "of the Leech", desc: "Heal 1 with every kill." },
+  guard: { label: "of the Guard", desc: "Parry costs 1 stamina." },
+  swift: { label: "of the Wind",  desc: "Rolls cost 1 less." },
+};
+const CHARMS = {
+  ring:    { name: "Iron Ring",     desc: "+3 max HP." },
+  feather: { name: "Feather Charm", desc: "Rolls cost 1 less." },
+  whet:    { name: "Whetstone",     desc: "+1 weapon damage." },
+  magnet:  { name: "Soul Magnet",   desc: "A third more souls from kills." },
+  heart:   { name: "Ember Heart",   desc: "The flask heals +3." },
+};
+const CONSUMABLES = {
+  knife: { name: "Throwing Knife", desc: "Hurl down a clear sightline: 4 damage to the first enemy, up to 4 hexes. Costs the turn." },
+  salts: { name: "Ember Salts",    desc: "Restore all stamina and 2 HP. Costs the turn." },
+};
+let itemSeq = 0;
+function mkWeapon(base, plus, affix) {
+  const b = WEAPON_BASES[base];
+  return {
+    id: ++itemSeq, type: "weapon", base, plus: plus || 0, affix: affix || null,
+    name: PLUS_NAMES[plus || 0] + b.name + (affix ? " " + AFFIXES[affix].label : ""),
+    desc: b.desc + ((plus || 0) ? ` +${plus} damage.` : "") + (affix ? " " + AFFIXES[affix].desc : ""),
+  };
+}
+function mkCharm(kind) {
+  return { id: ++itemSeq, type: "charm", kind, name: CHARMS[kind].name, desc: CHARMS[kind].desc };
+}
+function mkConsumable(kind) {
+  return { id: ++itemSeq, type: "consumable", kind, name: CONSUMABLES[kind].name, desc: CONSUMABLES[kind].desc };
+}
+// depth-scaled loot roll
+function rollLoot(rng, depth, elite) {
+  const roll = rng();
+  const wChance = elite ? 0.5 : 0.4;
+  if (roll < wChance) {
+    const bases = Object.keys(WEAPON_BASES);
+    const base = bases[(rng() * bases.length) | 0];
+    let plus = Math.min(3, (rng() * (depth >= 4 ? 3 : depth >= 2 ? 2.4 : 1.6)) | 0);
+    if (elite) plus = Math.min(3, plus + 1);
+    const affix = rng() < (elite ? 0.55 : 0.28)
+      ? Object.keys(AFFIXES)[(rng() * 3) | 0] : null;
+    return mkWeapon(base, plus, affix);
+  }
+  if (roll < wChance + 0.3) {
+    const kinds = Object.keys(CHARMS);
+    return mkCharm(kinds[(rng() * kinds.length) | 0]);
+  }
+  return mkConsumable(rng() < 0.6 ? "knife" : "salts");
+}
 const UPGRADES = [
-  { id: "hp",    name: "Ember vitality", desc: "+4 max HP",        base: 30, apply: p => { p.maxHp += 4; p.hp += 4; } },
+  { id: "hp",    name: "Ember vitality", desc: "+4 max HP",        base: 30, apply: p => { p.baseMaxHp += 4; p.hp += 4; } },
   { id: "st",    name: "Endurance",      desc: "+1 max stamina",   base: 50, apply: p => { p.maxSt += 1; p.st += 1; } },
-  { id: "dmg",   name: "Hone blade",     desc: "+1 weapon damage", base: 60, apply: p => { p.dmg += 1; } },
+  { id: "dmg",   name: "Hone blade",     desc: "+1 weapon damage", base: 60, apply: p => { p.bonusDmg += 1; } },
   { id: "flask", name: "Deepen flask",   desc: "+1 flask charge",  base: 40, apply: p => { p.maxFlask += 1; p.flask += 1; } },
 ];
 const PACTS = [
   { id: "blood", name: "Pact of Blood", desc: "+2 weapon damage · −3 max HP",
-    can: p => p.maxHp > 5, apply: p => { p.dmg += 2; p.maxHp -= 3; p.hp = Math.min(p.hp, p.maxHp); } },
+    can: p => p.baseMaxHp > 5, apply: p => { p.bonusDmg += 2; p.baseMaxHp -= 3; } },
   { id: "stone", name: "Pact of Stone", desc: "+6 max HP · rolls cost +1 stamina",
-    can: () => true, apply: p => { p.maxHp += 6; p.hp += 6; p.rollCost += 1; } },
+    can: () => true, apply: p => { p.baseMaxHp += 6; p.hp += 6; p.rollDelta += 1; } },
   { id: "ash",   name: "Pact of Ash",   desc: "Rolls cost 1 stamina · −2 max HP",
-    can: p => p.rollCost > 1 && p.maxHp > 4, apply: p => { p.rollCost = 1; p.maxHp -= 2; p.hp = Math.min(p.hp, p.maxHp); } },
+    can: p => !p.ashPact && p.baseMaxHp > 4, apply: p => { p.ashPact = true; p.baseMaxHp -= 2; } },
   { id: "greed", name: "Pact of Greed", desc: "+70 souls, right now · −2 max HP",
-    can: p => p.maxHp > 4, apply: p => { p.souls += 70; p.maxHp -= 2; p.hp = Math.min(p.hp, p.maxHp); } },
+    can: p => p.baseMaxHp > 4, apply: p => { p.souls += 70; p.baseMaxHp -= 2; } },
 ];
 
 /* ------------------------------------------------------------ game state */
@@ -155,28 +211,55 @@ function savePersist(p) {
   try { localStorage.setItem("emberhex", JSON.stringify(p)); } catch (e) { /* private mode */ }
 }
 
-function newRun(seed, weaponId) {
-  const w = WEAPONS[weaponId] || WEAPONS.sword;
+function newRun(seed) {
   run = {
     seed: seed === undefined ? (Math.random() * 1e9) | 0 : seed,
-    weaponId: WEAPONS[weaponId] ? weaponId : "sword",
     floor: 0,
     player: {
-      q: 0, r: 0, hp: 12, maxHp: 12, st: 3, maxSt: 3,
-      dmg: w.dmg, atkCost: w.atkCost, rollCost: w.rollCost,
-      bsBonus: w.bsBonus, cleave: !!w.cleave,
+      q: 0, r: 0, hp: 12, st: 3, maxSt: 3,
+      // base fields (pacts/upgrades mutate these); recalc() derives the rest
+      baseMaxHp: 12, bonusDmg: 0, rollDelta: 0, ashPact: false,
+      weapon: null, charms: [null, null], bag: [],
       flask: 3, maxFlask: 3, souls: 0, parry: false, parryHit: false, dead: false,
     },
     tiles: new Map(),
     enemies: [],
     shards: [],
+    chests: [], groundLoot: [],
     stairs: null, bonfire: null, bloodstain: null, shrine: null,
     turn: 0, kills: 0, over: false, won: false,
     log: [],
   };
+  const p = run.player;
+  p.weapon = mkWeapon("sword", 0, null);
+  p.weapon.name = "Rusted Sword";
+  p.weapon.desc = "It has seen better centuries. Find something worthier.";
+  p.bag.push(mkConsumable("knife"));
+  recalc();
   descend();
   return run;
 }
+
+/* derive combat stats from weapon + charms + pacts/upgrades */
+const hasCharm = kind => run.player.charms.some(c => c && c.kind === kind);
+const countCharm = kind => run.player.charms.filter(c => c && c.kind === kind).length;
+function recalc() {
+  const p = run.player;
+  const b = WEAPON_BASES[p.weapon.base];
+  p.dmg = b.dmg + p.weapon.plus + p.bonusDmg + countCharm("whet");
+  p.atkCost = b.atkCost;
+  p.bsBonus = b.bsBonus;
+  p.cleave = !!b.cleave;
+  p.reach = !!b.reach;
+  p.rollCost = p.ashPact ? 1 :
+    clamp(b.rollCost + p.rollDelta
+      - (hasCharm("feather") ? 1 : 0)
+      - (p.weapon.affix === "swift" ? 1 : 0), 1, 4);
+  p.parryCost = p.weapon.affix === "guard" ? 1 : 2;
+  p.maxHp = p.baseMaxHp + 3 * countCharm("ring");
+  p.hp = Math.min(p.hp, p.maxHp);
+}
+const flaskHeal = () => FLASK_HEAL + (hasCharm("heart") ? 3 : 0);
 
 function log(msg, cls) {
   run.log.push({ msg, cls: cls || "", t: run.turn });
@@ -191,6 +274,8 @@ function genFloor() {
   run.tiles = new Map();
   run.enemies = [];
   run.shards = [];
+  run.chests = [];
+  run.groundLoot = [];
   run.bloodstain = null;
   run.shrine = null;
   const R = f.R;
@@ -213,6 +298,16 @@ function genFloor() {
     run.bonfire = { q: 0, r: R - 2, used: false };
     const tb = run.tiles.get(key(0, R - 2));
     if (tb) tb.rock = false;
+    // a last armory before the King: guaranteed strong steel
+    const tc = run.tiles.get(key(1, R - 2));
+    if (tc) {
+      tc.rock = false;
+      const crng = mulberry32((run.seed ^ 0xbeef) >>> 0);
+      const bases = Object.keys(WEAPON_BASES);
+      run.chests.push({ q: 1, r: R - 2, opened: false,
+        item: mkWeapon(bases[(crng() * bases.length) | 0], 2,
+          Object.keys(AFFIXES)[(crng() * 3) | 0]) });
+    }
     spawnEnemy("boss", 0, -2);
     run.stairs = null;
     updateFov();
@@ -301,6 +396,21 @@ function genFloor() {
     const [q, r] = unkey(pick(cand));
     run.shards.push({ q, r, souls: 20 });
   }
+  // chests: the other reason to explore
+  const nChests = run.floor >= 3 ? 2 : 1;
+  for (let i = 0; i < nChests; i++) {
+    const cand = floorKeys.filter(k => {
+      const d = dist.get(k);
+      return d !== undefined && d >= 4 && k !== far && k !== bk &&
+        !run.shards.some(s => key(s.q, s.r) === k) &&
+        !run.chests.some(c => key(c.q, c.r) === k);
+    });
+    if (!cand.length) break;
+    const [q, r] = unkey(pick(cand));
+    run.chests.push({ q, r, opened: false,
+      item: rollLoot(mulberry32((run.seed ^ (run.floor * 131 + i * 37)) >>> 0), run.floor, false) });
+  }
+
   // dark shrine: a pact, if you dare
   if (f.shrine) {
     const cand = floorKeys.filter(k => {
@@ -422,7 +532,7 @@ function actWait() {
 }
 function strikeOne(e, primary) {
   const p = run.player;
-  const toPlayer = DIRS.findIndex(([dq, dr]) => e.q + dq === p.q && e.r + dr === p.r);
+  const toPlayer = axisDir(e.q, e.r, p.q, p.r);   // works adjacent or at reach
   const front = [e.dir, (e.dir + 1) % 6, (e.dir + 5) % 6].includes(toPlayer);
   const rear = [(e.dir + 3) % 6, (e.dir + 2) % 6, (e.dir + 4) % 6].includes(toPlayer);
   // warden shield: frontal hits bounce off unless its guard is broken
@@ -437,16 +547,30 @@ function strikeOne(e, primary) {
   hurtEnemy(e, dmg, rear && primary ? "backstab" : e.stagger > 0 ? "riposte" : null);
 }
 
+function canReach(e) {
+  const p = run.player;
+  const d = hexDist(p.q, p.r, e.q, e.r);
+  if (d === 1) return true;
+  if (d === 2 && p.reach) {
+    // spear poke: straight line, and the hex between must be open air
+    const dir = axisDir(p.q, p.r, e.q, e.r);
+    if (dir < 0) return false;
+    const mq = p.q + DIRS[dir][0], mr = p.r + DIRS[dir][1];
+    return walkable(mq, mr) && !occupied(mq, mr);
+  }
+  return false;
+}
+
 function actAttack(e) {
   const p = run.player;
-  if (hexDist(p.q, p.r, e.q, e.r) !== 1 || !canAfford(p.atkCost)) return false;
+  if (!canReach(e) || !canAfford(p.atkCost)) return false;
   p.st -= p.atkCost;
   // lunge animation nudge
   p.bumpX = (hexX(e.q, e.r) - hexX(p.q, p.r)) * 0.3;
   p.bumpY = (hexY(e.q, e.r) - hexY(p.q, p.r)) * 0.3;
   sfx("strike");
   strikeOne(e, true);
-  if (p.cleave) {
+  if (p.cleave && hexDist(p.q, p.r, e.q, e.r) === 1) {
     // the grave axe carves the target's hex and its two flanking neighbors
     const d = DIRS.findIndex(([dq, dr]) => p.q + dq === e.q && p.r + dr === e.r);
     for (const dd of [(d + 1) % 6, (d + 5) % 6]) {
@@ -480,8 +604,8 @@ function actRoll(dq, dr) {
 }
 function actParry() {
   const p = run.player;
-  if (!canAfford(2)) return false;
-  p.st -= 2;
+  if (!canAfford(p.parryCost)) return false;
+  p.st -= p.parryCost;
   p.parry = true;
   p.parryHit = false;
   endTurn();
@@ -492,10 +616,11 @@ function actFlask() {
   const p = run.player;
   if (p.flask <= 0 || p.hp >= p.maxHp) return false;
   p.flask -= 1;
-  p.hp = Math.min(p.maxHp, p.hp + FLASK_HEAL);
+  const heal = flaskHeal();
+  p.hp = Math.min(p.maxHp, p.hp + heal);
   sfx("flask");
   log("You drink from the flask.", "good");
-  addFloat(p.q, p.r, "+" + FLASK_HEAL, "#7fbf7f");
+  addFloat(p.q, p.r, "+" + heal, "#7fbf7f");
   endTurn();
   return true;
 }
@@ -537,6 +662,101 @@ function actRest() {
   return true;
 }
 
+/* ---------------------------------------------------------- inventory */
+function giveItem(item) {
+  if (run.player.bag.length >= BAG_SIZE) return false;
+  run.player.bag.push(item);
+  return true;
+}
+// gear-fiddling is free in peace; under hostile eyes it costs the turn
+function inCombat() {
+  return run.enemies.some(e => e.awake && visible.has(key(e.q, e.r)));
+}
+function spendGearTurn() {
+  if (inCombat() && !run.over) {
+    log("You fumble with your gear as the dark closes in.", "warn");
+    endTurn();
+    return true;
+  }
+  return false;
+}
+function equipItem(idx) {
+  const p = run.player;
+  const item = p.bag[idx];
+  if (!item) return false;
+  if (item.type === "weapon") {
+    p.bag[idx] = p.weapon;
+    p.weapon = item;
+    recalc();
+    log(item.name + " in hand.", "good");
+    spendGearTurn();
+    return true;
+  }
+  if (item.type === "charm") {
+    const slot = p.charms.findIndex(c => !c);
+    if (slot < 0) return false;         // unequip one first
+    p.charms[slot] = item;
+    p.bag.splice(idx, 1);
+    recalc();
+    log(item.name + " equipped.", "good");
+    spendGearTurn();
+    return true;
+  }
+  return false;
+}
+function unequipCharm(slot) {
+  const p = run.player;
+  const c = p.charms[slot];
+  if (!c || p.bag.length >= BAG_SIZE) return false;
+  p.charms[slot] = null;
+  p.bag.push(c);
+  recalc();
+  spendGearTurn();
+  return true;
+}
+function dropItem(idx) {
+  const p = run.player;
+  if (!p.bag[idx]) return false;
+  log(p.bag[idx].name + " left to the dark.", "");
+  p.bag.splice(idx, 1);
+  return true;
+}
+function useConsumable(idx, target) {
+  const p = run.player;
+  const item = p.bag[idx];
+  if (!item || item.type !== "consumable" || run.over) return false;
+  if (item.kind === "salts") {
+    p.st = p.maxSt;
+    p.hp = Math.min(p.maxHp, p.hp + 2);
+    p.bag.splice(idx, 1);
+    log("The salts burn bright. You are ready.", "good");
+    sfx("flask");
+    endTurn();
+    return true;
+  }
+  if (item.kind === "knife") {
+    if (!target) return false;
+    const d = axisDir(p.q, p.r, target.q, target.r);
+    if (d < 0 || hexDist(p.q, p.r, target.q, target.r) > 4) return false;
+    // fly down the line: rock stops it, the FIRST body catches it
+    let q = p.q, r = p.r, victim = null;
+    for (let i = 0; i < 4; i++) {
+      q += DIRS[d][0]; r += DIRS[d][1];
+      const t = run.tiles.get(key(q, r));
+      if (!t || t.rock) break;
+      victim = run.enemies.find(e => e.q === q && e.r === r);
+      if (victim) break;
+    }
+    if (!victim) return false;
+    p.bag.splice(idx, 1);
+    sfx("strike");
+    hurtEnemy(victim, 4, null);
+    if (!run.over) endTurn();
+    return true;
+  }
+  return false;
+}
+
 function afterPlayerMove() {
   const p = run.player;
   // pickups
@@ -559,6 +779,30 @@ function afterPlayerMove() {
     delete per.stain;
     savePersist(per);
   }
+  // chests and dropped loot
+  const chest = run.chests.find(c => !c.opened && c.q === p.q && c.r === p.r);
+  if (chest) {
+    if (giveItem(chest.item)) {
+      chest.opened = true;
+      log("You find: " + chest.item.name + ".", "good");
+      addFloat(p.q, p.r, chest.item.name, "#f0c690");
+      sfx("souls");
+    } else {
+      log("Your bag is full. Drop something first.", "warn");
+    }
+  }
+  const li = run.groundLoot.findIndex(l => l.q === p.q && l.r === p.r);
+  if (li >= 0) {
+    const l = run.groundLoot[li];
+    if (giveItem(l.item)) {
+      log("You take: " + l.item.name + ".", "good");
+      addFloat(p.q, p.r, l.item.name, "#f0c690");
+      sfx("souls");
+      run.groundLoot.splice(li, 1);
+    } else {
+      log("Your bag is full. Drop something first.", "warn");
+    }
+  }
   if (run.shrine && !run.shrine.used && run.shrine.q === p.q && run.shrine.r === p.r) {
     showShrine();
   }
@@ -575,9 +819,16 @@ function hurtEnemy(e, dmg, label) {
   if (label) log(label === "backstab" ? "Backstab!" : "Riposte!", "good");
   if (e.hp <= 0) {
     const def = ENEMY[e.type];
-    const souls = e.elite ? def.souls * 3 : def.souls;
+    let souls = e.elite ? def.souls * 3 : def.souls;
+    if (hasCharm("magnet")) souls = Math.round(souls * 4 / 3);
     run.player.souls += souls;
     run.kills++;
+    if (run.player.weapon.affix === "leech" && run.player.hp > 0) {
+      run.player.hp = Math.min(run.player.maxHp, run.player.hp + 1);
+      addFloat(run.player.q, run.player.r, "+1", "#7fbf7f");
+    }
+    // elites carry loot to the grave
+    if (e.elite) run.groundLoot.push({ q: e.q, r: e.r, item: rollLoot(mulberry32((run.seed ^ e.id * 7919) >>> 0), run.floor, true) });
     if (souls) addFloat(e.q, e.r, "+" + souls + " souls", "#8fd48a");
     burst(hexX(e.q, e.r), hexY(e.q, e.r), def.color, 14, 100);
     burst(hexX(e.q, e.r), hexY(e.q, e.r), "#8fd48a", 5, 60);
@@ -755,7 +1006,22 @@ function aiAct(e, flow) {
       // caught on foot (equal speeds), which soft-locks melee play
       if (dist <= 1) { stepEnemyAway(e, flow); break; }
       const d = axisDir(e.q, e.r, p.q, p.r);
-      if (d >= 0 && dist <= def.range && losClear(e.q, e.r, p.q, p.r)) {
+      const clearShot = d >= 0 && losClear(e.q, e.r, p.q, p.r);
+      if (!clearShot && dist <= def.range) {
+        // no CLEAR firing lane (unaligned, or the axis runs through rock):
+        // maneuver into one instead of mirror-chasing around obstacles forever
+        for (const [dq, dr] of DIRS) {
+          const nq = e.q + dq, nr = e.r + dr;
+          if (!walkable(nq, nr) || occupied(nq, nr)) continue;
+          if (hexDist(nq, nr, p.q, p.r) >= 2 && axisDir(nq, nr, p.q, p.r) >= 0 &&
+              losClear(nq, nr, p.q, p.r)) {
+            e.q = nq; e.r = nr;
+            e.dir = DIRS.findIndex(([a, b]) => a === dq && b === dr);
+            return;
+          }
+        }
+      }
+      if (clearShot && dist <= def.range) {
         // mark the whole flight line: stepping off it dodges; anything on
         // it (allies included) eats the arrow
         e.dir = d;
@@ -1100,6 +1366,8 @@ function render(now) {
   if (run.stairs && visibleOrExplored(run.stairs)) drawStairs(run.stairs);
   if (run.bonfire && visibleOrExplored(run.bonfire)) drawBonfire(run.bonfire, t);
   if (run.shrine && visibleOrExplored(run.shrine)) drawShrine(run.shrine, t);
+  for (const c of run.chests) if (visibleOrExplored(c)) drawChest(c, t);
+  for (const l of run.groundLoot) if (visible.has(key(l.q, l.r))) drawLootDrop(l, t);
   for (const s of run.shards) if (visible.has(key(s.q, s.r))) drawShard(s, t);
   if (run.bloodstain && visible.has(key(run.bloodstain.q, run.bloodstain.r)))
     drawStain(run.bloodstain, t);
@@ -1118,6 +1386,28 @@ function render(now) {
       ctx.strokeStyle = `rgba(230,90,70,${e.windupTimer > 1 ? 0.5 : 0.9})`;
       ctx.lineWidth = 2;
       ctx.stroke();
+    }
+  }
+
+  /* throwing-knife targets: first body down each clear line */
+  if (ui.throwItem) {
+    for (let d = 0; d < 6; d++) {
+      let q = run.player.q, r = run.player.r;
+      for (let i = 0; i < 4; i++) {
+        q += DIRS[d][0]; r += DIRS[d][1];
+        const tl = run.tiles.get(key(q, r));
+        if (!tl || tl.rock) break;
+        const e = run.enemies.find(o => o.q === q && o.r === r);
+        if (e) {
+          if (visible.has(key(q, r))) {
+            hexPath(ctx, hexX(q, r), hexY(q, r), 0.75);
+            ctx.strokeStyle = "#f0c060";
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+          }
+          break;
+        }
+      }
     }
   }
 
@@ -1367,6 +1657,34 @@ function drawShrine(s, t) {
   ctx.closePath();
   ctx.fill();
 }
+function drawChest(c, t) {
+  const x = hexX(c.q, c.r), y = hexY(c.q, c.r);
+  if (!c.opened) {
+    const glow = 0.4 + 0.2 * Math.sin(t * 4 + c.q);
+    const grad = ctx.createRadialGradient(x, y, 2, x, y, 16);
+    grad.addColorStop(0, `rgba(240,200,120,${glow})`);
+    grad.addColorStop(1, "rgba(240,200,120,0)");
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(x, y, 16, 0, TAU);
+    ctx.fill();
+  }
+  ctx.fillStyle = c.opened ? "#4a4038" : "#7a5c34";
+  ctx.fillRect(x - 9, y - 5, 18, 11);
+  ctx.fillStyle = c.opened ? "#3a322c" : "#9a7844";
+  ctx.fillRect(x - 9, y - 8, 18, 5);
+  ctx.fillStyle = c.opened ? "#55504a" : "#f0c060";
+  ctx.fillRect(x - 1.5, y - 5, 3, 4);
+}
+function drawLootDrop(l, t) {
+  const x = hexX(l.q, l.r), y = hexY(l.q, l.r) + Math.sin(t * 3 + l.q) * 1.5;
+  ctx.fillStyle = "#f0c690";
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(0.7);
+  ctx.fillRect(-2, -8, 4, 16);
+  ctx.restore();
+}
 function drawStain(b, t) {
   const x = hexX(b.q, b.r), y = hexY(b.q, b.r);
   ctx.fillStyle = `rgba(120,220,140,${0.5 + 0.3 * Math.sin(t * 4)})`;
@@ -1376,7 +1694,7 @@ function drawStain(b, t) {
 }
 
 /* ================================= UI =================================== */
-const ui = { rollMode: false, walking: null, keys: {} };
+const ui = { rollMode: false, throwItem: null, walking: null, keys: {} };
 
 function refreshHud() {
   const p = run.player;
@@ -1398,13 +1716,14 @@ function refreshHud() {
   }
   document.getElementById("souls").textContent = p.souls;
   document.getElementById("floor-num").textContent = run.floor;
-  document.getElementById("weapon-name").textContent = WEAPONS[run.weaponId].name;
+  document.getElementById("weapon-name").textContent = p.weapon.name;
+  document.getElementById("btn-bag").textContent = "Bag " + p.bag.length + "/" + BAG_SIZE;
 
   const rollBtn = document.getElementById("btn-roll");
   rollBtn.textContent = p.rollCost === 2 ? "Roll" : `Roll (${p.rollCost})`;
   rollBtn.classList.toggle("active", ui.rollMode);
   rollBtn.disabled = p.st < p.rollCost || run.over;
-  document.getElementById("btn-parry").disabled = p.st < 2 || run.over;
+  document.getElementById("btn-parry").disabled = p.st < p.parryCost || run.over;
   document.getElementById("btn-flask").disabled = p.flask <= 0 || p.hp >= p.maxHp || run.over;
   const b = run.bonfire;
   document.getElementById("btn-rest").classList.toggle("hidden",
@@ -1435,6 +1754,7 @@ function showShop() {
       p.souls -= cost;
       bought[u.id] = n + 1;
       u.apply(p);
+      recalc();
       log(u.name + " acquired.", "good");
       showShop();
       refreshHud();
@@ -1465,6 +1785,7 @@ function showShrine() {
     el.innerHTML = `<b>${pa.name}</b><span>${pa.desc}</span>`;
     el.addEventListener("click", () => {
       pa.apply(p);
+      recalc();
       run.shrine.used = true;
       log("The shrine drinks. " + pa.name + " sealed.", "sys");
       sfx("souls");
@@ -1479,6 +1800,82 @@ document.getElementById("shrine-leave").addEventListener("click", () => {
   document.getElementById("shrine").classList.add("hidden");
   log("You leave the shrine unanswered.", "");
 });
+
+/* ------- inventory panel ------- */
+function invOpen() { return !document.getElementById("inv").classList.contains("hidden"); }
+function openInv() { refreshInv(); refreshHud(); document.getElementById("inv").classList.remove("hidden"); }
+function closeInv() { document.getElementById("inv").classList.add("hidden"); }
+function itemCard(item, buttons) {
+  const el = document.createElement("div");
+  el.className = "item-card";
+  el.innerHTML = `<div class="item-info"><b>${item.name}</b><span>${item.desc}</span></div>`;
+  const btns = document.createElement("div");
+  btns.className = "item-btns";
+  for (const [label, fn, disabled] of buttons) {
+    const b = document.createElement("button");
+    b.textContent = label;
+    b.disabled = !!disabled;
+    b.addEventListener("click", fn);
+    btns.appendChild(b);
+  }
+  el.appendChild(btns);
+  return el;
+}
+function refreshInv() {
+  const p = run.player;
+  document.getElementById("inv-note").textContent = inCombat()
+    ? "⚠ Enemies watch you — changing gear will cost your turn."
+    : "No hostile eyes. Gear changes are free.";
+  const eq = document.getElementById("inv-equipped");
+  eq.innerHTML = "";
+  eq.appendChild(itemCard(p.weapon, []));
+  eq.lastChild.classList.add("equipped");
+  p.charms.forEach((c, slot) => {
+    if (c) {
+      const card = itemCard(c, [["Unequip", () => {
+        if (unequipCharm(slot)) { refreshInv(); refreshHud(); }
+      }, p.bag.length >= BAG_SIZE]]);
+      card.classList.add("equipped");
+      eq.appendChild(card);
+    } else {
+      const empty = document.createElement("div");
+      empty.className = "item-card empty-slot";
+      empty.textContent = "empty charm slot";
+      eq.appendChild(empty);
+    }
+  });
+  const bagEl = document.getElementById("inv-bag");
+  bagEl.innerHTML = "";
+  if (!p.bag.length) {
+    bagEl.innerHTML = "<div class='empty-slot item-card'>your bag is empty</div>";
+  }
+  p.bag.forEach((item, idx) => {
+    const buttons = [];
+    if (item.type === "weapon") {
+      buttons.push(["Equip", () => { equipItem(idx); refreshInv(); refreshHud(); }]);
+    } else if (item.type === "charm") {
+      const free = p.charms.some(c => !c);
+      buttons.push(["Equip", () => { equipItem(idx); refreshInv(); refreshHud(); }, !free]);
+    } else if (item.type === "consumable") {
+      if (item.kind === "knife") {
+        buttons.push(["Throw", () => {
+          ui.throwItem = item.id;
+          closeInv();
+          showMsg("Pick a target down a clear line.");
+          refreshHud();
+        }, run.over]);
+      } else {
+        buttons.push(["Use", () => { useConsumable(idx); closeInv(); refreshHud(); }, run.over]);
+      }
+    }
+    buttons.push(["Drop", () => { dropItem(idx); refreshInv(); refreshHud(); }]);
+    bagEl.appendChild(itemCard(item, buttons));
+  });
+}
+document.getElementById("btn-bag").addEventListener("click", () => {
+  if (invOpen()) closeInv(); else openInv();
+});
+document.getElementById("inv-close").addEventListener("click", closeInv);
 
 /* ------- enemy inspect: hover on desktop, long-press on touch ------- */
 const inspectEl = document.getElementById("inspect");
@@ -1524,10 +1921,19 @@ function tryPlayerAction(q, r) {
     refreshHud();
     return;
   }
+  if (ui.throwItem) {
+    const idx = p.bag.findIndex(i => i.id === ui.throwItem);
+    ui.throwItem = null;
+    if (idx >= 0 && enemy) {
+      if (!useConsumable(idx, enemy)) log("No clear line for the throw.", "warn");
+    }
+    refreshHud();
+    return;
+  }
+  if (enemy && canReach(enemy)) { actAttack(enemy); return; }
   const d = hexDist(p.q, p.r, q, r);
   if (d === 0) { actWait(); return; }
   if (d === 1) {
-    if (enemy) { actAttack(enemy); return; }
     actStep(q - p.q, r - p.r);
     return;
   }
@@ -1673,46 +2079,31 @@ window.addEventListener("keydown", ev => {
   if (k === "r") { ui.rollMode = !ui.rollMode; }
   else if (k === "f") actParry();
   else if (k === "h" || k === "q") actFlask();
+  else if (k === "b" || k === "i") { if (invOpen()) closeInv(); else openInv(); }
   else if (k === " ") { ev.preventDefault(); actWait(); }
-  else if (k === "escape") ui.rollMode = false;
+  else if (k === "escape") { ui.rollMode = false; ui.throwItem = null; closeInv(); }
   refreshHud();
 });
 
 /* menu / overlays */
-let selectedWeapon = persist().weapon || "sword";
-function buildWeaponSelect() {
-  const box = document.getElementById("weapon-select");
-  box.innerHTML = "";
-  for (const [id, w] of Object.entries(WEAPONS)) {
-    const el = document.createElement("div");
-    el.className = "weapon" + (id === selectedWeapon ? " chosen" : "");
-    el.innerHTML = `<b>${w.name}</b><span>${w.desc}</span>`;
-    el.addEventListener("click", () => {
-      selectedWeapon = id;
-      const per = persist();
-      per.weapon = id;
-      savePersist(per);
-      buildWeaponSelect();
-    });
-    box.appendChild(el);
-  }
-}
 function showMenu() {
   const per = persist();
   document.getElementById("menu-stats").textContent =
     (per.deaths || 0) + " deaths · " + (per.wins || 0) + " victories · deepest: floor " + (per.best || 0);
   document.getElementById("stain-note").textContent =
     per.stain ? "A bloodstain with " + per.stain.souls + " souls waits on floor " + per.stain.floor + "." : "";
-  buildWeaponSelect();
   document.getElementById("menu").classList.remove("hidden");
 }
 function startRun(seed) {
   bought = {};
+  ui.throwItem = null;
+  ui.rollMode = false;
   document.getElementById("menu").classList.add("hidden");
   document.getElementById("death").classList.add("hidden");
   document.getElementById("win").classList.add("hidden");
   document.getElementById("shrine").classList.add("hidden");
-  newRun(seed, selectedWeapon);
+  document.getElementById("inv").classList.add("hidden");
+  newRun(seed);
   cam.x = hexX(run.player.q, run.player.r);
   cam.y = hexY(run.player.q, run.player.r);
   centerCam();
@@ -1747,7 +2138,9 @@ window.RL = {
   actStep, actWait, actAttack, actRoll, actParry, actFlask, actRest,
   spawnEnemy, endTurn, bfsDist, updateFov, hexDist,
   persist, savePersist, cam,
-  ENEMY, WEAPONS, PACTS,
-  setWeapon(id) { selectedWeapon = id; },
+  ENEMY, PACTS, WEAPON_BASES, CHARMS, AFFIXES,
+  mkWeapon, mkCharm, mkConsumable, rollLoot,
+  giveItem, equipItem, unequipCharm, dropItem, useConsumable,
+  inCombat, recalc, canReach,
   setRun(r) { run = r; },
 };

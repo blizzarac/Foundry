@@ -18,11 +18,11 @@ Combat is **deterministic and fully telegraphed**. Every enemy shows exactly whi
 - **Bonfires** heal, refill, and sell upgrades for souls — but resting stirs the floor back to life.
 - **Die**, and the souls you carried stain the floor where you fell — persisted across runs. Your next self can reclaim them. Die again first, and they're gone.
 
-## Choose your weapon
+## Loot the dark
 
-- **Ember sword** — balanced; the knight's answer to everything.
-- **Ash dagger** — rolls cost 1 stamina; weak swings, lethal backstabs (+4). Play it like an assassin.
-- **Grave axe** — heavy swings cost 2 stamina and cleave a three-hex arc. Every swing is a commitment.
+You descend with a **Rusted Sword** and one throwing knife. Everything better is found: glowing **chests** on every floor, guaranteed drops from **elites**, and a final armory chest before the boss. Weapon bases each play differently — **swords** balanced, **daggers** nimble (1-stamina rolls, +4 backstabs), **axes** heavy (2-stamina swings that cleave a three-hex arc), **spears** with reach (poke two hexes down a line, outside most claws) — rolled with damage tiers (*Keen*, *Brutal*, *Master*) and affixes (*of the Leech*: heal on kill · *of the Guard*: 1-stamina parries · *of the Wind*: cheaper rolls). **Charms** (two slots) bend your build: Iron Ring, Feather Charm, Whetstone, Soul Magnet, Ember Heart. **Consumables**: throwing knives and ember salts.
+
+The souls twist: your six-slot bag is free to manage while unobserved — but **under hostile eyes, changing gear costs your turn**. Rummaging mid-fight is a real decision.
 
 ## The descent
 
@@ -43,7 +43,7 @@ Five floors of procedural caverns under fog of war. Hollows shamble and swing. A
 
 Determinism makes the design testable, and it is — in headless Chromium:
 
-- Sixteen scenario suites assert the rules: telegraphs hit exactly the marked hexes and nothing else, rolls clear them, parries stagger, ripostes double, backstabs bonus, flasks get punished mid-telegraph, brutes are punishable after slamming, warden shields block frontal hits until flanked or parried, bellows blobs are outrunnable, axe cleaves and dagger stats apply, shrine pacts trade what they promise, bloodstains persist and are reclaimable, stairs are reachable across seeds, the boss telegraphs and tires on cycle.
+- Sixteen scenario suites assert the rules: telegraphs hit exactly the marked hexes and nothing else, rolls clear them, parries stagger, ripostes double, backstabs bonus, flasks get punished mid-telegraph, brutes are punishable after slamming, warden shields block frontal hits until flanked or parried, bellows blobs are outrunnable, shrine pacts trade what they promise, bloodstains persist and are reclaimable, stairs are reachable across seeds, the boss telegraphs and tires on cycle — plus the loot laws: peaceful gear swaps are free and combat swaps cost the turn, spear reach respects lines and blockers, axes cleave, charms apply and reverse cleanly, knives hit the first body on the line, chests refuse a full bag, and elites always drop.
 - A scripted dodger survives the boss's full attack rotation **without taking a single hit** — proof every telegraph is avoidable.
 - A heuristic pilot bot wins full five-floor runs on some seeds and dies on others; a random-action bot always dies on floor 1. Fair, dangerous, winnable.
 
