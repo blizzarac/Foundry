@@ -109,6 +109,7 @@ const ENEMY = {
   ripper:   { name: "Ripper",     hp: 5,  dmg: 4, windup: 1, souls: 16, color: "#8a4fa0" },
   boss:     { name: "the OVERSEER", hp: 34, dmg: 5, windup: 1, souls: 0, color: "#d4c45c" },
   sentinel: { name: "the SENTINEL", hp: 30, dmg: 5, windup: 2, souls: 150, color: "#e05a7a" },
+  hauler:   { name: "Salvage Hauler", hp: 3, dmg: 0, windup: 1, souls: 6, color: "#c9a24b" },
 };
 const TRAITS = {
   scrapper: "Salvage bot running a broken loop. Closes and swings.",
@@ -119,6 +120,7 @@ const TRAITS = {
   ripper:   "Covers two hexes a turn. Blades sized for your spine.",
   boss:     "Overheats after every third attack. Below half integrity, it calls the fabricators.",
   sentinel: "Gate guardian. Its field slam covers everything around it EXCEPT its coolant vents — stand IN a gap. Its sweep alternates lanes: the amber lanes fire one turn after the red ones, so dodge into amber, then step back. Overheats after every third attack.",
+  hauler:   "Salvage convoy hauler. Doesn't fight — just walks its route. Cut it off before it reaches the far side, or it and its cargo are gone.",
 };
 const FLOORS = [
   { R: 8, spawn: { scrapper: 4, railer: 1 } },
@@ -522,6 +524,18 @@ function migrateProfile(pr) {
     if (!pr.atlas.tierCap) pr.atlas.tierCap = 4;
     pr.v = 3;
   }
+  // v3 -> v4: Foundry Anomalies — backfill node events deterministically,
+  // same roll a fresh reveal would have made, so existing maps just gain them
+  if (pr.v < 4) {
+    for (const k in pr.atlas.nodes || {}) {
+      const n = pr.atlas.nodes[k];
+      if (n.state === "frontier" && n.event === undefined) {
+        const [q, r] = k.split(",").map(Number);
+        n.event = rollNodeEventForSeed(pr.atlas.seed, q, r);
+      }
+    }
+    pr.v = 4;
+  }
   return pr;
 }
 let profile = loadProfile();
@@ -808,6 +822,7 @@ function genFloor() {
   run.groundLoot = [];
   run.bloodstain = null;
   run.terminal = null;
+  run.event = { type: (run.mode === "sector" && f.eventType) || null };
   const R = f.R;
 
   if (f.boss) {
@@ -902,6 +917,10 @@ function genFloor() {
   const bk = pick(mid.length ? mid : floorKeys);
   run.bay = { q: unkey(bk)[0], r: unkey(bk)[1], used: false };
 
+  // Corrupted Zone anomaly: a risk pocket, placed before enemies spawn so
+  // anything born inside it can be flagged hostile-and-volatile
+  if (run.event.type === "corrupted") placeCorruptZone(rng, floorKeys);
+
   // enemies: keep distance from spawn
   const freeFor = k => {
     const d = dist.get(k);
@@ -915,7 +934,8 @@ function genFloor() {
       if (!cand.length) break;
       const k = pick(cand);
       const [q, r] = unkey(k);
-      spawnEnemy(type, q, r);
+      const e = spawnEnemy(type, q, r);
+      if (inCorruptZone(q, r)) { e.dmg += 1; e.zoneVolatile = true; }
     }
   }
   // Prime promotion: campaign floors promote a classic elite type; keyed
@@ -950,7 +970,23 @@ function genFloor() {
     if (!cand.length) break;
     const [q, r] = unkey(pick(cand));
     const crng = mulberry32((run.seed ^ (run.floor * 131 + i * 37)) >>> 0);
-    run.chests.push({ q, r, opened: false, contents: rollChestContents(crng, run.floor, false) });
+    const depth = run.floor + (inCorruptZone(q, r) ? 4 : 0);
+    run.chests.push({ q, r, opened: false, contents: rollChestContents(crng, depth, false) });
+  }
+
+  // Foundry Anomalies: node events layer extra structures onto the sector.
+  // Placement can silently fail on unlucky geometry (a too-short convoy
+  // route, no room for a vault cluster) — downgrade to no event rather
+  // than show a glyph and description for something that isn't there.
+  if (run.event.type === "surge") {
+    placeSurge(rng, floorKeys, dist, far, bk);
+    if (!run.event.fabricator) run.event.type = null;
+  } else if (run.event.type === "vault") {
+    placeVault(rng, floorKeys, dist, far, bk);
+    if (!run.event.vault) run.event.type = null;
+  } else if (run.event.type === "convoy") {
+    placeConvoy(rng, floorKeys, rim);
+    if (!run.event.convoy) run.event.type = null;
   }
 
   // corrupted terminal: a protocol, if you dare (offers rolled live on entry)
@@ -1305,7 +1341,7 @@ function afterPlayerMove() {
     }
   }
   // chests: items go to the backpack; supplies and orbs increment counters
-  const chest = run.chests.find(c => !c.opened && c.q === p.q && c.r === p.r);
+  const chest = run.chests.find(c => !c.opened && !c.sealed && c.q === p.q && c.r === p.r);
   if (chest) {
     chest.opened = true;
     if (chest.contents.kind === "item") {
@@ -1352,6 +1388,7 @@ function hurtEnemy(e, dmg, label) {
   if (e.hp <= 0) {
     const def = ENEMY[e.type];
     let souls = e.elite ? def.souls * 3 : def.souls;
+    if (e.surge) souls = Math.round(souls * 1.5);   // fresh off the Surge press
     souls = Math.round(souls * (1 + (run.player.salvageMult || 0)) *
       (run.mode === "sector" ? 1 + 0.15 * ((run.floorConf.tier || 1) - 1) : 1));
     run.player.souls += souls;
@@ -1360,21 +1397,35 @@ function hurtEnemy(e, dmg, label) {
       run.player.hp = Math.min(run.player.maxHp, run.player.hp + 1);
       addFloat(run.player.q, run.player.r, "+1", "#5fe0aa");
     }
-    // elites drop gear where they fall, plus orbs (juiced keys add more)
+    // elites drop gear where they fall, plus orbs (juiced keys add more);
+    // a Corrupted Zone kill rolls its loot from deeper in the tier bands
     if (e.elite) {
       const lrng = mulberry32((run.seed ^ e.id * 7919) >>> 0);
-      run.groundLoot.push({ q: e.q, r: e.r, item: rollItemLoot(lrng, run.floor, true) });
+      const depth = run.floor + (inCorruptZone(e.q, e.r) ? 4 : 0);
+      run.groundLoot.push({ q: e.q, r: e.r, item: rollItemLoot(lrng, depth, true) });
       const bonus = run.mode === "sector" && lrng() < (run.floorConf.lootBonus || 0) ? 1 : 0;
       grantOrbs(lrng, 2 + bonus, run.floor);
+    }
+    // Salvage Convoy hauler: cargo drop, a real shot at a Sector Key
+    if (e.convoy) {
+      const lrng = mulberry32((run.seed ^ e.id * 37) >>> 0);
+      grantOrbs(lrng, 1, run.floor);
+      if (run.mode === "sector" && lrng() < 0.4) {
+        const drop = makeKey(clamp(run.floorConf.tier, 1, atlasCap()));
+        profile.atlas.keys.push(drop);
+        log("Hauler cargo: " + keyDisplayName(drop) + " recovered.", "good");
+        syncProfileFromPlayer();
+        saveProfile();
+      }
     }
     if (souls) addFloat(e.q, e.r, "+" + souls + " cores", "#7fe0f4");
     burst(hexX(e.q, e.r), hexY(e.q, e.r), def.color, 14, 100);
     burst(hexX(e.q, e.r), hexY(e.q, e.r), "#5fd6f0", 5, 60);
     sfx("die");
     run.enemies.splice(run.enemies.indexOf(e), 1);
-    // Volatile key mod: the dying machine detonates, and standing next to
-    // it is a known cost — resolve the blast before purge credit
-    if (run.mode === "sector" && run.floorConf.volatile &&
+    // Volatile key mod (or a Corrupted Zone kill): the dying machine
+    // detonates, and standing next to it is a known cost
+    if (run.mode === "sector" && (run.floorConf.volatile || e.zoneVolatile) &&
         hexDist(run.player.q, run.player.r, e.q, e.r) === 1) {
       const pl = run.player;
       pl.hp -= 1;
@@ -1459,6 +1510,7 @@ function endTurn() {
   }
 
   updateFov();
+  tickEvents();
   centerCam();
   refreshHud();
   saveRun();
@@ -1611,6 +1663,7 @@ function aiAct(e, flow) {
     }
     case "boss": bossAct(e, flow, dist); break;
     case "sentinel": sentinelAct(e, flow, dist); break;
+    case "hauler": break;   // tickConvoy() drives its movement, not normal AI
   }
 }
 
@@ -1907,6 +1960,284 @@ function syncProfileFromPlayer() {
   c.items = p.items; c.equip = p.equip; c.currency = p.currency; c.consumables = p.consumables;
   c.upgrades = bought;
 }
+/* ============================ FOUNDRY ANOMALIES =========================
+   Endgame node events. Rolled once, permanently, the moment a frontier
+   node is revealed — the Sector Key you later socket never changes WHICH
+   event a node holds, only how hard and how rich it runs (tier + the
+   key's loot-quantity mods scale every payout). Each event tests a
+   different verb — endure, route, intercept, risk — and pays a different
+   currency, so no single farming loop dominates the climb. Every event
+   stays inside the game's one rule: deterministic, fully telegraphed.
+   ========================================================================= */
+const NODE_EVENTS = ["surge", "vault", "convoy", "corrupted"];
+const EVENT_WEIGHTS = [0.40, 0.25, 0.20, 0.15];
+const EVENT_DENSITY = 0.28;
+const EVENT_GLYPH = { surge: "⚒", vault: "◫", convoy: "▸", corrupted: "☣" };
+const EVENT_NAME = { surge: "Fabricator Surge", vault: "Timed Vault", convoy: "Salvage Convoy", corrupted: "Corrupted Zone" };
+const EVENT_DESC = {
+  surge: "A dormant fabricator waits to be woken. Survive its production run near the machine for a Surge Cache.",
+  vault: "A sealed vault chamber. Lockdown begins the moment it's sighted — reach it before the door welds shut.",
+  convoy: "A hauler convoy crosses this sector on a fixed route. Cut it off before it clears the far side.",
+  corrupted: "A corrupted pocket of the sector: hostile, volatile, and richer for it.",
+};
+function rollNodeEventForSeed(seed, q, r) {
+  const h = hash2(q * 131 + 7, r * 131 - 7, (seed | 0) ^ 0x3311);
+  if (h > EVENT_DENSITY) return null;
+  const h2 = hash2(q * 131 + 7, r * 131 - 7, (seed | 0) ^ 0x9944);
+  let acc = 0;
+  for (let i = 0; i < NODE_EVENTS.length; i++) {
+    acc += EVENT_WEIGHTS[i];
+    if (h2 < acc) return NODE_EVENTS[i];
+  }
+  return NODE_EVENTS[NODE_EVENTS.length - 1];
+}
+function rollNodeEvent(q, r) { return rollNodeEventForSeed(profile.atlas.seed, q, r); }
+
+const WAVE_INTERVAL = 3, WAVE_COUNT = 4;
+const VAULT_LOCKDOWN_CYCLES = 9;
+
+function inCorruptZone(q, r) {
+  const z = run.event && run.event.zone;
+  return !!z && hexDist(q, r, z.q, z.r) <= z.radius;
+}
+
+/* --- Fabricator Surge: a scripted 4-wave production run. Ports glow amber
+   one full cycle before each spawn — every arrival is dodgeable information,
+   never a jumpscare. Stand near the machine when the run ends to claim it. */
+function placeSurge(rng, floorKeys, dist, far, bk) {
+  const cand = floorKeys.filter(k => { const d = dist.get(k); return d !== undefined && d >= 4 && k !== far && k !== bk; });
+  if (!cand.length) return;
+  const [q, r] = unkey(cand[(rng() * cand.length) | 0]);
+  run.event.fabricator = {
+    q, r, active: false, resolved: false, claimed: false,
+    wave: 0, totalWaves: WAVE_COUNT, spawnCountdown: -1, totalCountdown: -1, telegraphHexes: [],
+  };
+}
+function actActivateFabricator() {
+  const fab = run.event && run.event.fabricator;
+  if (!fab || fab.active || fab.resolved) return false;
+  if (hexDist(run.player.q, run.player.r, fab.q, fab.r) > 1) return false;
+  fab.active = true;
+  fab.wave = 0;
+  fab.spawnCountdown = WAVE_INTERVAL;
+  fab.totalCountdown = WAVE_INTERVAL * fab.totalWaves;
+  fab.telegraphHexes = [];
+  log("Fabricator online. Hold the line — " + fab.totalWaves + " waves incoming.", "warn");
+  sfx("core");
+  endTurn();
+  return true;
+}
+function fabricatorWaveHexes(fab) {
+  return DIRS.map(([dq, dr]) => [fab.q + dq * 2, fab.r + dr * 2])
+    .filter(([q, r]) => walkable(q, r) && !occupied(q, r));
+}
+function grantSurgeCache(fab) {
+  fab.claimed = true;
+  const lrng = mulberry32((run.seed ^ 0xC4C3E) >>> 0);
+  run.groundLoot.push({ q: fab.q, r: fab.r, item: rollItemLoot(lrng, run.floor, true) });
+  const bonus = lrng() < (run.floorConf.lootBonus || 0) ? 1 : 0;
+  grantOrbs(lrng, 3 + bonus, run.floor);
+  log("SURGE CACHE vented at the fabricator.", "good");
+  addFloat(fab.q, fab.r, "SURGE CACHE", "#5fe0aa");
+  sfx("core");
+}
+function tickFabricator() {
+  const fab = run.event && run.event.fabricator;
+  if (!fab || !fab.active || fab.resolved) return;
+  fab.totalCountdown--;
+  fab.spawnCountdown--;
+  if (fab.wave < fab.totalWaves && fab.spawnCountdown === 1) {
+    const cand = fabricatorWaveHexes(fab);
+    const wrng = mulberry32((run.seed ^ (fab.wave * 97 + 0x51)) >>> 0);
+    const n = Math.min(cand.length, 2 + (wrng() < 0.5 ? 1 : 0));
+    const idxPool = cand.map((_, i) => i);
+    fab.telegraphHexes = [];
+    for (let i = 0; i < n && idxPool.length; i++) {
+      const pick = idxPool.splice((wrng() * idxPool.length) | 0, 1)[0];
+      fab.telegraphHexes.push(key(cand[pick][0], cand[pick][1]));
+    }
+    if (fab.telegraphHexes.length) log("Fabricator ports glow — production imminent.", "warn");
+  } else if (fab.wave < fab.totalWaves && fab.spawnCountdown <= 0) {
+    const types = Object.keys(run.floorConf.spawn || {});
+    const wrng = mulberry32((run.seed ^ (fab.wave * 131 + 0x77)) >>> 0);
+    for (const hk of fab.telegraphHexes) {
+      const [q, r] = unkey(hk);
+      if (!walkable(q, r) || occupied(q, r)) continue;
+      const type = types.length ? types[(wrng() * types.length) | 0] : "scrapper";
+      const e = spawnEnemy(type, q, r);
+      e.awake = true;
+      e.surge = true;
+    }
+    fab.wave++;
+    fab.telegraphHexes = [];
+    if (fab.wave < fab.totalWaves) fab.spawnCountdown = WAVE_INTERVAL;
+  }
+  if (fab.totalCountdown <= 0) {
+    fab.active = false;
+    fab.resolved = true;
+    if (!run.over && hexDist(run.player.q, run.player.r, fab.q, fab.r) <= 3) grantSurgeCache(fab);
+    else log("The fabricator's cache seals — out of range.", "warn");
+  }
+}
+
+/* --- Timed Vault: sighting any of its chests arms a lockdown countdown.
+   Miss the window and the unopened chests weld shut for good. */
+function placeVault(rng, floorKeys, dist, far, bk) {
+  const farCands = floorKeys.filter(k => { const d = dist.get(k); return d !== undefined && d >= 6 && k !== far && k !== bk; });
+  const base = farCands.length ? farCands : floorKeys;
+  if (!base.length) return;
+  const [cq, cr] = unkey(base[(rng() * base.length) | 0]);
+  const nearby = floorKeys.filter(k => { const [q, r] = unkey(k); return hexDist(q, r, cq, cr) <= 2; });
+  const n = Math.min(3, nearby.length);
+  if (!n) return;
+  const idxPool = nearby.map((_, i) => i);
+  const hexes = [];
+  for (let i = 0; i < n && idxPool.length; i++) {
+    const pick = idxPool.splice((rng() * idxPool.length) | 0, 1)[0];
+    const [q, r] = unkey(nearby[pick]);
+    const crng = mulberry32((run.seed ^ (q * 811 + r * 331) ^ 0xFACE) >>> 0);
+    run.chests.push({ q, r, opened: false, sealed: false, vault: true,
+      contents: rollChestContents(crng, run.floor + 4, true) });
+    hexes.push(key(q, r));
+  }
+  run.event.vault = { chestHexes: hexes, triggered: false, lockdownIn: -1, sealed: false };
+}
+function tickVault() {
+  const v = run.event && run.event.vault;
+  if (!v || v.sealed) return;
+  if (!v.triggered) {
+    if (!v.chestHexes.some(hk => visible.has(hk))) return;
+    v.triggered = true;
+    v.lockdownIn = VAULT_LOCKDOWN_CYCLES;
+    log(`VAULT SIGHTED — lockdown in ${v.lockdownIn} cycles.`, "warn");
+    return;
+  }
+  v.lockdownIn--;
+  if (v.lockdownIn === 5 || v.lockdownIn === 3 || v.lockdownIn === 1) {
+    log(`Vault lockdown in ${v.lockdownIn} cycle${v.lockdownIn === 1 ? "" : "s"}.`, "warn");
+  }
+  if (v.lockdownIn <= 0) {
+    v.sealed = true;
+    let lost = 0;
+    for (const hk of v.chestHexes) {
+      const c = run.chests.find(cc => key(cc.q, cc.r) === hk && !cc.opened);
+      if (c) { c.sealed = true; lost++; }
+    }
+    log(lost ? "THE VAULT WELDS SHUT." : "The vault seals — emptied in time.", lost ? "warn" : "good");
+  }
+}
+
+/* --- Salvage Convoy: haulers walk a fixed, precomputed route. They never
+   fight — the puzzle is pure hex-tactics: cut the path before they clear
+   the sector, while their escorts punish a straight-line chase. */
+function bfsPathBetween(aKey, bKey) {
+  const dist = bfsDist(aKey);
+  if (!dist.has(bKey)) return null;
+  const path = [bKey];
+  let cur = bKey, d = dist.get(bKey);
+  while (d > 0) {
+    const [q, r] = unkey(cur);
+    let next = null;
+    for (const [dq, dr] of DIRS) {
+      const nk = key(q + dq, r + dr);
+      const nd = dist.get(nk);
+      if (nd !== undefined && nd === d - 1) { next = nk; break; }
+    }
+    if (!next) break;
+    path.push(next);
+    cur = next; d--;
+  }
+  path.reverse();
+  return path;
+}
+function placeConvoy(rng, floorKeys, rim) {
+  const cands = rim.length >= 2 ? rim : floorKeys;
+  if (cands.length < 2) return;
+  let bestA = cands[0], bestB = cands[0], bestD = -1;
+  const tries = Math.min(20, cands.length * 2);
+  for (let i = 0; i < tries; i++) {
+    const a = cands[(rng() * cands.length) | 0];
+    const b = cands[(rng() * cands.length) | 0];
+    if (a === b) continue;
+    const [aq, ar] = unkey(a), [bq, br] = unkey(b);
+    const d = hexDist(aq, ar, bq, br);
+    if (d > bestD) { bestD = d; bestA = a; bestB = b; }
+  }
+  const path = bfsPathBetween(bestA, bestB);
+  if (!path || path.length < 6) return;   // too short/degenerate — skip silently
+  run.event.convoy = { path, entryIn: 3, spawned: false, done: false,
+    haulerIds: [], totalHaulers: 3, exitedCount: 0 };
+}
+function spawnConvoyWave(cv) {
+  cv.spawned = true;
+  cv.haulerIds = [];
+  for (let i = 0; i < cv.totalHaulers && i < cv.path.length; i++) {
+    const [q, r] = unkey(cv.path[i]);
+    if (occupied(q, r)) continue;
+    const e = spawnEnemy("hauler", q, r);
+    e.awake = true;
+    e.pathIdx = i;
+    e.convoy = true;
+    cv.haulerIds.push(e.id);
+  }
+  const [q0, r0] = unkey(cv.path[0]);
+  const types = Object.keys(run.floorConf.spawn || {}).filter(t => t !== "hauler");
+  const erng = mulberry32((run.seed ^ 0xE5C0) >>> 0);
+  for (let i = 0; i < 2; i++) {
+    const around = DIRS.map(([dq, dr]) => [q0 + dq, r0 + dr]).filter(([q, r]) => walkable(q, r) && !occupied(q, r));
+    if (!around.length) break;
+    const [q, r] = around[(erng() * around.length) | 0];
+    const type = types.length ? types[(erng() * types.length) | 0] : "scrapper";
+    const e = spawnEnemy(type, q, r);
+    e.awake = true;
+  }
+  log("Salvage convoy inbound — cut it off before it clears the sector.", "warn");
+}
+function tickConvoy() {
+  const cv = run.event && run.event.convoy;
+  if (!cv || cv.done) return;
+  if (!cv.spawned) {
+    cv.entryIn--;
+    if (cv.entryIn <= 0) spawnConvoyWave(cv);
+    return;
+  }
+  for (const id of cv.haulerIds) {
+    const e = run.enemies.find(x => x.id === id);
+    if (!e) continue;
+    if (e.pathIdx >= cv.path.length - 1) { e.exiting = true; continue; }
+    e.pathIdx++;
+    const [nq, nr] = unkey(cv.path[e.pathIdx]);
+    if (!occupied(nq, nr)) { e.q = nq; e.r = nr; }
+  }
+  for (let i = run.enemies.length - 1; i >= 0; i--) {
+    if (run.enemies[i].exiting) { run.enemies.splice(i, 1); cv.exitedCount++; }
+  }
+  if (cv.haulerIds.every(id => !run.enemies.find(e => e.id === id))) {
+    cv.done = true;
+    log(cv.exitedCount > 0 ? "The convoy clears the sector — what got away is gone." : "Convoy neutralized — every hauler down.",
+      cv.exitedCount > 0 ? "warn" : "good");
+  }
+}
+
+/* --- Corrupted Zone: a static risk pocket. No new machinery — enemies
+   inside hit harder and detonate on death; loot generated inside rolls
+   richer. Where you choose to fight becomes the decision. */
+function placeCorruptZone(rng, floorKeys) {
+  const [pq, pr] = [run.player.q, run.player.r];
+  const cand = floorKeys.filter(k => { const [q, r] = unkey(k); return hexDist(q, r, pq, pr) >= 4; });
+  const base = cand.length ? cand : floorKeys;
+  if (!base.length) return;
+  const [q, r] = unkey(base[(rng() * base.length) | 0]);
+  run.event.zone = { q, r, radius: 3 };
+}
+
+function tickEvents() {
+  if (run.mode !== "sector" || !run.event || run.over) return;
+  if (run.event.type === "surge") tickFabricator();
+  else if (run.event.type === "vault") tickVault();
+  else if (run.event.type === "convoy") tickConvoy();
+}
+
 function initAtlas() {
   profile.atlas.nodes["0,0"] = { state: "hub" };
   revealArea(0, 0);
@@ -1931,7 +2262,8 @@ function revealArea(q0, r0) {
         profile.atlas.nodes[nk] = { state: "field", biome: cell.biome };
         stack.push([nq, nr]);
       } else {
-        profile.atlas.nodes[nk] = { state: "frontier", biome: cell.biome, wreck: 0 };
+        profile.atlas.nodes[nk] = { state: "frontier", biome: cell.biome, wreck: 0,
+          event: rollNodeEvent(nq, nr) };
       }
     }
   }
@@ -2014,6 +2346,7 @@ function enterNode(q, r, keyId) {
       fovPenalty: mod.fovPenalty, flaskPenalty: mod.flaskPenalty,
       volatile: mod.volatile, lootBonus: quant,
       wreckSouls: node.wreck || 0,
+      eventType: node.event || null,
     };
   }
   genFloor();
@@ -2029,7 +2362,8 @@ function enterNode(q, r, keyId) {
   if (isGate) {
     log(`SECTOR GATE [T${tier}]${modNames ? " [" + modNames + "]" : ""}. The SENTINEL wakes.`, "sys");
   } else {
-    log(`T${tier} ${run.floorConf.biomeName}${modNames ? " [" + modNames + "]" : ""}. Purge ${run.eliteTotal} Prime unit${run.eliteTotal === 1 ? "" : "s"}.`, "sys");
+    const ev = run.floorConf.eventType;
+    log(`T${tier} ${run.floorConf.biomeName}${modNames ? " [" + modNames + "]" : ""}${ev ? " — " + EVENT_NAME[ev] : ""}. Purge ${run.eliteTotal} Prime unit${run.eliteTotal === 1 ? "" : "s"}.`, "sys");
   }
   syncProfileFromPlayer();
   saveProfile();   // the key is spent the moment you jack in
@@ -2413,15 +2747,58 @@ function render(now) {
 
   const t = now / 1000;
 
+  /* Corrupted Zone: a magenta risk pocket, painted under everything else */
+  if (run.event && run.event.zone) {
+    const z = run.event.zone;
+    for (const tl of run.tiles.values()) {
+      if (tl.rock || hexDist(tl.q, tl.r, z.q, z.r) > z.radius) continue;
+      if (!visible.has(key(tl.q, tl.r)) && !tl.explored) continue;
+      hexPath(ctx, hexX(tl.q, tl.r), hexY(tl.q, tl.r), 1.0);
+      ctx.fillStyle = `rgba(190,60,180,${visible.has(key(tl.q, tl.r)) ? 0.1 : 0.05})`;
+      ctx.fill();
+    }
+  }
+
+  /* Salvage Convoy: the fixed route, so you can plan an intercept */
+  if (run.event && run.event.convoy && !run.event.convoy.done) {
+    const cv = run.event.convoy;
+    let lead = 0;
+    for (const id of cv.haulerIds) {
+      const e = run.enemies.find(x => x.id === id);
+      if (e && e.pathIdx > lead) lead = e.pathIdx;
+    }
+    for (let i = lead; i < cv.path.length; i++) {
+      const [q, r] = unkey(cv.path[i]);
+      if (!visible.has(key(q, r))) continue;
+      ctx.beginPath();
+      ctx.arc(hexX(q, r), hexY(q, r), 3, 0, TAU);
+      ctx.fillStyle = "rgba(201,162,75,0.45)";
+      ctx.fill();
+    }
+  }
+
   /* drop shaft, repair bay, cores, wreck */
   if (run.stairs && visibleOrExplored(run.stairs)) drawStairs(run.stairs);
   if (run.bay && visibleOrExplored(run.bay)) drawRepairBay(run.bay, t);
   if (run.terminal && visibleOrExplored(run.terminal)) drawTerminal(run.terminal, t);
+  if (run.event && run.event.fabricator && visibleOrExplored(run.event.fabricator)) drawFabricator(run.event.fabricator, t);
   for (const c of run.chests) if (visibleOrExplored(c)) drawChest(c, t);
   for (const l of run.groundLoot) if (visible.has(key(l.q, l.r))) drawLootDrop(l, t);
   for (const s of run.shards) if (visible.has(key(s.q, s.r))) drawShard(s, t);
   if (run.bloodstain && visible.has(key(run.bloodstain.q, run.bloodstain.r)))
     drawStain(run.bloodstain, t);
+
+  /* Fabricator Surge: ports glow amber exactly one cycle before spawning */
+  if (run.event && run.event.fabricator) {
+    for (const hk of run.event.fabricator.telegraphHexes) {
+      if (!visible.has(hk)) continue;
+      const [q, r] = unkey(hk);
+      hexPath(ctx, hexX(q, r), hexY(q, r), 0.88);
+      ctx.strokeStyle = "rgba(230,170,70,0.75)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  }
 
   /* next-wave telegraphs (amber): fire one turn after the red wave */
   for (const e of run.enemies) {
@@ -2688,6 +3065,11 @@ function renderOverworld(t) {
       ctx.fillStyle = col;
       ctx.font = "bold 9px monospace";
       ctx.fillText(BIOMES[n.biome].abbr, x, y + 3);
+      if (n.event) {
+        ctx.fillStyle = "#ffd45c";
+        ctx.font = "10px monospace";
+        ctx.fillText(EVENT_GLYPH[n.event], x + 14, y - 10);
+      }
       if (n.wreck > 0) {
         ctx.fillStyle = "#7fe0f4";
         ctx.font = "8px monospace";
@@ -2929,24 +3311,60 @@ function drawTerminal(s, t) {
 /* supply cache */
 function drawChest(c, t) {
   const x = hexX(c.q, c.r), y = hexY(c.q, c.r);
-  if (!c.opened) {
+  const glowColor = c.vault ? "200,120,240" : "90,220,240";
+  if (!c.opened && !c.sealed) {
     const glow = 0.4 + 0.2 * Math.sin(t * 4 + c.q);
     const grad = ctx.createRadialGradient(x, y, 2, x, y, 17);
-    grad.addColorStop(0, `rgba(90,220,240,${glow})`);
-    grad.addColorStop(1, "rgba(90,220,240,0)");
+    grad.addColorStop(0, `rgba(${glowColor},${glow})`);
+    grad.addColorStop(1, `rgba(${glowColor},0)`);
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.arc(x, y, 17, 0, TAU);
     ctx.fill();
   }
-  ctx.fillStyle = c.opened ? "#333c45" : "#4f636f";
+  ctx.fillStyle = c.sealed ? "#241a1a" : c.opened ? "#333c45" : (c.vault ? "#4a3e5c" : "#4f636f");
   ctx.fillRect(x - 10, y - 7, 20, 14);
-  ctx.strokeStyle = c.opened ? "#2a323a" : "#7695a5";
+  ctx.strokeStyle = c.sealed ? "#5c2a2a" : c.opened ? "#2a323a" : (c.vault ? "#a884d8" : "#7695a5");
   ctx.lineWidth = 1.5;
   ctx.strokeRect(x - 10, y - 7, 20, 14);
+  if (c.sealed) {
+    // welded shut: a cross-brace
+    ctx.strokeStyle = "#7a3a3a";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x - 8, y - 5); ctx.lineTo(x + 8, y + 5);
+    ctx.moveTo(x - 8, y + 5); ctx.lineTo(x + 8, y - 5);
+    ctx.stroke();
+    return;
+  }
   // status lamp
-  ctx.fillStyle = c.opened ? "#3f4a54" : "#5fe0f0";
+  ctx.fillStyle = c.opened ? "#3f4a54" : (c.vault ? "#c88aff" : "#5fe0f0");
   ctx.fillRect(x - 2.5, y - 2.5, 5, 5);
+}
+/* Fabricator Surge: a dormant press that wakes on interact */
+function drawFabricator(fab, t) {
+  const x = hexX(fab.q, fab.r), y = hexY(fab.q, fab.r);
+  const live = fab.active && !fab.resolved;
+  if (live) {
+    const glow = 0.45 + 0.25 * Math.sin(t * 5);
+    const grad = ctx.createRadialGradient(x, y, 2, x, y, 22);
+    grad.addColorStop(0, `rgba(230,170,70,${glow})`);
+    grad.addColorStop(1, "rgba(230,170,70,0)");
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(x, y, 22, 0, TAU);
+    ctx.fill();
+  }
+  ctx.fillStyle = fab.resolved ? "#2e3740" : live ? "#4a3c22" : "#3a3428";
+  ctx.fillRect(x - 11, y - 11, 22, 22);
+  ctx.strokeStyle = fab.resolved ? "#4a5560" : live ? "#e6aa46" : "#8a7040";
+  ctx.lineWidth = 1.6;
+  ctx.strokeRect(x - 11, y - 11, 22, 22);
+  // ports on each face
+  ctx.fillStyle = fab.resolved ? "#4a5560" : "#e6aa46";
+  for (const [dq, dr] of DIRS) {
+    ctx.fillRect(x + dq * 9 - 1.5, y + dr * 9 - 1.5, 3, 3);
+  }
 }
 /* a dropped part, glinting */
 function drawLootDrop(l, t) {
@@ -3031,6 +3449,40 @@ function refreshHud() {
   } else {
     ex.dataset.arm = "";
   }
+  refreshEventUI();
+}
+
+function refreshEventUI() {
+  const fabBtn = document.getElementById("btn-fabricator");
+  const fab = run.event && run.event.fabricator;
+  const canActivate = fab && !fab.active && !fab.resolved &&
+    hexDist(run.player.q, run.player.r, fab.q, fab.r) <= 1;
+  fabBtn.classList.toggle("hidden", !canActivate || run.over);
+
+  const chip = document.getElementById("event-status");
+  const ev = run.event;
+  if (!ev || run.mode !== "sector" || run.over) { chip.classList.add("hidden"); return; }
+  let text = "";
+  if (ev.type === "surge" && ev.fabricator) {
+    const f = ev.fabricator;
+    if (f.resolved) text = f.claimed ? "SURGE · cache claimed" : "SURGE · sealed, out of range";
+    else if (f.active) text = `SURGE ${f.wave}/${f.totalWaves} · next in ${Math.max(0, f.spawnCountdown)}`;
+    else text = "SURGE · fabricator dormant";
+  } else if (ev.type === "vault" && ev.vault) {
+    const v = ev.vault;
+    if (v.sealed) text = "VAULT · sealed";
+    else if (v.triggered) text = `VAULT LOCKDOWN IN ${v.lockdownIn}`;
+    else text = "VAULT · undetected";
+  } else if (ev.type === "convoy" && ev.convoy) {
+    const c = ev.convoy;
+    if (c.done) text = c.exitedCount > 0 ? "CONVOY · escaped" : "CONVOY · neutralized";
+    else if (!c.spawned) text = `CONVOY · inbound in ${c.entryIn}`;
+    else text = `CONVOY · ${c.haulerIds.filter(id => run.enemies.some(e => e.id === id)).length}/${c.totalHaulers} haulers loose`;
+  } else if (ev.type === "corrupted") {
+    text = "CORRUPTED ZONE ACTIVE";
+  }
+  if (text) { chip.textContent = text; chip.classList.remove("hidden"); }
+  else chip.classList.add("hidden");
 }
 
 function renderLog() {
@@ -3367,8 +3819,9 @@ function openNodePanel(q, r) {
     title.textContent = BIOMES[node.biome].name;
     desc.textContent = `Purged at T${node.clearedTier || "?"} and sealed. Nothing moves in there anymore.`;
   } else {
-    title.textContent = BIOMES[node.biome].name;
+    title.textContent = BIOMES[node.biome].name + (node.event ? ` ${EVENT_GLYPH[node.event]} ${EVENT_NAME[node.event]}` : "");
     desc.textContent = BIOMES[node.biome].desc +
+      (node.event ? " " + EVENT_DESC[node.event] : "") +
       (node.wreck > 0 ? ` Your wreck holds ${node.wreck} cores in there.` : "") +
       " Any Sector Key opens it — the key sets the danger and the reward.";
     // plain keys grouped by tier; modified keys listed individually
@@ -3614,6 +4067,7 @@ document.getElementById("btn-parry").addEventListener("click", () => { actParry(
 document.getElementById("btn-flask").addEventListener("click", () => { actFlask(); refreshHud(); });
 document.getElementById("btn-wait").addEventListener("click", () => { actWait(); refreshHud(); });
 document.getElementById("btn-rest").addEventListener("click", () => { actRest(); });
+document.getElementById("btn-fabricator").addEventListener("click", () => { actActivateFabricator(); refreshHud(); });
 document.getElementById("mute").addEventListener("click", () => {
   muted = !muted;
   const per = persist();
@@ -3781,6 +4235,10 @@ window.RL = {
   hurtEnemy, hurtPlayer, winRun, dieRun,
   saveProfile, loadProfile, syncProfileFromPlayer,
   saveRun, resumeRun, clearRunCheckpoint, loadRunCheckpoint,
+  NODE_EVENTS, EVENT_GLYPH, EVENT_NAME, EVENT_DESC,
+  rollNodeEvent, rollNodeEventForSeed, inCorruptZone, bfsPathBetween,
+  tickEvents, tickFabricator, tickVault, tickConvoy, actActivateFabricator,
+  placeSurge, placeVault, placeConvoy, placeCorruptZone,
   ui,
   setRun(r) { run = r; },
 };
