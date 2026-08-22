@@ -108,6 +108,7 @@ const ENEMY = {
   crusher:  { name: "Crusher",    hp: 9,  dmg: 5, windup: 2, souls: 25, color: "#56505e" },
   ripper:   { name: "Ripper",     hp: 5,  dmg: 4, windup: 1, souls: 16, color: "#8a4fa0" },
   boss:     { name: "the OVERSEER", hp: 34, dmg: 5, windup: 1, souls: 0, color: "#d4c45c" },
+  sentinel: { name: "the SENTINEL", hp: 30, dmg: 5, windup: 2, souls: 150, color: "#e05a7a" },
 };
 const TRAITS = {
   scrapper: "Salvage bot running a broken loop. Closes and swings.",
@@ -117,6 +118,7 @@ const TRAITS = {
   crusher:  "Slow siege chassis. Shockwaves everything adjacent — then its servos lock up.",
   ripper:   "Covers two hexes a turn. Blades sized for your spine.",
   boss:     "Overheats after every third attack. Below half integrity, it calls the fabricators.",
+  sentinel: "Gate guardian. Its field slam covers everything around it EXCEPT its coolant vents — stand IN a gap. Its sweep alternates lanes: the amber lanes fire one turn after the red ones, so dodge into amber, then step back. Overheats after every third attack.",
 };
 const FLOORS = [
   { R: 8, spawn: { scrapper: 4, railer: 1 } },
@@ -385,8 +387,10 @@ const CONSUMABLE_DESC = {
    neighbors. Dying consumes the key and leaves your cores as a wreck in
    the node. Character, gear, currency and map all persist.
    ========================================================================= */
-const TIER_CAP = 4;
+const TIER_CAP = 15;   // absolute ceiling; SENTINEL gates raise the live cap
 const TIER_COLOR = ["#c8d4de", "#6fa8ff", "#ffd45c", "#ff9040"];
+function tierColor(t) { return TIER_COLOR[(t - 1) % 4]; }
+function atlasCap() { return (profile && profile.atlas && profile.atlas.tierCap) || 4; }
 const BIOMES = {
   scrapyard: { name: "Scrapyard", abbr: "SCRP", color: "#e8875a", rock: 0.30,
     desc: "Hull heaps and fast salvage packs.",
@@ -401,7 +405,7 @@ const BIOMES = {
     desc: "Deep storage. Rich caches, live guards.",
     spawn: t => ({ scrapper: 2 + t, railer: 1, bulwark: t >= 3 ? 1 : 0 }) },
 };
-function keyFabCost(tier) { return 30 * tier * tier; }
+function keyFabCost(tier) { return Math.round(30 * Math.pow(tier, 1.7)); }
 
 /* Sector Key modifiers: every danger mod also raises loot quantity.
    Normal keys carry 0 mods, Magic up to 2, Rare up to 4 — crafted with
@@ -477,6 +481,11 @@ function migrateProfile(pr) {
     }
     for (const n of Object.values(pr.atlas.nodes || {})) delete n.tier;
     pr.v = 2;
+  }
+  // v2 -> v3: tier bands gated by SENTINEL bosses
+  if (pr.v < 3) {
+    if (!pr.atlas.tierCap) pr.atlas.tierCap = 4;
+    pr.v = 3;
   }
   return pr;
 }
@@ -746,10 +755,18 @@ function genFloor() {
       const crng = mulberry32((run.seed ^ 0xbeef) >>> 0);
       run.chests.push({ q: 1, r: R - 2, opened: false, contents: { kind: "item", item: genArmoryItem(crng) } });
     }
-    spawnEnemy("boss", 0, -2);
+    spawnEnemy(f.bossType || "boss", 0, -2);
     run.stairs = null;
     run.eliteTotal = 0;
     run.eliteKilled = 0;
+    // a wreck left by a previous attempt on this gate
+    if (run.mode === "sector" && f.wreckSouls > 0) {
+      const tw = run.tiles.get(key(-1, R - 2));
+      if (tw) {
+        tw.rock = false;
+        run.bloodstain = { q: -1, r: R - 2, souls: f.wreckSouls };
+      }
+    }
     updateFov();
     return;
   }
@@ -905,8 +922,9 @@ function spawnEnemy(type, q, r) {
   // keyed sectors scale machines by key tier and key mods (bay respawns too)
   if (run.mode === "sector" && run.floorConf) {
     const f = run.floorConf;
-    e.hp = e.maxHp = Math.round(d.hp * (1 + 0.25 * ((f.tier || 1) - 1)) * (f.hpMult || 1));
-    e.dmg = d.dmg + (f.tier >= 3 ? 1 : 0) + (f.dmgAdd || 0);
+    const t = f.tier || 1;
+    e.hp = e.maxHp = Math.round(d.hp * (1 + 0.25 * (t - 1)) * (f.hpMult || 1));
+    e.dmg = d.dmg + (t >= 3 ? 1 + Math.floor((t - 3) / 3) : 0) + (f.dmgAdd || 0);
   }
   run.enemies.push(e);
   return e;
@@ -1253,7 +1271,8 @@ function hurtEnemy(e, dmg, label) {
   if (e.hp <= 0) {
     const def = ENEMY[e.type];
     let souls = e.elite ? def.souls * 3 : def.souls;
-    souls = Math.round(souls * (1 + (run.player.salvageMult || 0)));
+    souls = Math.round(souls * (1 + (run.player.salvageMult || 0)) *
+      (run.mode === "sector" ? 1 + 0.15 * ((run.floorConf.tier || 1) - 1) : 1));
     run.player.souls += souls;
     run.kills++;
     if (run.player.siphonOnKill && run.player.hp > 0) {
@@ -1288,7 +1307,8 @@ function hurtEnemy(e, dmg, label) {
       addFloat(e.q, e.r, `PRIME DOWN ${run.eliteKilled}/${run.eliteTotal}`, "#f0d060");
       if (run.eliteKilled >= run.eliteTotal) sectorComplete();
     }
-    if (e.type === "boss") winRun();
+    if (e.type === "sentinel") gateCleared();
+    else if (e.type === "boss") winRun();
     else log(def.name + " scrapped.", "");
   }
 }
@@ -1302,6 +1322,7 @@ function hurtPlayer(e, dmg) {
     e.stagger = 2;
     e.state = "idle";
     e.windupHexes = [];
+    e.windupNext = null;
     log("DEFLECTED! " + ENEMY[e.type].name + " overloads.", "good");
     addFloat(e.q, e.r, "overloaded", "#f0c060");
     burst(hexX(p.q, p.r), hexY(p.q, p.r), "#7fe6f4", 14, 100);
@@ -1332,6 +1353,7 @@ function endTurn() {
     const hexes = e.windupHexes;
     e.windupHexes = [];
     if (e.type === "boss") resolveBossStrike(e, hexes, struck);
+    else if (e.type === "sentinel") resolveSentinelStrike(e, hexes, struck);
     else {
       if (struck) hurtPlayer(e, e.dmg);
       // rhythm units recover after striking: rail drones recharge, bulwarks
@@ -1506,7 +1528,114 @@ function aiAct(e, flow) {
       break;
     }
     case "boss": bossAct(e, flow, dist); break;
+    case "sentinel": sentinelAct(e, flow, dist); break;
   }
+}
+
+/* SENTINEL patterns: long windups whose safe spots sit INSIDE the marked
+   pattern. The donut slam leaves coolant-gap pockets you must step into;
+   the alternating sweep fires red lanes first and amber lanes one turn
+   later, so the dodge is INTO amber, then back into the just-fired red. */
+function donutHexes(e) {
+  const pockets = new Set([0, 2, 4].map(i =>
+    key(e.q + DIRS[i][0] * 2, e.r + DIRS[i][1] * 2)));
+  const out = [];
+  for (const t of run.tiles.values()) {
+    if (t.rock) continue;
+    const d = hexDist(t.q, t.r, e.q, e.r);
+    if (d < 1 || d > 3) continue;
+    const k = key(t.q, t.r);
+    if (!pockets.has(k)) out.push(k);
+  }
+  return out;
+}
+function laneHexes(e, dirs) {
+  const out = [];
+  for (const d of dirs) {
+    let q = e.q, r = e.r;
+    for (let i = 0; i < 4; i++) {
+      q += DIRS[d][0]; r += DIRS[d][1];
+      const t = run.tiles.get(key(q, r));
+      if (!t || t.rock) break;
+      out.push(key(q, r));
+    }
+  }
+  return out;
+}
+function sentinelAct(e, flow, dist) {
+  const p = run.player;
+  if (e.bossCount >= 3) {
+    e.bossCount = 0;
+    e.stagger = 2;
+    log("The SENTINEL's core overheats.", "good");
+    addFloat(e.q, e.r, "overheated", "#f0c060");
+    return;
+  }
+  const cyc = e.atkCycle || 0;
+  if (cyc % 3 === 0) {
+    if (dist > 3) { stepEnemyToward(e, flow); return; }
+    e.state = "windup";
+    e.windupTimer = 2;
+    e.windupKind = "donut";
+    e.windupHexes = donutHexes(e);
+    e.atkCycle = cyc + 1;
+    e.bossCount++;
+    log("The SENTINEL charges a field slam — its coolant gaps stay cold.", "warn");
+  } else if (cyc % 3 === 1) {
+    if (dist > 4) { stepEnemyToward(e, flow); return; }
+    e.state = "windup";
+    e.windupTimer = 1;
+    e.windupKind = "sweep1";
+    e.windupHexes = laneHexes(e, [0, 2, 4]);
+    e.windupNext = laneHexes(e, [1, 3, 5]);
+    e.atkCycle = cyc + 1;
+    e.bossCount++;
+    log("Alternating sweep: red lanes fire first, amber lanes follow.", "warn");
+  } else {
+    const d = axisDir(e.q, e.r, p.q, p.r);
+    if (d >= 0 && dist <= 5 && losClear(e.q, e.r, p.q, p.r)) {
+      e.dir = d;
+      const hexes = [];
+      let q = e.q, r = e.r;
+      for (let i = 0; i < 5; i++) {
+        q += DIRS[d][0]; r += DIRS[d][1];
+        const t = run.tiles.get(key(q, r));
+        if (!t || t.rock) break;
+        hexes.push(key(q, r));
+      }
+      e.state = "windup";
+      e.windupTimer = 1;
+      e.windupKind = "charge";
+      e.windupHexes = hexes;
+      e.atkCycle = cyc + 1;
+      e.bossCount++;
+    } else stepEnemyToward(e, flow);
+  }
+}
+function resolveSentinelStrike(e, hexes, struck) {
+  const p = run.player;
+  if (e.windupKind === "sweep1") {
+    if (struck) hurtPlayer(e, e.dmg);
+    // the amber half spins up the moment the red half fires
+    e.state = "windup";
+    e.windupTimer = 1;
+    e.windupKind = "sweep2";
+    e.windupHexes = e.windupNext && e.windupNext.length ? e.windupNext : laneHexes(e, [1, 3, 5]);
+    e.windupNext = null;
+    return;
+  }
+  if (e.windupKind === "charge") {
+    let landing = null;
+    for (const k of hexes) {
+      const [q, r] = unkey(k);
+      if (!occupied(q, r)) landing = [q, r];
+      if (q === p.q && r === p.r) break;
+    }
+    if (struck) hurtPlayer(e, e.dmg - 1);
+    if (landing) { e.q = landing[0]; e.r = landing[1]; }
+    return;
+  }
+  if (struck) hurtPlayer(e, e.dmg + (e.windupKind === "donut" ? 1 : 0));
 }
 
 /* boss: scripted, learnable cycle. After every 3rd attack he rests. */
@@ -1649,8 +1778,8 @@ function winRun() {
   if (run.mode === "campaign") {
     const first = !profile || !profile.atlas.unlocked;
     if (!profile) {
-      profile = { v: 1, character: snapshotCharacter(p),
-        atlas: { seed: (Math.random() * 1e9) | 0, unlocked: false, nodes: {}, keys: [] } };
+      profile = { v: 3, character: snapshotCharacter(p),
+        atlas: { seed: (Math.random() * 1e9) | 0, unlocked: false, nodes: {}, keys: [], tierCap: 4 } };
     } else {
       profile.character = snapshotCharacter(p);
     }
@@ -1738,37 +1867,55 @@ function enterOverworld() {
 function enterNode(q, r, keyId) {
   const nk = key(q, r);
   const node = profile.atlas.nodes[nk];
-  if (!node || node.state !== "frontier") return false;
+  if (!node || (node.state !== "frontier" && node.state !== "gate")) return false;
+  const isGate = node.state === "gate";
   const ki = profile.atlas.keys.findIndex(kk => kk.id === keyId);
   if (ki < 0) return false;
+  if (isGate && profile.atlas.keys[ki].tier !== node.band) {
+    log(`The gate only accepts a T${node.band} key.`, "warn");
+    return false;
+  }
   const skey = profile.atlas.keys.splice(ki, 1)[0];
   const tier = skey.tier;   // the key alone sets the sector's tier
-  const biome = BIOMES[node.biome];
   // aggregate the key's sector modifiers
   const mod = { spawnMult: 1, hpMult: 1, dmgAdd: 0, extraElites: 0,
     fovPenalty: 0, flaskPenalty: 0, volatile: false };
   for (const a of skey.affixes) KEY_MOD_BY[a.mod].apply(mod);
   const quant = keyQuant(skey);
-  const spawn = {};
-  for (const [type, n] of Object.entries(biome.spawn(tier))) spawn[type] = Math.round(n * mod.spawnMult);
   run.mode = "sector";
   run.sectorNode = nk;
   run.seed = (profile.atlas.seed ^ (q * 73856093) ^ (r * 19349663) ^ (tier * 2654435761)) >>> 0;
   run.floor = tier + 1;   // drives loot depth (affix tiers, rarity weights)
   run.over = false; run.won = false; run.turn = 0; run.kills = 0;
-  run.floorConf = {
-    R: 8 + (tier >= 3 ? 1 : 0),
-    spawn,
-    rock: biome.rock,
-    chests: (biome.chests || 1) + (tier >= 3 ? 1 : 0) + Math.floor(quant / 0.25),
-    terminal: mulberry32((run.seed ^ 0x7777) >>> 0)() < 0.4,
-    eliteCount: 1 + (tier >= 3 ? 1 : 0) + mod.extraElites,
-    tier, biomeName: biome.name,
-    hpMult: mod.hpMult, dmgAdd: mod.dmgAdd,
-    fovPenalty: mod.fovPenalty, flaskPenalty: mod.flaskPenalty,
-    volatile: mod.volatile, lootBonus: quant,
-    wreckSouls: node.wreck || 0,
-  };
+  if (isGate) {
+    // gate arena: open ground, a few pillars, one SENTINEL
+    run.floorConf = {
+      R: 9, boss: true, bossType: "sentinel", spawn: {},
+      eliteCount: 0, terminal: false,
+      tier, biomeName: "Sector Gate",
+      hpMult: mod.hpMult, dmgAdd: mod.dmgAdd,
+      fovPenalty: mod.fovPenalty, flaskPenalty: mod.flaskPenalty,
+      volatile: mod.volatile, lootBonus: quant,
+      wreckSouls: node.wreck || 0,
+    };
+  } else {
+    const biome = BIOMES[node.biome];
+    const spawn = {};
+    for (const [type, n] of Object.entries(biome.spawn(tier))) spawn[type] = Math.round(n * mod.spawnMult);
+    run.floorConf = {
+      R: 8 + (tier >= 3 ? 1 : 0),
+      spawn,
+      rock: biome.rock,
+      chests: (biome.chests || 1) + (tier >= 3 ? 1 : 0) + Math.floor(quant / 0.25),
+      terminal: mulberry32((run.seed ^ 0x7777) >>> 0)() < 0.4,
+      eliteCount: 1 + (tier >= 3 ? 1 : 0) + mod.extraElites,
+      tier, biomeName: biome.name,
+      hpMult: mod.hpMult, dmgAdd: mod.dmgAdd,
+      fovPenalty: mod.fovPenalty, flaskPenalty: mod.flaskPenalty,
+      volatile: mod.volatile, lootBonus: quant,
+      wreckSouls: node.wreck || 0,
+    };
+  }
   genFloor();
   ui.screen = "game";
   ui.rollMode = false; ui.throwDart = false; ui.walking = null;
@@ -1779,7 +1926,11 @@ function enterNode(q, r, keyId) {
   cam.y = hexY(run.player.q, run.player.r);
   invalidateFloorCaches();
   const modNames = skey.affixes.map(a => KEY_MOD_BY[a.mod].name).join(", ");
-  log(`T${tier} ${biome.name}${modNames ? " [" + modNames + "]" : ""}. Purge ${run.eliteTotal} Prime unit${run.eliteTotal === 1 ? "" : "s"}.`, "sys");
+  if (isGate) {
+    log(`SECTOR GATE [T${tier}]${modNames ? " [" + modNames + "]" : ""}. The SENTINEL wakes.`, "sys");
+  } else {
+    log(`T${tier} ${run.floorConf.biomeName}${modNames ? " [" + modNames + "]" : ""}. Purge ${run.eliteTotal} Prime unit${run.eliteTotal === 1 ? "" : "s"}.`, "sys");
+  }
   syncProfileFromPlayer();
   saveProfile();   // the key is spent the moment you jack in
   refreshHud();
@@ -1797,15 +1948,58 @@ function sectorComplete() {
   const t = run.floorConf.tier;
   const drops = 1 + (craftRng() < 0.3 * run.eliteTotal + (run.floorConf.lootBonus || 0) ? 1 : 0);
   for (let i = 0; i < drops; i++) {
-    const kt = clamp(t + (craftRng() < 0.35 ? 1 : 0), 1, TIER_CAP);
+    const kt = clamp(t + (craftRng() < 0.35 ? 1 : 0), 1, atlasCap());
     const drop = makeKey(kt);
     if (kt >= 2 && craftRng() < 0.2) { drop.rarity = "magic"; addKeyMod(craftRng, drop); }
     profile.atlas.keys.push(drop);
     log(`${keyDisplayName(drop)} recovered.`, "good");
   }
+  // purging at the current cap wakes a SENTINEL gate somewhere past the frontier
+  if (t >= atlasCap() && atlasCap() < TIER_CAP &&
+      !Object.values(profile.atlas.nodes).some(n => n.state === "gate")) {
+    spawnGateNode(run.sectorNode);
+  }
   log("SECTOR PURGED — extraction enabled.", "sys");
   addFloat(run.player.q, run.player.r, "SECTOR PURGED", "#5fe0aa");
   sfx("stairs");
+  syncProfileFromPlayer();
+  saveProfile();
+  refreshHud();
+}
+function spawnGateNode(nearKey) {
+  const [q0, r0] = unkey(nearKey);
+  const seen = new Set([nearKey]);
+  const queue = [[q0, r0]];
+  while (queue.length) {
+    const [q, r] = queue.shift();
+    for (const [dq, dr] of DIRS) {
+      const nk = key(q + dq, r + dr);
+      if (seen.has(nk)) continue;
+      seen.add(nk);
+      if (!profile.atlas.nodes[nk]) {
+        profile.atlas.nodes[nk] = { state: "gate", band: atlasCap(), wreck: 0 };
+        log(`A SENTINEL gate surfaces on the frontier — arm it with a T${atlasCap()} key.`, "sys");
+        return;
+      }
+      queue.push([q + dq, r + dr]);
+    }
+  }
+}
+function gateCleared() {
+  const node = profile.atlas.nodes[run.sectorNode];
+  if (!node || node.state === "cleared") return;
+  node.state = "cleared";
+  node.clearedTier = run.floorConf.tier;
+  const [q, r] = unkey(run.sectorNode);
+  for (const [dq, dr] of DIRS) revealNode(q + dq, r + dr);
+  const oldCap = profile.atlas.tierCap;
+  profile.atlas.tierCap = Math.min(TIER_CAP, oldCap + 4);
+  for (let i = 0; i < 2; i++)
+    profile.atlas.keys.push(makeKey(Math.min(oldCap + 1, profile.atlas.tierCap)));
+  grantOrbs(craftRng, 3 + (craftRng() < (run.floorConf.lootBonus || 0) ? 1 : 0), run.floor);
+  log(`THE GATE FALLS. Sector Keys up to T${profile.atlas.tierCap} now drop. Extraction enabled.`, "sys");
+  addFloat(run.player.q, run.player.r, "GATE FALLS", "#5fe0aa");
+  sfx("win");
   syncProfileFromPlayer();
   saveProfile();
   refreshHud();
@@ -1833,7 +2027,7 @@ function extractToOverworld() {
 function fabricateKey(tier) {
   const p = run.player;
   const cost = keyFabCost(tier);
-  if (tier < 1 || tier > TIER_CAP || p.souls < cost) return false;
+  if (tier < 1 || tier > atlasCap() || p.souls < cost) return false;
   p.souls -= cost;
   profile.atlas.keys.push(makeKey(tier));
   log(`The Bay fabricates a T${tier} Sector Key (${cost} cores).`, "good");
@@ -2124,6 +2318,19 @@ function render(now) {
   if (run.bloodstain && visible.has(key(run.bloodstain.q, run.bloodstain.r)))
     drawStain(run.bloodstain, t);
 
+  /* next-wave telegraphs (amber): fire one turn after the red wave */
+  for (const e of run.enemies) {
+    if (!e.windupNext) continue;
+    for (const k of e.windupNext) {
+      if (!visible.has(k)) continue;
+      const [q, r] = unkey(k);
+      hexPath(ctx, hexX(q, r), hexY(q, r), 0.88);
+      ctx.strokeStyle = "rgba(230,170,70,0.6)";
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+    }
+  }
+
   /* telegraphs */
   const pulse = 0.5 + 0.3 * Math.sin(t * 6);
   for (const e of run.enemies) {
@@ -2269,6 +2476,25 @@ function renderOverworld(t) {
       ctx.fillStyle = "#7fe6f4";
       ctx.font = "bold 9px monospace";
       ctx.fillText("BAY", x, y + 3);
+    } else if (n.state === "gate") {
+      ctx.fillStyle = "#2a1218";
+      ctx.fill();
+      hexPath(ctx, x, y, 0.92);
+      ctx.globalAlpha = pulse;
+      ctx.strokeStyle = "#ff5a5a";
+      ctx.lineWidth = 2.4;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = "#ff8a8a";
+      ctx.font = "bold 9px monospace";
+      ctx.fillText("GATE", x, y);
+      ctx.font = "8px monospace";
+      ctx.fillText("T" + n.band, x, y + 10);
+      if (n.wreck > 0) {
+        ctx.fillStyle = "#7fe0f4";
+        ctx.font = "8px monospace";
+        ctx.fillText("✕ " + n.wreck, x, y + 19);
+      }
     } else if (n.state === "cleared") {
       ctx.fillStyle = "#0e1a15";
       ctx.fill();
@@ -2363,7 +2589,7 @@ function drawEnemy(e, t, dt) {
   const pos = entityPos(e);
   const def = ENEMY[e.type];
   e.flash = Math.max(0, (e.flash || 0) - dt);
-  const big = e.type === "boss" ? 1.0 : e.type === "crusher" ? 0.78 : 0.55;
+  const big = e.type === "boss" ? 1.0 : e.type === "sentinel" ? 0.95 : e.type === "crusher" ? 0.78 : 0.55;
   ctx.save();
   ctx.translate(pos.x, pos.y);
   // facing wedge
@@ -2408,6 +2634,11 @@ function drawEnemy(e, t, dt) {
     ctx.font = "bold 15px sans-serif";
     ctx.textAlign = "center";
     ctx.fillText("◈", pos.x, pos.y - HEX * 0.9);
+  } else if (e.type === "sentinel") {
+    ctx.fillStyle = "#ff8aa0";
+    ctx.font = "bold 15px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("⬢", pos.x, pos.y - HEX * 0.9);
   }
   // state markers
   if (e.state === "windup") {
@@ -2924,15 +3155,36 @@ function openNodePanel(q, r) {
   box.innerHTML = "";
   if (node.state === "hub") {
     title.textContent = "The Bay";
-    desc.textContent = `Home dock. Cores buy fresh Sector Keys. You hold ${run.player.souls} cores.`;
-    for (let t = 1; t <= TIER_CAP; t++) {
+    desc.textContent = `Home dock. Cores buy fresh Sector Keys up to T${atlasCap()}. You hold ${run.player.souls} cores.`;
+    for (let t = 1; t <= atlasCap(); t++) {
       const cost = keyFabCost(t);
       const b = document.createElement("button");
       b.className = "shop-item";
       b.disabled = run.player.souls < cost;
-      b.innerHTML = `<b style="color:${TIER_COLOR[t - 1]}">Fabricate T${t} Sector Key</b><em>${cost} cores</em>`;
+      b.innerHTML = `<b style="color:${tierColor(t)}">Fabricate T${t} Sector Key</b><em>${cost} cores</em>`;
       b.addEventListener("click", () => { if (fabricateKey(t)) { openNodePanel(q, r); refreshHud(); } });
       box.appendChild(b);
+    }
+  } else if (node.state === "gate") {
+    title.textContent = `SECTOR GATE — the SENTINEL`;
+    desc.textContent = `A gate guardian seals the deeper Foundry.` +
+      (node.wreck > 0 ? ` Your wreck holds ${node.wreck} cores in its arena.` : "") +
+      ` Arm it with a T${node.band} key — victory unlocks Sector Keys to T${Math.min(TIER_CAP, node.band + 4)}.`;
+    const fits = profile.atlas.keys.filter(kk => kk.tier === node.band);
+    for (const kk of fits) {
+      const mods = kk.affixes.map(a => KEY_MOD_BY[a.mod].desc).join(" · ");
+      const b = document.createElement("button");
+      b.className = "shop-item";
+      b.innerHTML = `<b style="color:${RARITY[kk.rarity].color}">Arm with ${keyDisplayName(kk)}</b>` +
+        `<span>${mods || "no modifiers"}</span><em>+${Math.round(keyQuant(kk) * 100)}% loot</em>`;
+      b.addEventListener("click", () => enterNode(q, r, kk.id));
+      box.appendChild(b);
+    }
+    if (!fits.length) {
+      const none = document.createElement("p");
+      none.className = "stats";
+      none.textContent = `No T${node.band} key. Purge T${node.band} sectors or fabricate one at the Bay.`;
+      box.appendChild(none);
     }
   } else if (node.state === "cleared") {
     title.textContent = BIOMES[node.biome].name;
@@ -2954,7 +3206,7 @@ function openNodePanel(q, r) {
       offered++;
       const b = document.createElement("button");
       b.className = "shop-item";
-      b.innerHTML = `<b style="color:${TIER_COLOR[t - 1]}">Socket T${t} Sector Key</b>` +
+      b.innerHTML = `<b style="color:${tierColor(t)}">Socket T${t} Sector Key</b>` +
         `<span>runs this sector at T${t}</span><em>×${normals[t].length}</em>`;
       b.addEventListener("click", () => enterNode(q, r, normals[t][0].id));
       box.appendChild(b);
@@ -3321,6 +3573,7 @@ window.RL = {
   enterOverworld, enterNode, extractToOverworld, fabricateKey,
   sectorComplete, revealNode, keyFabCost, BIOMES, TIER_CAP,
   makeKey, addKeyMod, keyQuant, keyDisplayName, canApplyOrbKey, applyOrbToKey, KEY_MODS,
+  donutHexes, laneHexes, gateCleared, spawnGateNode, atlasCap, tierColor,
   hurtEnemy, hurtPlayer, winRun, dieRun,
   saveProfile, loadProfile, syncProfileFromPlayer,
   ui,

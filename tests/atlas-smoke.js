@@ -130,6 +130,61 @@ function check(name, cond) {
     RL.enterNode(q2, r2q, kw.id);
     out.wreckPlaced = !!RL.run.bloodstain && RL.run.bloodstain.souls === 77;
     RL.extractToOverworld();
+
+    // purging a cap-tier sector surfaces a SENTINEL gate node
+    RL.run.player.souls = 99999;
+    RL.fabricateKey(4);
+    const k4 = RL.profile.atlas.keys.find(k => k.tier === 4 && k.rarity === "normal");
+    const [q3, r3] = frontierKeys()[0].split(",").map(Number);
+    RL.enterNode(q3, r3, k4.id);
+    for (const e of [...RL.run.enemies]) if (e.elite) RL.hurtEnemy(e, 99999);
+    RL.extractToOverworld();
+    const gateK = Object.keys(RL.profile.atlas.nodes).find(k => RL.profile.atlas.nodes[k].state === "gate");
+    out.gateSpawned = !!gateK && RL.profile.atlas.nodes[gateK].band === 4;
+
+    // the gate only accepts a full band-tier key
+    const [gq, gr] = gateK.split(",").map(Number);
+    RL.run.player.souls = 99999;
+    RL.fabricateKey(1);
+    const kLow = RL.profile.atlas.keys.find(k => k.tier === 1 && k.rarity === "normal");
+    out.gateRejectsLowKey = !RL.enterNode(gq, gr, kLow.id);
+    RL.fabricateKey(4);
+    const k4b = RL.profile.atlas.keys.find(k => k.tier === 4 && k.rarity === "normal");
+    out.gateEntered = RL.enterNode(gq, gr, k4b.id);
+    const boss = RL.run.enemies.find(e => e.type === "sentinel");
+    out.gateArena = !!boss && RL.run.floorConf.boss === true && RL.run.enemies.length === 1 &&
+      RL.run.stairs === null;
+
+    // donut slam: safe pockets sit INSIDE the marked pattern
+    const donut = RL.donutHexes(boss);
+    const D = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
+    const pockets = [0, 2, 4].map(i => (boss.q + D[i][0] * 2) + "," + (boss.r + D[i][1] * 2));
+    out.donutPockets = pockets.every(k => !donut.includes(k)) && donut.length > 12;
+
+    // alternating sweep: red lanes resolve, amber lanes arm immediately
+    boss.awake = true;
+    boss.state = "windup"; boss.windupTimer = 1; boss.windupKind = "sweep1";
+    boss.windupHexes = RL.laneHexes(boss, [0, 2, 4]);
+    boss.windupNext = RL.laneHexes(boss, [1, 3, 5]);
+    for (const t of RL.run.tiles.values()) {
+      if (!t.rock && RL.hexDist(t.q, t.r, boss.q, boss.r) >= 6) {
+        RL.run.player.q = t.q; RL.run.player.r = t.r;
+        break;
+      }
+    }
+    RL.endTurn();
+    out.sweepChains = boss.state === "windup" && boss.windupKind === "sweep2" &&
+      boss.windupHexes.length > 0 && !boss.windupNext;
+
+    // killing the SENTINEL raises the tier cap and grants band keys
+    RL.hurtEnemy(boss, 999999);
+    out.gateFalls = RL.profile.atlas.tierCap === 8 &&
+      RL.profile.atlas.nodes[gateK].state === "cleared";
+    out.bandKeys = RL.profile.atlas.keys.filter(k => k.tier === 5).length >= 2;
+    RL.run.player.souls = 99999;
+    out.fabInNewBand = RL.fabricateKey(7);
+    out.fabAboveCapFails = !RL.fabricateKey(9);
+    RL.extractToOverworld();
     RL.saveProfile();
     return out;
   });
@@ -143,7 +198,8 @@ function check(name, cond) {
     const out = {};
     out.profileRestored = RL.profile && RL.profile.atlas.unlocked;
     out.mapRestored = Object.values(RL.profile.atlas.nodes)
-      .filter(n => n.state === "cleared").length === 1;
+      .filter(n => n.state === "cleared").length === 3; // T1 sector + T4 sector + gate
+    out.tierCapRestored = RL.profile.atlas.tierCap === 8;
     out.moddedKeysRestored = RL.profile.atlas.keys
       .some(k => k.rarity !== "normal" && k.affixes.length > 0);
     out.menuButton = document.getElementById("begin-btn").textContent === "Enter the Foundry";
