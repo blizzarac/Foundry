@@ -33,22 +33,23 @@ Progress saves in your browser; clearing a level unlocks the next. Every level i
 6. Feeling ahead? **Call the wave early** for bonus copper. Between waves, everything slowly self-repairs.
 7. Wave 15 comes from **every front at once**. You get warned, and extra time to redeploy. Win it and endless mode awaits.
 
+Tools are **one-shot**: after a gesture that places something (a tap, or one drag-stroke painting a line), the tool releases itself, so the very next drag pans the map again — no forgotten-tool misplacements. A whiffed tap (rock, occupied, can't afford) keeps the tool armed for a retry. Hold `Shift` on desktop to keep the tool for repeat placement.
+
 | Desktop | Action |
 |---|---|
-| Left-click / drag | build (paint) — with no tool selected, drag pans |
+| Left-click / drag | build (paint), then the tool auto-releases — with no tool, drag pans |
 | Right-click / drag, or `X` tool | demolish (60% refund) |
-| `1`–`5` | select block |
+| `1`–`5` | select block · `Shift` keeps the tool after placing |
 | Mouse wheel | zoom |
 | Middle-drag / Space-drag / `WASD` | pan |
 | `P` | pause · `Esc` deselect |
 
 | Touch | Action |
 |---|---|
-| Tap / drag with a tool selected | build (paint a line) |
+| Tap / drag with a tool selected | build (paint a line), then the tool auto-releases |
 | Drag with no tool selected | pan |
 | Two-finger pinch | zoom + pan |
 | Demolish tool, then tap/drag | remove buildings (60% refund) |
-| Tap the selected tool again | deselect |
 
 ## Under the hood
 

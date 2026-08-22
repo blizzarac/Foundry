@@ -1256,6 +1256,7 @@ function drawBuilding(c, b, time) {
 const ui = {
   tool: null, hover: null,
   lastPaint: null,
+  placed: 0,      // buildings placed/removed during the current gesture
   keys: {},
 };
 
@@ -1435,11 +1436,13 @@ canvas.addEventListener("pointerdown", ev => {
     pmode = "pan";
   } else if (ev.button === 2 || ui.tool === "demolish") {
     pmode = "erase";
-    tryDemolish(game, h.q, h.r);
+    ui.placed = 0;
+    if (tryDemolish(game, h.q, h.r)) ui.placed++;
   } else if (ui.tool) {
     pmode = "paint";
     ui.lastPaint = h;
-    tryBuild(game, h.q, h.r);
+    ui.placed = 0;
+    if (tryBuild(game, h.q, h.r)) ui.placed++;
   } else {
     pmode = "pan";
   }
@@ -1473,17 +1476,27 @@ canvas.addEventListener("pointermove", ev => {
   if (pmode === "paint" && ui.tool && ui.tool !== "demolish") {
     if (!ui.lastPaint || ui.lastPaint.q !== h.q || ui.lastPaint.r !== h.r) {
       ui.lastPaint = h;
-      tryBuild(game, h.q, h.r);
+      if (tryBuild(game, h.q, h.r)) ui.placed++;
     }
   } else if (pmode === "erase") {
-    tryDemolish(game, h.q, h.r);
+    if (tryDemolish(game, h.q, h.r)) ui.placed++;
   }
 });
 
 function endPointer(ev) {
   pointers.delete(ev.pointerId);
   if (pointers.size < 2) pinch = null;
-  if (pointers.size === 0) { pmode = null; ui.lastPaint = null; }
+  if (pointers.size === 0) {
+    // one-shot tools: a gesture that placed something releases the tool,
+    // so the next drag pans again. A whiffed tap keeps it armed for a
+    // retry; Shift holds it for repeat placement on desktop.
+    if ((pmode === "paint" || pmode === "erase") && ui.placed > 0 && !ui.keys.Shift) {
+      selectTool(null);
+    }
+    ui.placed = 0;
+    pmode = null;
+    ui.lastPaint = null;
+  }
   if (ev.pointerType === "touch") ui.hover = null; // no lingering ghost after a tap
 }
 canvas.addEventListener("pointerup", endPointer);
