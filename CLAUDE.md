@@ -13,5 +13,11 @@
 - Acceptance suites: `npm install playwright-core && node tests/item-smoke.js`
   (items), `node tests/atlas-smoke.js` (Foundry overworld/endgame),
   `node tests/checkpoint-smoke.js` (mid-run save/resume across reloads),
-  and `node tests/events-smoke.js` (Foundry Anomalies node events).
+  `node tests/events-smoke.js` (Foundry Anomalies node events), and
+  `node tests/debug-export-smoke.js` (debug state export/import round-trip).
   Set `CHROMIUM_PATH` if Playwright can't find a browser.
+- Ask a player for a debug export (🐞 icon in-game, or "Export debug state"
+  on the menu/death screen) to reproduce a reported bug exactly: import it
+  via `RL.importDebugState(jsonText)` + `location.reload()` in a fresh
+  session, or just read the JSON directly — `profile`/`runCheckpoint` mirror
+  the shapes documented in rl.js's persistence section.

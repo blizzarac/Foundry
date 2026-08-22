@@ -588,6 +588,67 @@ function resumeRun() {
   log("Checkpoint restored.", "sys");
   return true;
 }
+
+/* ---------------------------------------------------------- debug export */
+// Everything needed to reproduce a bug report: campaign meta, the Foundry
+// profile, and a fresh mid-run checkpoint if one applies. Pure data in,
+// pure data out — no DOM — so it's directly testable.
+const GAME_VERSION = "2026-08-22-anomalies";
+function buildDebugBundle() {
+  if (run && !run.over && run.mode !== "overworld" && ui.screen === "game") saveRun();
+  if (profile) saveProfile();
+  return {
+    exportVersion: 1,
+    game: "ironhex",
+    gameVersion: GAME_VERSION,
+    exportedAt: new Date().toISOString(),
+    campaignMeta: persist(),
+    profile: JSON.parse(localStorage.getItem(PROFILE_KEY) || "null"),
+    runCheckpoint: JSON.parse(localStorage.getItem(RUN_KEY) || "null"),
+    context: {
+      screen: ui.screen,
+      mode: run ? run.mode : null,
+      turn: run ? run.turn : null,
+      over: run ? run.over : null,
+      userAgent: (typeof navigator !== "undefined" && navigator.userAgent) || null,
+      href: (typeof location !== "undefined" && location.href) || null,
+    },
+  };
+}
+function downloadJSON(obj, filename) {
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function exportDebugState() {
+  const bundle = buildDebugBundle();
+  const stamp = bundle.exportedAt.replace(/[:.]/g, "-");
+  downloadJSON(bundle, `ironhex-debug-${stamp}.json`);
+  return bundle;
+}
+// writes an exported bundle back to localStorage; caller reloads the page
+// afterward so the normal boot path (migration, Resume-run detection) does
+// the actual restoring — no separate, less-tested in-memory restore path
+function importDebugState(jsonText) {
+  let bundle;
+  try { bundle = JSON.parse(jsonText); } catch (e) { return { ok: false, reason: "That file isn't valid JSON." }; }
+  if (!bundle || bundle.game !== "ironhex") return { ok: false, reason: "Not an Ironhex debug export." };
+  try {
+    if (bundle.campaignMeta) savePersist(bundle.campaignMeta);
+    else localStorage.removeItem("ironhex");
+    if (bundle.profile) localStorage.setItem(PROFILE_KEY, JSON.stringify(bundle.profile));
+    else localStorage.removeItem(PROFILE_KEY);
+    if (bundle.runCheckpoint) localStorage.setItem(RUN_KEY, JSON.stringify(bundle.runCheckpoint));
+    else localStorage.removeItem(RUN_KEY);
+  } catch (e) { return { ok: false, reason: "Couldn't write to local storage (private browsing?)." }; }
+  return { ok: true };
+}
 function bumpItemSeqFromProfile() {
   if (!profile) return;
   const scan = it => {
@@ -4198,6 +4259,28 @@ document.getElementById("reset-profile").addEventListener("click", ev => {
   profile = null;
   showMenu();
 });
+
+/* ------- debug export / import: for sending and reproducing bug reports ------- */
+document.getElementById("btn-debug-export").addEventListener("click", () => exportDebugState());
+document.getElementById("export-debug").addEventListener("click", ev => { ev.preventDefault(); exportDebugState(); });
+document.getElementById("death-export-debug").addEventListener("click", ev => { ev.preventDefault(); exportDebugState(); });
+document.getElementById("import-debug").addEventListener("click", ev => {
+  ev.preventDefault();
+  document.getElementById("import-debug-file").click();
+});
+document.getElementById("import-debug-file").addEventListener("change", ev => {
+  const file = ev.target.files[0];
+  ev.target.value = "";
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const res = importDebugState(String(reader.result));
+    if (!res.ok) { alert("Import failed: " + res.reason); return; }
+    location.reload();
+  };
+  reader.onerror = () => alert("Couldn't read that file.");
+  reader.readAsText(file);
+});
 window.addEventListener("beforeunload", () => {
   syncProfileFromPlayer();
   saveProfile();
@@ -4240,5 +4323,6 @@ window.RL = {
   tickEvents, tickFabricator, tickVault, tickConvoy, actActivateFabricator,
   placeSurge, placeVault, placeConvoy, placeCorruptZone,
   ui,
+  buildDebugBundle, exportDebugState, importDebugState, downloadJSON, GAME_VERSION,
   setRun(r) { run = r; },
 };

@@ -1,0 +1,159 @@
+/* Debug export/import acceptance suite: the bundle a player would send us
+   to reproduce a bug, and the round-trip that restores it in a fresh
+   browser session.
+
+   Usage:  npm install playwright-core && node tests/debug-export-smoke.js
+   Set CHROMIUM_PATH if Playwright can't find a browser on its own. */
+const path = require("path");
+const { chromium } = require("playwright-core");
+
+let fails = 0;
+function check(name, cond) {
+  console.log((cond ? "PASS" : "FAIL") + "  " + name);
+  if (!cond) fails++;
+}
+
+(async () => {
+  const browser = await chromium.launch(
+    process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
+  const page = await browser.newPage();
+  const errors = [];
+  page.on("pageerror", e => errors.push(String(e)));
+  page.on("dialog", d => d.dismiss());   // import failures alert(); never let one hang the run
+  const url = "file://" + path.resolve(__dirname, "..", "index.html");
+  await page.goto(url);
+  await page.waitForTimeout(400);
+
+  // ============================ prologue export ============================
+  const r1 = await page.evaluate(() => {
+    const RL = window.RL;
+    const out = {};
+    RL.startRun(2468);
+    RL.actWait(); RL.actWait(); RL.actWait();
+    const bundle = RL.buildDebugBundle();
+    out.hasShape = bundle.exportVersion === 1 && bundle.game === "ironhex" &&
+      typeof bundle.gameVersion === "string" && typeof bundle.exportedAt === "string";
+    out.campaignMetaPresent = !!bundle.campaignMeta && typeof bundle.campaignMeta === "object";
+    out.profileNullPrePrologue = bundle.profile === null;   // Foundry not unlocked yet
+    out.runCheckpointMatches = !!bundle.runCheckpoint &&
+      bundle.runCheckpoint.run.turn === RL.run.turn &&
+      bundle.runCheckpoint.run.seed === RL.run.seed &&
+      bundle.runCheckpoint.run.player.hp === RL.run.player.hp;
+    out.contextMatches = bundle.context.mode === "campaign" && bundle.context.screen === "game" &&
+      bundle.context.turn === RL.run.turn;
+    out.jsonSafe = (() => { try { JSON.stringify(bundle); return true; } catch (e) { return false; } })();
+    return { bundle, out };
+  });
+  for (const [k, v] of Object.entries(r1.out)) check(k, !!v);
+
+  // round-trip: import that exact bundle into a *fresh* page and confirm
+  // the resumed prologue run matches turn-for-turn
+  await page.reload();
+  await page.waitForTimeout(300);
+  const r2 = await page.evaluate(bundle => {
+    const RL = window.RL;
+    const out = {};
+    const res = RL.importDebugState(JSON.stringify(bundle));
+    out.importOk = res.ok === true;
+    return out;
+  }, r1.bundle);
+  for (const [k, v] of Object.entries(r2)) check(k, !!v);
+  await page.reload();
+  await page.waitForTimeout(400);
+  const r3 = await page.evaluate(bundle => {
+    const RL = window.RL;
+    const out = {};
+    out.menuOffersResume = document.getElementById("begin-btn").textContent === "Resume run";
+    out.resumed = RL.resumeRun();
+    out.turnMatches = RL.run.turn === bundle.runCheckpoint.run.turn;
+    out.seedMatches = RL.run.seed === bundle.runCheckpoint.run.seed;
+    out.hpMatches = RL.run.player.hp === bundle.runCheckpoint.run.player.hp;
+    out.modeMatches = RL.run.mode === "campaign";
+    return out;
+  }, r1.bundle);
+  for (const [k, v] of Object.entries(r3)) check(k, !!v);
+
+  // ============================ endgame export ============================
+  const r4 = await page.evaluate(() => {
+    const RL = window.RL;
+    const out = {};
+    RL.startRun(13579);
+    RL.winRun();
+    const per = JSON.parse(localStorage.getItem("ironhex") || "{}");
+    per.deaths = 3;   // distinguishable value to check round-trip fidelity
+    localStorage.setItem("ironhex", JSON.stringify(per));
+    RL.enterOverworld();
+    RL.profile.atlas.seed = 99001;
+    RL.run.player.souls = 777;
+    RL.fabricateKey(1);
+
+    const bundle = RL.buildDebugBundle();
+    out.profileIncluded = !!bundle.profile && bundle.profile.atlas.unlocked === true &&
+      bundle.profile.atlas.seed === 99001;
+    out.campaignDeathsIncluded = bundle.campaignMeta.deaths === 3;
+    out.contextOverworld = bundle.context.mode === "overworld" && bundle.context.screen === "overworld";
+    // overworld browsing has no active sector, so no fresh run checkpoint —
+    // whatever was left over from the prologue run should NOT leak through
+    out.noStaleRunCheckpoint = bundle.runCheckpoint === null;
+
+    // now enter a keyed sector and export again — this time a checkpoint should exist
+    const fk = Object.keys(RL.profile.atlas.nodes).find(k => RL.profile.atlas.nodes[k].state === "frontier");
+    const [q, r] = fk.split(",").map(Number);
+    const kk = RL.profile.atlas.keys.find(k => k.tier === 1);
+    RL.enterNode(q, r, kk.id);
+    RL.actWait();
+    const bundle2 = RL.buildDebugBundle();
+    out.sectorCheckpointIncluded = !!bundle2.runCheckpoint &&
+      bundle2.runCheckpoint.run.mode === "sector" &&
+      bundle2.runCheckpoint.run.sectorNode === fk;
+    return { bundle: bundle2, out };
+  });
+  for (const [k, v] of Object.entries(r4.out)) check(k, !!v);
+
+  // round-trip the endgame+sector bundle into a fresh page
+  await page.evaluate(() => { try { localStorage.clear(); } catch (e) {} });
+  await page.reload();
+  await page.waitForTimeout(300);
+  await page.evaluate(bundle => window.RL.importDebugState(JSON.stringify(bundle)), r4.bundle);
+  await page.reload();
+  await page.waitForTimeout(400);
+  const r5 = await page.evaluate(bundle => {
+    const RL = window.RL;
+    const out = {};
+    out.profileRestored = RL.profile && RL.profile.atlas.seed === 99001;
+    out.campaignMetaRestored = JSON.parse(localStorage.getItem("ironhex") || "{}").deaths === 3;
+    out.menuOffersResume = document.getElementById("begin-btn").textContent === "Resume run";
+    out.resumed = RL.resumeRun();
+    out.sectorNodeMatches = RL.run.sectorNode === bundle.runCheckpoint.run.sectorNode;
+    out.tierMatches = RL.run.floorConf.tier === bundle.runCheckpoint.run.floorConf.tier;
+    return out;
+  }, r4.bundle);
+  for (const [k, v] of Object.entries(r5)) check(k, !!v);
+
+  // ============================ malformed import ============================
+  const r6 = await page.evaluate(() => {
+    const RL = window.RL;
+    const out = {};
+    out.rejectsGarbage = RL.importDebugState("not json at all").ok === false;
+    out.rejectsWrongGame = RL.importDebugState(JSON.stringify({ game: "somethingElse" })).ok === false;
+    return out;
+  });
+  for (const [k, v] of Object.entries(r6)) check(k, !!v);
+
+  // ============================ UI wiring ============================
+  await page.evaluate(() => { try { localStorage.clear(); } catch (e) {} });
+  await page.reload();
+  await page.waitForTimeout(300);
+  const exportBtnVisible = await page.locator("#btn-debug-export").isVisible();
+  check("topbarExportButtonVisible", exportBtnVisible);
+  const menuExportVisible = await page.locator("#export-debug").isVisible();
+  check("menuExportLinkVisible", menuExportVisible);
+  const menuImportVisible = await page.locator("#import-debug").isVisible();
+  check("menuImportLinkVisible", menuImportVisible);
+
+  check("noPageErrors", errors.length === 0);
+  if (errors.length) console.log("ERRORS:", errors.slice(0, 8));
+  await browser.close();
+  console.log(fails ? "\n" + fails + " FAILURE(S)" : "\nALL PASS");
+  process.exit(fails ? 1 : 0);
+})();

@@ -20,6 +20,7 @@
   <div class="spacer"></div>
   <div class="souls-wrap"><span class="soul-dot"></span><span id="souls">0</span></div>
   <div class="floor-wrap"><span id="weapon-name"></span> · <span id="loc-label">Sector 1</span></div>
+  <button id="btn-debug-export" title="Export debug state (for bug reports)">🐞</button>
   <button id="mute" title="Audio">🔊</button>
 </div>
 
@@ -89,6 +90,9 @@
     <a class="crosslink" href="hexfoundry.html">⬡ Hexfoundry — the tower defense that came before</a>
     <a id="abandon-run" class="crosslink hidden" href="#">Abandon saved run</a>
     <a id="reset-profile" class="crosslink hidden" href="#">Reset Foundry profile</a>
+    <a id="export-debug" class="crosslink" href="#">Export debug state</a>
+    <a id="import-debug" class="crosslink" href="#">Import debug state</a>
+    <input id="import-debug-file" type="file" accept="application/json" class="visually-hidden">
   </div>
 </div>
 
@@ -99,6 +103,7 @@
     <p id="death-stats" class="stats"></p>
     <button id="death-retry">Reinitialize</button>
     <button id="death-menu" class="secondary">Menu</button>
+    <a id="death-export-debug" class="crosslink" href="#">Export debug state</a>
   </div>
 </div>
 
