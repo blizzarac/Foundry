@@ -407,6 +407,41 @@ const BIOMES = {
 };
 function keyFabCost(tier) { return Math.round(30 * Math.pow(tier, 1.7)); }
 
+/* Overworld terrain: the Foundry is a continuous landscape, not a node
+   grid. Derived deterministically from the atlas seed (never stored):
+   slag RIDGES and coolant CHANNELS are impassable and carve the map into
+   valleys and chokepoints; biomes come in contiguous belts; passable
+   ground is either a sealed sector SITE or open FIELD that reveal
+   cascades through, so purging a sector opens the whole reachable pocket
+   of landscape around it. */
+function hash2(ix, iy, seed) {
+  let h = (Math.imul(ix, 374761393) + Math.imul(iy, 668265263) + Math.imul(seed | 0, 69069)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+function vnoise(x, y, seed) {
+  const ix = Math.floor(x), iy = Math.floor(y);
+  const fx = x - ix, fy = y - iy;
+  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  return lerp(
+    lerp(hash2(ix, iy, seed), hash2(ix + 1, iy, seed), sx),
+    lerp(hash2(ix, iy + 1, seed), hash2(ix + 1, iy + 1, seed), sx), sy);
+}
+function worldCell(q, r) {
+  const s = profile.atlas.seed | 0;
+  const x = hexX(q, r) / HEX, y = hexY(q, r) / HEX;
+  const biomes = Object.keys(BIOMES);
+  const bn = vnoise(x / 11, y / 11, s ^ 0x77e1);
+  const biome = biomes[Math.min(biomes.length - 1, (bn * biomes.length) | 0)];
+  if (hexDist(q, r, 0, 0) <= 1) return { kind: "site", biome };   // the Bay's ring stays open
+  const chan = vnoise(x / 5.5, y / 5.5, s ^ 0x1b77);
+  if (Math.abs(chan - 0.5) < 0.05) return { kind: "channel" };
+  const ridge = vnoise(x / 7, y / 7, s ^ 0xa533);
+  if (ridge > 0.67) return { kind: "ridge" };
+  const site = hash2(q * 3 + 91, r * 3 - 57, s ^ 0x5ec7) < 0.62;
+  return { kind: site ? "site" : "field", biome };
+}
+
 /* Sector Key modifiers: every danger mod also raises loot quantity.
    Normal keys carry 0 mods, Magic up to 2, Rare up to 4 — crafted with
    the same currency orbs as gear. All mods stay deterministic. */
@@ -1825,17 +1860,32 @@ function syncProfileFromPlayer() {
 }
 function initAtlas() {
   profile.atlas.nodes["0,0"] = { state: "hub" };
-  for (const [dq, dr] of DIRS) revealNode(dq, dr);
+  revealArea(0, 0);
 }
-function revealNode(q, r) {
-  const k = key(q, r);
-  if (profile.atlas.nodes[k]) return;
-  const rng = mulberry32((profile.atlas.seed ^ (q * 73856093) ^ (r * 19349663)) >>> 0);
-  const biomes = Object.keys(BIOMES);
-  // nodes have a biome but no tier: the socketed key sets the danger
-  profile.atlas.nodes[k] = {
-    state: "frontier", biome: biomes[(rng() * biomes.length) | 0], wreck: 0,
-  };
+// flood reveal outward from a cleared hex: open FIELD ground cascades,
+// sector SITES become frontier and stop the flood, terrain blocks it —
+// so each clear opens exactly the pocket of landscape it connects to
+function revealArea(q0, r0) {
+  const stack = [[q0, r0]];
+  const seenLocal = new Set([key(q0, r0)]);
+  while (stack.length) {
+    const [q, r] = stack.pop();
+    for (const [dq, dr] of DIRS) {
+      const nq = q + dq, nr = r + dr;
+      const nk = key(nq, nr);
+      if (seenLocal.has(nk)) continue;
+      seenLocal.add(nk);
+      if (profile.atlas.nodes[nk]) continue;
+      const cell = worldCell(nq, nr);
+      if (cell.kind === "ridge" || cell.kind === "channel") continue;
+      if (cell.kind === "field") {
+        profile.atlas.nodes[nk] = { state: "field", biome: cell.biome };
+        stack.push([nq, nr]);
+      } else {
+        profile.atlas.nodes[nk] = { state: "frontier", biome: cell.biome, wreck: 0 };
+      }
+    }
+  }
 }
 function enterOverworld() {
   if (!profile || !profile.atlas.unlocked) return false;
@@ -1942,7 +1992,7 @@ function sectorComplete() {
   node.state = "cleared";
   node.clearedTier = run.floorConf.tier;
   const [q, r] = unkey(run.sectorNode);
-  for (const [dq, dr] of DIRS) revealNode(q + dq, r + dr);
+  revealArea(q, r);
   // key sustain: always at least one key back, at tier or tier+1; juiced
   // keys raise the chance of a second, and drops can come pre-modified
   const t = run.floorConf.tier;
@@ -1977,9 +2027,12 @@ function spawnGateNode(nearKey) {
       if (seen.has(nk)) continue;
       seen.add(nk);
       if (!profile.atlas.nodes[nk]) {
-        profile.atlas.nodes[nk] = { state: "gate", band: atlasCap(), wreck: 0 };
-        log(`A SENTINEL gate surfaces on the frontier — arm it with a T${atlasCap()} key.`, "sys");
-        return;
+        const cell = worldCell(q + dq, r + dr);
+        if (cell.kind !== "ridge" && cell.kind !== "channel") {
+          profile.atlas.nodes[nk] = { state: "gate", band: atlasCap(), wreck: 0 };
+          log(`A SENTINEL gate surfaces on the frontier — arm it with a T${atlasCap()} key.`, "sys");
+          return;
+        }
       }
       queue.push([q + dq, r + dr]);
     }
@@ -1991,7 +2044,7 @@ function gateCleared() {
   node.state = "cleared";
   node.clearedTier = run.floorConf.tier;
   const [q, r] = unkey(run.sectorNode);
-  for (const [dq, dr] of DIRS) revealNode(q + dq, r + dr);
+  revealArea(q, r);
   const oldCap = profile.atlas.tierCap;
   profile.atlas.tierCap = Math.min(TIER_CAP, oldCap + 4);
   for (let i = 0; i < 2; i++)
@@ -2435,7 +2488,18 @@ function render(now) {
   requestAnimationFrame(render);
 }
 
-/* the Foundry overworld: each hex is a sealed sector node */
+/* the Foundry overworld: a continuous landscape of terrain and sectors */
+let owTerrain = { seed: null, map: new Map() };
+function owCell(q, r) {
+  if (owTerrain.seed !== profile.atlas.seed) owTerrain = { seed: profile.atlas.seed, map: new Map() };
+  const k = key(q, r);
+  let c = owTerrain.map.get(k);
+  if (c === undefined) {
+    c = worldCell(q, r);
+    owTerrain.map.set(k, c);
+  }
+  return c;
+}
 function renderOverworld(t) {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.fillStyle = "#080d12";
@@ -2444,21 +2508,56 @@ function renderOverworld(t) {
     (W / 2 - cam.x * cam.zoom) * DPR, (H / 2 - cam.y * cam.zoom) * DPR);
   const nodes = profile.atlas.nodes;
   const pulse = 0.55 + 0.25 * Math.sin(t * 3);
-  // sealed space just past the frontier, hinted
-  const ghost = new Set();
-  for (const k in nodes) {
-    const [q, r] = unkey(k);
-    for (const [dq, dr] of DIRS) {
-      const nk = key(q + dq, r + dr);
-      if (!nodes[nk]) ghost.add(nk);
+  // terrain apron: the landscape visibly continues two hexes past
+  // everything known — ridges and channels shape where you can go next
+  const seen = new Set(Object.keys(nodes));
+  let ring = Object.keys(nodes);
+  const apron = [];
+  for (let depth = 0; depth < 2; depth++) {
+    const next = [];
+    for (const k of ring) {
+      const [q, r] = unkey(k);
+      for (const [dq, dr] of DIRS) {
+        const nk = key(q + dq, r + dr);
+        if (seen.has(nk)) continue;
+        seen.add(nk);
+        next.push(nk);
+        apron.push(nk);
+      }
     }
+    ring = next;
   }
-  for (const k of ghost) {
+  for (const k of apron) {
     const [q, r] = unkey(k);
-    hexPath(ctx, hexX(q, r), hexY(q, r), 0.9);
-    ctx.strokeStyle = "#141e28";
-    ctx.lineWidth = 1;
-    ctx.stroke();
+    const x = hexX(q, r), y = hexY(q, r);
+    const c = owCell(q, r);
+    hexPath(ctx, x, y, 0.96);
+    if (c.kind === "ridge") {
+      ctx.fillStyle = "#151d26";
+      ctx.fill();
+      hexPath(ctx, x, y, 0.58);
+      ctx.fillStyle = "#28323e";
+      ctx.fill();
+    } else if (c.kind === "channel") {
+      ctx.fillStyle = "#0c2028";
+      ctx.fill();
+      hexPath(ctx, x, y, 0.96);
+      ctx.strokeStyle = `rgba(70,180,210,${0.18 + 0.12 * Math.sin(t * 2 + q + r)})`;
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = "#0b1118";
+      ctx.fill();
+      hexPath(ctx, x, y, 0.96);
+      ctx.strokeStyle = "#131c26";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      hexPath(ctx, x, y, 0.96);
+      ctx.globalAlpha = 0.07;
+      ctx.fillStyle = BIOMES[c.biome].color;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
   }
   ctx.textAlign = "center";
   for (const k in nodes) {
@@ -2466,7 +2565,26 @@ function renderOverworld(t) {
     const [q, r] = unkey(k);
     const x = hexX(q, r), y = hexY(q, r);
     hexPath(ctx, x, y, 0.92);
-    if (n.state === "hub") {
+    if (n.state === "field") {
+      // open ground you hold: revealed landscape between sectors
+      ctx.fillStyle = "#0d161d";
+      ctx.fill();
+      hexPath(ctx, x, y, 0.92);
+      ctx.globalAlpha = 0.12;
+      ctx.fillStyle = BIOMES[n.biome].color;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      hexPath(ctx, x, y, 0.92);
+      ctx.strokeStyle = BIOMES[n.biome].color + "44";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.globalAlpha = 0.5;
+      ctx.fillStyle = BIOMES[n.biome].color;
+      ctx.beginPath();
+      ctx.arc(x, y, 2, 0, TAU);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    } else if (n.state === "hub") {
       ctx.fillStyle = "#12333e";
       ctx.fill();
       hexPath(ctx, x, y, 0.92);
@@ -3186,6 +3304,10 @@ function openNodePanel(q, r) {
       none.textContent = `No T${node.band} key. Purge T${node.band} sectors or fabricate one at the Bay.`;
       box.appendChild(none);
     }
+  } else if (node.state === "field") {
+    title.textContent = BIOMES[node.biome].name + " — open ground";
+    desc.textContent = "A quiet stretch of the " + BIOMES[node.biome].name.toLowerCase() +
+      " belt. The Foundry's paths run through it; nothing here to purge.";
   } else if (node.state === "cleared") {
     title.textContent = BIOMES[node.biome].name;
     desc.textContent = `Purged at T${node.clearedTier || "?"} and sealed. Nothing moves in there anymore.`;
@@ -3571,7 +3693,7 @@ window.RL = {
   useConsumable, inCombat, recalc, canReach,
   get profile() { return profile; },
   enterOverworld, enterNode, extractToOverworld, fabricateKey,
-  sectorComplete, revealNode, keyFabCost, BIOMES, TIER_CAP,
+  sectorComplete, revealArea, worldCell, keyFabCost, BIOMES, TIER_CAP,
   makeKey, addKeyMod, keyQuant, keyDisplayName, canApplyOrbKey, applyOrbToKey, KEY_MODS,
   donutHexes, laneHexes, gateCleared, spawnGateNode, atlasCap, tierColor,
   hurtEnemy, hurtPlayer, winRun, dieRun,

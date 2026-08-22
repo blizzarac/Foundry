@@ -40,6 +40,15 @@ function check(name, cond) {
     out.overworldScreen = RL.ui.screen === "overworld";
     out.fullRepair = RL.run.player.hp === RL.run.player.maxHp;
 
+    // the overworld is a landscape: deterministic terrain with regions
+    RL.profile.atlas.seed = 777001;   // pin so every later reveal is reproducible
+    out.terrainDeterministic =
+      JSON.stringify(RL.worldCell(9, -3)) === JSON.stringify(RL.worldCell(9, -3)) &&
+      JSON.stringify(RL.worldCell(-7, 11)) === JSON.stringify(RL.worldCell(-7, 11));
+    const kinds = { ridge: 0, channel: 0, field: 0, site: 0 };
+    for (let q = -12; q <= 12; q++) for (let r = -12; r <= 12; r++) kinds[RL.worldCell(q, r).kind]++;
+    out.terrainVariety = kinds.ridge > 5 && kinds.channel > 5 && kinds.field > 10 && kinds.site > 50;
+
     // the KEY sets the tier: socket a fabricated T3 key into a ring-1 node
     RL.run.player.souls = 2000;
     RL.fabricateKey(3);
@@ -185,6 +194,22 @@ function check(name, cond) {
     out.fabInNewBand = RL.fabricateKey(7);
     out.fabAboveCapFails = !RL.fabricateKey(9);
     RL.extractToOverworld();
+
+    // reveals respect the landscape: no interactive node on a ridge or
+    // channel, and cascaded FIELD ground connects the sectors it opened
+    const nn = RL.profile.atlas.nodes;
+    out.noNodesOnTerrain = Object.keys(nn).every(k => {
+      if (nn[k].state === "hub") return true;
+      const [q, r] = k.split(",").map(Number);
+      const c = RL.worldCell(q, r);
+      return c.kind !== "ridge" && c.kind !== "channel";
+    });
+    out.fieldsAppear = Object.values(nn).some(n => n.state === "field");
+    const D6 = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
+    out.fieldsConnect = Object.keys(nn).filter(k => nn[k].state === "field").every(k => {
+      const [q, r] = k.split(",").map(Number);
+      return D6.some(([dq, dr]) => nn[(q + dq) + "," + (r + dr)]);
+    });
     RL.saveProfile();
     return out;
   });
