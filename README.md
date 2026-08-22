@@ -1,54 +1,54 @@
-# Emberhex
+# Ironhex
 
-A **turn-based hex roguelike with souls-like combat**. Plain HTML5 canvas, zero dependencies, plays on desktop and phones.
+A **turn-based hex roguelike with souls-like combat**, set in a dead machine world. You are a salvaged combat frame, five sectors deep in a foundry that never shut down; everything still running down here wants you for parts. Plain HTML5 canvas, zero dependencies, plays on desktop and phones.
 
 **Play it:** open `index.html`, or via GitHub Pages once enabled for this repo.
 
 ## The one rule
 
-Combat is **deterministic and fully telegraphed**. Every enemy shows exactly which hexes it will strike next turn — red means *don't be there*. There is no damage RNG anywhere. Every death is a misread, never a dice roll. That's where the skill lives.
+Combat is **deterministic and fully telegraphed**. Every machine shows exactly which hexes it will strike next cycle — red means *don't be standing there*. There is no damage RNG anywhere. Every death is a misread, never a dice roll. That's where the skill lives.
 
-## The souls toolkit
+## The toolkit
 
-- **Stamina** fuels attacks (1), rolls (2) and parries (2). Stepping restores 1, holding your ground restores 2. Overextend and all you can do is walk.
-- **Roll** two hexes in a line — through bodies and threatened ground, but never through rock.
-- **Parry** as an adjacent enemy strikes: the hit is negated and the attacker staggers for a turn — then make it pay. Ripostes against staggered enemies deal double. A parry into empty air wastes the turn.
-- **Backstab**: enemies have facing; strike from the rear arc for bonus damage.
-- **The flask** heals but drinking costs the turn — chugging inside a telegraph gets you exactly what you deserve. Three charges, refilled at bonfires.
-- **Bonfires** heal, refill, and sell upgrades for souls — but resting stirs the floor back to life.
-- **Die**, and the souls you carried stain the floor where you fell — persisted across runs. Your next self can reclaim them. Die again first, and they're gone.
+- **Power** drives strikes (1), dashes (2) and deflects (2). Moving restores 1, venting heat restores 2. Overdraw your capacitor and all you can do is walk.
+- **Dash** two hexes down a line — thrusters carry you straight through bodies and threatened ground, but never through bulkheads.
+- **Deflect** as an adjacent machine swings: the hit is negated and the attacker overloads for a cycle — then counterstrike for double. A deflect into empty air wastes the turn.
+- **Exposed cores**: machines have facing; strike from the rear arc for critical damage.
+- **Repair cells** restore integrity but injecting one costs the turn — patching yourself inside a telegraph gets you exactly what you deserve.
+- **Repair bays** heal, refill and fabricate upgrades for cores — but docking reinitializes the sector, and everything you killed comes back.
+- **Fall**, and the cores you carried scatter where you died — persisted across runs. Your next frame can reclaim them from the wreck. Fall again first, and they're gone.
 
-## Loot the dark
+## Salvage everything
 
-You descend with a **Rusted Sword** and one throwing knife. Everything better is found: glowing **chests** on every floor, guaranteed drops from **elites**, and a final armory chest before the boss. Weapon bases each play differently — **swords** balanced, **daggers** nimble (1-stamina rolls, +4 backstabs), **axes** heavy (2-stamina swings that cleave a three-hex arc), **spears** with reach (poke two hexes down a line, outside most claws) — rolled with damage tiers (*Keen*, *Brutal*, *Master*) and affixes (*of the Leech*: heal on kill · *of the Guard*: 1-stamina parries · *of the Wind*: cheaper rolls). **Charms** (two slots) bend your build: Iron Ring, Feather Charm, Whetstone, Soul Magnet, Ember Heart. **Consumables**: throwing knives and ember salts.
+You boot with a **Scrap Blade** and one shock dart. Everything better is found: glowing **caches** in every sector, guaranteed drops from **elite units**, and a final armory cache before the boss. Weapon bases each play differently — **Blades** balanced, **Shivs** nimble (1-power dashes, +4 into an exposed core), **Cleavers** heavy (2-power plasma discharge across a three-hex arc), **Lances** with reach (strike two hexes down a line) — rolled with damage tiers (*Calibrated*, *Overcharged*, *Prototype*) and affixes (*[Siphon]*: repair on kill · *[Deflector]*: 1-power deflects · *[Servos]*: cheaper dashes). **Modules** (two slots) bend your build: Ablative Plating, Gyro Stabilizer, Targeting Chip, Salvage Protocol, Nanite Regulator. **Tools**: shock darts and power cells.
 
-The souls twist: your six-slot bag is free to manage while unobserved — but **under hostile eyes, changing gear costs your turn**. Rummaging mid-fight is a real decision.
+Your six-slot cargo is free to manage while unobserved — but **with hostiles in sensor range, swapping hardware costs your turn**. Rummaging mid-fight is a real decision.
 
 ## The descent
 
-Five floors of procedural caverns under fog of war. Hollows shamble and swing. Archers rake whole sightlines (their arrows don't care who's standing in them) and need a breath between shots. **Wardens** block every frontal hit with their shield — flank them in the beat after they swing, or parry to break their guard. **Bellows** lob bombs *over walls*: a seven-hex blast, two turns out — cover is no shelter, keep moving. Brutes telegraph a two-turn ring slam and are wide open after; stalkers lunge and hit hard. Floors 2–4 hide a glowing elite and a **dark shrine** offering pacts — power that always takes something back (+2 damage for −3 max HP, and friends). On floor 5, **the Ashen King**: cleaves, line charges, an ash-summoning slam below half health — and after every third attack he has to catch his breath. Learn the cycle.
+Five sectors of procedural machine caverns under fog of war. **Scrappers** run a broken loop and swing. **Rail Drones** rake an entire lane (their slugs don't check for friendlies) and must recharge between shots. **Bulwarks** absorb every frontal hit with a shield emitter — flank them in the beat after they swing, or deflect to overload the field. **Mortars** arc charges *over walls*: a seven-hex blast, two cycles out — cover is no cover, keep moving. **Crushers** telegraph a two-cycle shockwave ring and lock up afterward; **Rippers** cover two hexes a turn and hit hard. Sectors 2–4 hide a glowing Prime unit and a **corrupted terminal** offering firmware protocols — power that always takes something back (+2 damage for −3 max integrity, and friends). In Sector 5, **the OVERSEER**: cleaves, line charges, a fabricator slam below half integrity — and after every third attack it has to vent heat. Learn the cycle.
 
-**Hover (or long-press) any enemy** to read its moveset, health, and what it's about to do.
+**Hover (or long-press) any machine** to scan its integrity, damage, current state, and how to beat it.
 
 | Input | Action |
 |---|---|
-| Tap / click a hex | step, or strike an adjacent enemy |
-| Tap your own hex / `Space` | hold ground (+2 stamina) |
-| Roll button / `R`, then a highlighted hex | dodge-roll |
-| Parry `F` · Flask `H` | you know what these do |
-| Tap far ground | cautious auto-walk (stops when danger appears) |
+| Tap / click a hex | move, or strike an adjacent machine |
+| Tap your own hex / `Space` | vent heat (+2 power) |
+| Dash button / `R`, then a highlighted hex | thruster dash |
+| Deflect `F` · Repair `H` · Cargo `B` | you know what these do |
+| Tap far ground | cautious auto-move (stops when contacts appear) |
 | Drag / pinch | pan / zoom |
 
 ## Verified by scripted playtests
 
 Determinism makes the design testable, and it is — in headless Chromium:
 
-- Sixteen scenario suites assert the rules: telegraphs hit exactly the marked hexes and nothing else, rolls clear them, parries stagger, ripostes double, backstabs bonus, flasks get punished mid-telegraph, brutes are punishable after slamming, warden shields block frontal hits until flanked or parried, bellows blobs are outrunnable, shrine pacts trade what they promise, bloodstains persist and are reclaimable, stairs are reachable across seeds, the boss telegraphs and tires on cycle — plus the loot laws: peaceful gear swaps are free and combat swaps cost the turn, spear reach respects lines and blockers, axes cleave, charms apply and reverse cleanly, knives hit the first body on the line, chests refuse a full bag, and elites always drop.
-- A scripted dodger survives the boss's full attack rotation **without taking a single hit** — proof every telegraph is avoidable.
-- A heuristic pilot bot wins full five-floor runs on some seeds and dies on others; a random-action bot always dies on floor 1. Fair, dangerous, winnable.
+- Sixteen scenario suites assert the rules: telegraphs hit exactly the marked hexes and nothing else, dashes clear them, deflects overload, counterstrikes double, rear hits crit, repair cells get punished mid-telegraph, crushers are punishable after slamming, bulwark shields block frontal hits until flanked or deflected, mortar blasts are outrunnable, terminal protocols trade what they promise, wrecks persist and are reclaimable, drop shafts are reachable across seeds, the OVERSEER telegraphs and overheats on cycle — plus the salvage laws: peaceful hardware swaps are free and combat swaps cost the turn, lance reach respects lanes and blockers, cleavers arc, modules apply and reverse cleanly, darts hit the first machine on the lane, caches refuse full cargo, and elites always drop.
+- A scripted dodger survives the OVERSEER's full attack rotation **without taking a single hit** — proof every telegraph is avoidable.
+- A heuristic pilot bot wins full five-sector runs on most seeds; a random-action bot always dies in Sector 1. Fair, dangerous, winnable.
 
 ## Also in this repo
 
 **[Hexfoundry](hexfoundry.html)** — the hex-grid network-defense game this project started as: drills, link arteries, ammo-hungry turrets, a six-level hand-tested campaign. Still fully playable at `hexfoundry.html`.
 
-Emberhex lives in `index.html`, `rl.css`, `rl.js`. Hexfoundry lives in `hexfoundry.html`, `style.css`, `game.js`.
+Ironhex lives in `index.html`, `rl.css`, `rl.js`. Hexfoundry lives in `hexfoundry.html`, `style.css`, `game.js`.

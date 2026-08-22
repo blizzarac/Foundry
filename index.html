@@ -6,21 +6,21 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>Emberhex</title>
+<title>Ironhex</title>
 <link rel="stylesheet" href="rl.css">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><polygon points='50,3 93,26 93,74 50,97 7,74 7,26' fill='%23ff9a3c'/></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><polygon points='50,3 93,26 93,74 50,97 7,74 7,26' fill='%234fd6e8'/></svg>">
 </head>
 <body>
 <canvas id="game"></canvas>
 
 <div id="topbar">
   <div class="hpwrap"><div id="hp-bar"><div id="hp-fill"></div></div><span id="hp-text">12/12</span></div>
-  <div id="stamina"></div>
-  <div id="flasks"></div>
+  <div id="stamina" title="Power"></div>
+  <div id="flasks" title="Repair cells"></div>
   <div class="spacer"></div>
   <div class="souls-wrap"><span class="soul-dot"></span><span id="souls">0</span></div>
-  <div class="floor-wrap"><span id="weapon-name"></span> · Floor <span id="floor-num">1</span></div>
-  <button id="mute" title="Sound">🔊</button>
+  <div class="floor-wrap"><span id="weapon-name"></span> · Sector <span id="floor-num">1</span></div>
+  <button id="mute" title="Audio">🔊</button>
 </div>
 
 <div id="inspect"></div>
@@ -28,20 +28,20 @@
 <div id="log"></div>
 
 <div id="actions">
-  <button id="btn-roll" title="Roll two hexes — passes through bodies and threats (2 stamina) [R]">Roll</button>
-  <button id="btn-parry" title="Parry: negate an adjacent strike and stagger the attacker (2 stamina) [F]">Parry</button>
-  <button id="btn-flask" title="Drink the ember flask: heal, but it costs the turn [H]">Flask</button>
-  <button id="btn-wait" title="Hold your ground: +2 stamina [Space]">Wait</button>
-  <button id="btn-bag" title="Your gear [B]">Bag 0/6</button>
-  <button id="btn-rest" class="hidden rest">Rest at bonfire</button>
+  <button id="btn-roll" title="Thruster dash: two hexes, straight through bodies and fire (2 power) [R]">Dash</button>
+  <button id="btn-parry" title="Deflector field: negate an adjacent strike and overload the attacker (2 power) [F]">Deflect</button>
+  <button id="btn-flask" title="Inject a repair cell: restores integrity, but it costs the turn [H]">Repair</button>
+  <button id="btn-wait" title="Vent heat: hold position, +2 power [Space]">Vent</button>
+  <button id="btn-bag" title="Chassis loadout [B]">Cargo 0/6</button>
+  <button id="btn-rest" class="hidden rest">Dock at repair bay</button>
 </div>
 
 <div id="inv" class="overlay hidden">
   <div class="box inv-box">
-    <h2>Your gear</h2>
+    <h2>Chassis loadout</h2>
     <p id="inv-note" class="stats"></p>
     <div id="inv-equipped"></div>
-    <h3>Bag</h3>
+    <h3>Cargo</h3>
     <div id="inv-bag"></div>
     <button id="inv-close" class="secondary">Close</button>
   </div>
@@ -49,18 +49,19 @@
 
 <div id="menu" class="overlay">
   <div class="box menu-box">
-    <h1>EMBER<span>HEX</span></h1>
-    <p class="sub">A turn-based hex roguelike. Every strike is telegraphed.<br>Every death is your own.</p>
+    <h1>IRON<span>HEX</span></h1>
+    <p class="sub">A turn-based hex roguelike in a dead machine world.<br>Every attack is telegraphed. Every failure is yours.</p>
     <div class="howto">
-      <div><b>Tap a hex</b> to step or strike. Red hexes are where enemies will hit <i>next turn</i> — don't be there.</div>
-      <div><b>Stamina</b> fuels attacks, rolls and parries; stepping and waiting restore it.</div>
-      <div><b>Parry</b> an adjacent attacker as it strikes to stagger it — then make it pay. Strike from behind for backstabs.</div>
-      <div><b>Bonfires</b> heal, refill your flask and sell upgrades — but the floor stirs back to life.</div>
-      <div><b>Loot the dark</b>: chests and elites carry weapons, charms and tools. Swapping gear is free — unless enemies are watching, then it costs your turn.</div>
-      <div>Die, and your souls stain the floor where you fell. The next you may reclaim them.</div>
-      <div><b>Hover or hold</b> on any enemy to learn its moveset.</div>
+      <div>You are a salvaged combat frame, five sectors deep in a foundry that never shut down. Everything still running down here wants you for parts.</div>
+      <div><b>Tap a hex</b> to move or strike. Red hexes are where machines will hit <i>next cycle</i> — do not be standing there.</div>
+      <div><b>Power</b> drives strikes, dashes and deflects; moving and venting restore it.</div>
+      <div><b>Deflect</b> an adjacent attacker as it swings to overload it — then counterstrike for double. Hit an exposed core from behind for critical damage.</div>
+      <div><b>Repair bays</b> restore integrity, refill cells and sell upgrades — but docking reinitializes the sector, and everything respawns.</div>
+      <div><b>Salvage everything</b>: caches and elite units carry weapons, modules and tools. Swapping hardware is free — unless hostiles have you in sensor range, then it costs your turn.</div>
+      <div>Fall, and your cores scatter where you died. Your next frame can reclaim them from the wreck.</div>
+      <div><b>Hover or hold</b> on any machine to read its attack pattern.</div>
     </div>
-    <button id="begin-btn">Descend</button>
+    <button id="begin-btn">Initialize</button>
     <p id="stain-note" class="stain"></p>
     <p id="menu-stats" class="stats"></p>
     <a class="crosslink" href="hexfoundry.html">⬡ Hexfoundry — the tower defense that came before</a>
@@ -69,18 +70,18 @@
 
 <div id="death" class="overlay hidden">
   <div class="box">
-    <h1 class="died">YOU DIED</h1>
+    <h1 class="died">SYSTEM FAILURE</h1>
     <p id="death-souls"></p>
     <p id="death-stats" class="stats"></p>
-    <button id="death-retry">Rise again</button>
+    <button id="death-retry">Reinitialize</button>
     <button id="death-menu" class="secondary">Menu</button>
   </div>
 </div>
 
 <div id="win" class="overlay hidden">
   <div class="box">
-    <h1 class="won">THE EMBER IS YOURS</h1>
-    <p>The Ashen King falls. The hollow crown rolls into the dark.</p>
+    <h1 class="won">CORE SECURED</h1>
+    <p>The OVERSEER goes dark. Its core is yours, and the foundry is finally silent.</p>
     <p id="win-stats" class="stats"></p>
     <button id="win-again">Descend again</button>
     <button id="win-menu" class="secondary">Menu</button>
@@ -89,18 +90,18 @@
 
 <div id="shop" class="overlay hidden">
   <div class="box">
-    <h2>The bonfire's bargain</h2>
+    <h2>Repair bay · fabrication</h2>
     <div id="shop-items"></div>
-    <button id="shop-close">Rise</button>
+    <button id="shop-close">Undock</button>
   </div>
 </div>
 
-<div id="shrine" class="overlay hidden">
+<div id="terminal" class="overlay hidden">
   <div class="box">
-    <h2 class="shrine-title">A dark shrine hums</h2>
-    <p>It offers power. It always takes something back.</p>
-    <div id="shrine-items"></div>
-    <button id="shrine-leave" class="secondary">Walk away</button>
+    <h2 class="terminal-title">CORRUPTED TERMINAL</h2>
+    <p>It offers a firmware patch. It always takes something back.</p>
+    <div id="terminal-items"></div>
+    <button id="terminal-leave" class="secondary">Disconnect</button>
   </div>
 </div>
 

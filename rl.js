@@ -1,14 +1,17 @@
 /* =========================================================================
-   EMBERHEX — a turn-based hex roguelike with souls-like combat.
+   IRONHEX — a turn-based hex roguelike with souls-like combat, set in a
+   dead machine world. You are a salvaged combat frame; everything still
+   running down here wants you for parts.
 
    The one rule that makes it skill: combat is DETERMINISTIC and fully
    telegraphed. Every enemy shows exactly which hexes it will strike next
    turn. Every death is a misread, never a dice roll.
 
-   Souls toolkit: stamina discipline, dodge-roll with pass-through,
-   parry -> stagger -> riposte, backstabs against enemy facing, a flask
-   that costs a turn to drink, bonfires that respawn the floor, souls
-   spent on upgrades, and a bloodstain that persists across runs.
+   Souls toolkit, re-cast in hardware: power discipline, a thruster dash
+   that passes through bodies, deflect -> overload -> counterstrike, hits
+   into an exposed core from behind, repair cells that cost a turn to
+   inject, repair bays that reinitialize the sector, cores spent on
+   fabrication, and a wreck that persists across runs.
    ========================================================================= */
 "use strict";
 
@@ -93,61 +96,61 @@ function hexPath(c, x, y, s = 1) {
 
 /* -------------------------------------------------------------- content */
 const ENEMY = {
-  hollow:  { name: "Hollow",  hp: 4,  dmg: 3, windup: 1, souls: 10, color: "#9b4a42" },
-  archer:  { name: "Archer",  hp: 3,  dmg: 2, windup: 1, souls: 12, color: "#a8905c", range: 6 },
-  warden:  { name: "Warden",  hp: 6,  dmg: 4, windup: 1, souls: 18, color: "#6b7f9c" },
-  bellows: { name: "Bellows", hp: 4,  dmg: 4, windup: 2, souls: 20, color: "#b07840" },
-  brute:   { name: "Brute",   hp: 9,  dmg: 5, windup: 2, souls: 25, color: "#5a4a52" },
-  stalker: { name: "Stalker", hp: 5,  dmg: 4, windup: 1, souls: 16, color: "#7a5a9c" },
-  boss:    { name: "the Ashen King", hp: 34, dmg: 5, windup: 1, souls: 0, color: "#c9b458" },
+  scrapper: { name: "Scrapper",   hp: 4,  dmg: 3, windup: 1, souls: 10, color: "#a95a3c" },
+  railer:   { name: "Rail Drone", hp: 3,  dmg: 2, windup: 1, souls: 12, color: "#b09340", range: 6 },
+  bulwark:  { name: "Bulwark",    hp: 6,  dmg: 4, windup: 1, souls: 18, color: "#5f7f9c" },
+  mortar:   { name: "Mortar",     hp: 4,  dmg: 4, windup: 2, souls: 20, color: "#a8703c" },
+  crusher:  { name: "Crusher",    hp: 9,  dmg: 5, windup: 2, souls: 25, color: "#56505e" },
+  ripper:   { name: "Ripper",     hp: 5,  dmg: 4, windup: 1, souls: 16, color: "#8a4fa0" },
+  boss:     { name: "the OVERSEER", hp: 34, dmg: 5, windup: 1, souls: 0, color: "#d4c45c" },
 };
 const TRAITS = {
-  hollow:  "Shambles forward. Swings when adjacent.",
-  archer:  "Rakes a whole sightline — allies included. Must rest after each shot.",
-  warden:  "Shield blocks ALL frontal hits. Flank it, or parry to break its guard. Rests after swinging.",
-  bellows: "Lobs bombs over walls — a wide blast, two turns out. Rests after throwing.",
-  brute:   "Slow. Slams everything adjacent — then it is wide open.",
-  stalker: "Covers two hexes a turn. Hits hard.",
-  boss:    "Tires after every third attack. Below half health, the ash answers him.",
+  scrapper: "Salvage bot running a broken loop. Closes and swings.",
+  railer:   "Rail slug rakes an entire lane — it does not check for friendlies. Must recharge after each shot.",
+  bulwark:  "Frontal shield emitter absorbs everything it faces. Flank it, or deflect to overload the field. Resets after swinging.",
+  mortar:   "Arcs charges over walls — a wide blast, two turns out. Cover is no cover. Reloads after firing.",
+  crusher:  "Slow siege chassis. Shockwaves everything adjacent — then its servos lock up.",
+  ripper:   "Covers two hexes a turn. Blades sized for your spine.",
+  boss:     "Overheats after every third attack. Below half integrity, it calls the fabricators.",
 };
 const FLOORS = [
-  { R: 8, spawn: { hollow: 4, archer: 1 } },
-  { R: 8, spawn: { hollow: 3, archer: 2, warden: 1, brute: 1 }, elite: true, shrine: true },
-  { R: 9, spawn: { hollow: 4, archer: 2, warden: 1, brute: 1, stalker: 1, bellows: 1 }, elite: true, shrine: true },
-  { R: 9, spawn: { hollow: 4, archer: 2, warden: 2, brute: 2, stalker: 2, bellows: 1 }, elite: true, shrine: true },
+  { R: 8, spawn: { scrapper: 4, railer: 1 } },
+  { R: 8, spawn: { scrapper: 3, railer: 2, bulwark: 1, crusher: 1 }, elite: true, terminal: true },
+  { R: 9, spawn: { scrapper: 4, railer: 2, bulwark: 1, crusher: 1, ripper: 1, mortar: 1 }, elite: true, terminal: true },
+  { R: 9, spawn: { scrapper: 4, railer: 2, bulwark: 2, crusher: 2, ripper: 2, mortar: 1 }, elite: true, terminal: true },
   { R: 7, boss: true },
 ];
 const FLASK_HEAL = 8;
-const ELITE_TYPES = ["brute", "stalker", "warden"];
+const ELITE_TYPES = ["crusher", "ripper", "bulwark"];
 
 /* ------------------------------------------------------------ items */
 const BAG_SIZE = 6;
 const WEAPON_BASES = {
-  sword:  { name: "Sword",  dmg: 2, atkCost: 1, rollCost: 2, bsBonus: 2,
-            desc: "Balanced. The knight's answer to everything." },
-  dagger: { name: "Dagger", dmg: 1, atkCost: 1, rollCost: 1, bsBonus: 4,
-            desc: "Nimble: rolls cost 1. Weak swings, lethal backstabs (+4)." },
-  axe:    { name: "Axe",    dmg: 4, atkCost: 2, rollCost: 2, bsBonus: 2, cleave: true,
-            desc: "Heavy swings (2 stamina) cleave a three-hex arc." },
-  spear:  { name: "Spear",  dmg: 2, atkCost: 1, rollCost: 2, bsBonus: 2, reach: true,
-            desc: "Reach: strike two hexes down a line — outside most claws." },
+  blade:   { name: "Blade",   dmg: 2, atkCost: 1, rollCost: 2, bsBonus: 2,
+             desc: "Balanced servo-driven arc blade. Answers most things." },
+  shiv:    { name: "Shiv",    dmg: 1, atkCost: 1, rollCost: 1, bsBonus: 4,
+             desc: "Light frame: dashes cost 1 power. Weak swings, devastating into an exposed core (+4)." },
+  cleaver: { name: "Cleaver", dmg: 4, atkCost: 2, rollCost: 2, bsBonus: 2, cleave: true,
+             desc: "Plasma discharge (2 power) cleaves a three-hex arc." },
+  lance:   { name: "Lance",   dmg: 2, atkCost: 1, rollCost: 2, bsBonus: 2, reach: true,
+             desc: "Reach: strike two hexes down a line — outside most claws." },
 };
-const PLUS_NAMES = ["", "Keen ", "Brutal ", "Master "];
+const PLUS_NAMES = ["", "Calibrated ", "Overcharged ", "Prototype "];
 const AFFIXES = {
-  leech: { label: "of the Leech", desc: "Heal 1 with every kill." },
-  guard: { label: "of the Guard", desc: "Parry costs 1 stamina." },
-  swift: { label: "of the Wind",  desc: "Rolls cost 1 less." },
+  siphon:    { label: "[Siphon]",    desc: "Recover 1 integrity with every kill." },
+  deflector: { label: "[Deflector]", desc: "Deflect costs 1 power." },
+  servos:    { label: "[Servos]",    desc: "Dashes cost 1 less power." },
 };
-const CHARMS = {
-  ring:    { name: "Iron Ring",     desc: "+3 max HP." },
-  feather: { name: "Feather Charm", desc: "Rolls cost 1 less." },
-  whet:    { name: "Whetstone",     desc: "+1 weapon damage." },
-  magnet:  { name: "Soul Magnet",   desc: "A third more souls from kills." },
-  heart:   { name: "Ember Heart",   desc: "The flask heals +3." },
+const MODULES = {
+  plating:   { name: "Ablative Plating", desc: "+3 max integrity." },
+  gyro:      { name: "Gyro Stabilizer",  desc: "Dashes cost 1 less power." },
+  targeting: { name: "Targeting Chip",   desc: "+1 weapon damage." },
+  salvage:   { name: "Salvage Protocol", desc: "A third more cores from kills." },
+  regulator: { name: "Nanite Regulator", desc: "Repair cells restore +3." },
 };
 const CONSUMABLES = {
-  knife: { name: "Throwing Knife", desc: "Hurl down a clear sightline: 4 damage to the first enemy, up to 4 hexes. Costs the turn." },
-  salts: { name: "Ember Salts",    desc: "Restore all stamina and 2 HP. Costs the turn." },
+  dart: { name: "Shock Dart", desc: "Hurl down a clear lane: 4 damage to the first machine, up to 4 hexes. Costs the turn." },
+  cell: { name: "Power Cell", desc: "Restore all power and 2 integrity. Costs the turn." },
 };
 let itemSeq = 0;
 function mkWeapon(base, plus, affix) {
@@ -158,8 +161,8 @@ function mkWeapon(base, plus, affix) {
     desc: b.desc + ((plus || 0) ? ` +${plus} damage.` : "") + (affix ? " " + AFFIXES[affix].desc : ""),
   };
 }
-function mkCharm(kind) {
-  return { id: ++itemSeq, type: "charm", kind, name: CHARMS[kind].name, desc: CHARMS[kind].desc };
+function mkModule(kind) {
+  return { id: ++itemSeq, type: "module", kind, name: MODULES[kind].name, desc: MODULES[kind].desc };
 }
 function mkConsumable(kind) {
   return { id: ++itemSeq, type: "consumable", kind, name: CONSUMABLES[kind].name, desc: CONSUMABLES[kind].desc };
@@ -178,25 +181,25 @@ function rollLoot(rng, depth, elite) {
     return mkWeapon(base, plus, affix);
   }
   if (roll < wChance + 0.3) {
-    const kinds = Object.keys(CHARMS);
-    return mkCharm(kinds[(rng() * kinds.length) | 0]);
+    const kinds = Object.keys(MODULES);
+    return mkModule(kinds[(rng() * kinds.length) | 0]);
   }
-  return mkConsumable(rng() < 0.6 ? "knife" : "salts");
+  return mkConsumable(rng() < 0.6 ? "dart" : "cell");
 }
 const UPGRADES = [
-  { id: "hp",    name: "Ember vitality", desc: "+4 max HP",        base: 30, apply: p => { p.baseMaxHp += 4; p.hp += 4; } },
-  { id: "st",    name: "Endurance",      desc: "+1 max stamina",   base: 50, apply: p => { p.maxSt += 1; p.st += 1; } },
-  { id: "dmg",   name: "Hone blade",     desc: "+1 weapon damage", base: 60, apply: p => { p.bonusDmg += 1; } },
-  { id: "flask", name: "Deepen flask",   desc: "+1 flask charge",  base: 40, apply: p => { p.maxFlask += 1; p.flask += 1; } },
+  { id: "hp",    name: "Chassis reinforcement", desc: "+4 max integrity", base: 30, apply: p => { p.baseMaxHp += 4; p.hp += 4; } },
+  { id: "st",    name: "Capacitor bank",        desc: "+1 max power",     base: 50, apply: p => { p.maxSt += 1; p.st += 1; } },
+  { id: "dmg",   name: "Weapon calibration",    desc: "+1 weapon damage", base: 60, apply: p => { p.bonusDmg += 1; } },
+  { id: "flask", name: "Nanite reservoir",      desc: "+1 repair cell",   base: 40, apply: p => { p.maxFlask += 1; p.flask += 1; } },
 ];
 const PACTS = [
-  { id: "blood", name: "Pact of Blood", desc: "+2 weapon damage · −3 max HP",
+  { id: "overclock", name: "OVERCLOCK protocol", desc: "+2 weapon damage · −3 max integrity",
     can: p => p.baseMaxHp > 5, apply: p => { p.bonusDmg += 2; p.baseMaxHp -= 3; } },
-  { id: "stone", name: "Pact of Stone", desc: "+6 max HP · rolls cost +1 stamina",
+  { id: "ballast",   name: "BALLAST protocol",   desc: "+6 max integrity · dashes cost +1 power",
     can: () => true, apply: p => { p.baseMaxHp += 6; p.hp += 6; p.rollDelta += 1; } },
-  { id: "ash",   name: "Pact of Ash",   desc: "Rolls cost 1 stamina · −2 max HP",
+  { id: "thruster",  name: "THRUSTER protocol",  desc: "Dashes cost 1 power · −2 max integrity",
     can: p => !p.ashPact && p.baseMaxHp > 4, apply: p => { p.ashPact = true; p.baseMaxHp -= 2; } },
-  { id: "greed", name: "Pact of Greed", desc: "+70 souls, right now · −2 max HP",
+  { id: "scavenge",  name: "SCAVENGER protocol", desc: "+70 cores, right now · −2 max integrity",
     can: p => p.baseMaxHp > 4, apply: p => { p.souls += 70; p.baseMaxHp -= 2; } },
 ];
 
@@ -205,10 +208,10 @@ let run = null;
 let eid = 0;
 
 function persist() {
-  try { return JSON.parse(localStorage.getItem("emberhex") || "{}"); } catch (e) { return {}; }
+  try { return JSON.parse(localStorage.getItem("ironhex") || "{}"); } catch (e) { return {}; }
 }
 function savePersist(p) {
-  try { localStorage.setItem("emberhex", JSON.stringify(p)); } catch (e) { /* private mode */ }
+  try { localStorage.setItem("ironhex", JSON.stringify(p)); } catch (e) { /* private mode */ }
 }
 
 function newRun(seed) {
@@ -219,47 +222,47 @@ function newRun(seed) {
       q: 0, r: 0, hp: 12, st: 3, maxSt: 3,
       // base fields (pacts/upgrades mutate these); recalc() derives the rest
       baseMaxHp: 12, bonusDmg: 0, rollDelta: 0, ashPact: false,
-      weapon: null, charms: [null, null], bag: [],
+      weapon: null, modules: [null, null], bag: [],
       flask: 3, maxFlask: 3, souls: 0, parry: false, parryHit: false, dead: false,
     },
     tiles: new Map(),
     enemies: [],
     shards: [],
     chests: [], groundLoot: [],
-    stairs: null, bonfire: null, bloodstain: null, shrine: null,
+    stairs: null, bay: null, bloodstain: null, terminal: null,
     turn: 0, kills: 0, over: false, won: false,
     log: [],
   };
   const p = run.player;
-  p.weapon = mkWeapon("sword", 0, null);
-  p.weapon.name = "Rusted Sword";
-  p.weapon.desc = "It has seen better centuries. Find something worthier.";
-  p.bag.push(mkConsumable("knife"));
+  p.weapon = mkWeapon("blade", 0, null);
+  p.weapon.name = "Scrap Blade";
+  p.weapon.desc = "Cut from a dead frame's arm. Barely holds a charge — find better steel.";
+  p.bag.push(mkConsumable("dart"));
   recalc();
   descend();
   return run;
 }
 
-/* derive combat stats from weapon + charms + pacts/upgrades */
-const hasCharm = kind => run.player.charms.some(c => c && c.kind === kind);
-const countCharm = kind => run.player.charms.filter(c => c && c.kind === kind).length;
+/* derive combat stats from weapon + modules + protocols/upgrades */
+const hasModule = kind => run.player.modules.some(c => c && c.kind === kind);
+const countModule = kind => run.player.modules.filter(c => c && c.kind === kind).length;
 function recalc() {
   const p = run.player;
   const b = WEAPON_BASES[p.weapon.base];
-  p.dmg = b.dmg + p.weapon.plus + p.bonusDmg + countCharm("whet");
+  p.dmg = b.dmg + p.weapon.plus + p.bonusDmg + countModule("targeting");
   p.atkCost = b.atkCost;
   p.bsBonus = b.bsBonus;
   p.cleave = !!b.cleave;
   p.reach = !!b.reach;
   p.rollCost = p.ashPact ? 1 :
     clamp(b.rollCost + p.rollDelta
-      - (hasCharm("feather") ? 1 : 0)
-      - (p.weapon.affix === "swift" ? 1 : 0), 1, 4);
-  p.parryCost = p.weapon.affix === "guard" ? 1 : 2;
-  p.maxHp = p.baseMaxHp + 3 * countCharm("ring");
+      - (hasModule("gyro") ? 1 : 0)
+      - (p.weapon.affix === "servos" ? 1 : 0), 1, 4);
+  p.parryCost = p.weapon.affix === "deflector" ? 1 : 2;
+  p.maxHp = p.baseMaxHp + 3 * countModule("plating");
   p.hp = Math.min(p.hp, p.maxHp);
 }
-const flaskHeal = () => FLASK_HEAL + (hasCharm("heart") ? 3 : 0);
+const flaskHeal = () => FLASK_HEAL + (hasModule("regulator") ? 3 : 0);
 
 function log(msg, cls) {
   run.log.push({ msg, cls: cls || "", t: run.turn });
@@ -277,7 +280,7 @@ function genFloor() {
   run.chests = [];
   run.groundLoot = [];
   run.bloodstain = null;
-  run.shrine = null;
+  run.terminal = null;
   const R = f.R;
 
   if (f.boss) {
@@ -295,7 +298,7 @@ function genFloor() {
     run.player.q = 0; run.player.r = R - 1;
     const t0 = run.tiles.get(key(0, R - 1));
     if (t0) t0.rock = false;
-    run.bonfire = { q: 0, r: R - 2, used: false };
+    run.bay = { q: 0, r: R - 2, used: false };
     const tb = run.tiles.get(key(0, R - 2));
     if (tb) tb.rock = false;
     // a last armory before the King: guaranteed strong steel
@@ -357,13 +360,13 @@ function genFloor() {
   }
   const [sq, sr] = unkey(far);
   run.stairs = { q: sq, r: sr };
-  // bonfire roughly midway
+  // repair bay roughly midway
   const mid = floorKeys.filter(k => {
     const d = dist.get(k);
     return d !== undefined && Math.abs(d - fd / 2) <= 2 && k !== pk && k !== far;
   });
   const bk = pick(mid.length ? mid : floorKeys);
-  run.bonfire = { q: unkey(bk)[0], r: unkey(bk)[1], used: false };
+  run.bay = { q: unkey(bk)[0], r: unkey(bk)[1], used: false };
 
   // enemies: keep distance from spawn
   const freeFor = k => {
@@ -411,8 +414,8 @@ function genFloor() {
       item: rollLoot(mulberry32((run.seed ^ (run.floor * 131 + i * 37)) >>> 0), run.floor, false) });
   }
 
-  // dark shrine: a pact, if you dare
-  if (f.shrine) {
+  // corrupted terminal: a protocol, if you dare
+  if (f.terminal) {
     const cand = floorKeys.filter(k => {
       const d = dist.get(k);
       return d !== undefined && d >= 4 && k !== far && k !== bk &&
@@ -421,7 +424,7 @@ function genFloor() {
     });
     if (cand.length) {
       const [q, r] = unkey(pick(cand));
-      run.shrine = { q, r, used: false };
+      run.terminal = { q, r, used: false };
     }
   }
 
@@ -456,7 +459,7 @@ function spawnEnemy(type, q, r) {
 function descend() {
   run.floor++;
   genFloor();
-  log(run.floor === 5 ? "The Ashen King awaits." : "Floor " + run.floor + ".", "sys");
+  log(run.floor === 5 ? "OVERSEER core detected." : "Sector " + run.floor + ".", "sys");
   centerCam();
   invalidateFloorCaches();
 }
@@ -535,10 +538,10 @@ function strikeOne(e, primary) {
   const toPlayer = axisDir(e.q, e.r, p.q, p.r);   // works adjacent or at reach
   const front = [e.dir, (e.dir + 1) % 6, (e.dir + 5) % 6].includes(toPlayer);
   const rear = [(e.dir + 3) % 6, (e.dir + 2) % 6, (e.dir + 4) % 6].includes(toPlayer);
-  // warden shield: frontal hits bounce off unless its guard is broken
-  if (e.type === "warden" && front && e.stagger === 0) {
-    addFloat(e.q, e.r, "blocked", "#9ab0c8");
-    if (primary) log("Your blow rings off the Warden's shield.", "warn");
+  // bulwark shield: frontal hits scatter unless the field is overloaded
+  if (e.type === "bulwark" && front && e.stagger === 0) {
+    addFloat(e.q, e.r, "deflected", "#9ac8e0");
+    if (primary) log("Your strike scatters off the Bulwark's shield field.", "warn");
     sfx("block");
     return;
   }
@@ -596,8 +599,8 @@ function actRoll(dq, dr) {
   if (!walkable(lq, lr) || occupied(lq, lr)) return false;
   p.st -= p.rollCost;
   p.q = lq; p.r = lr;
-  log("You roll.", "");
-  sfx("roll");
+  log("Thrusters fire.", "");
+  sfx("dash");
   afterPlayerMove();
   endTurn();
   return true;
@@ -609,7 +612,7 @@ function actParry() {
   p.parry = true;
   p.parryHit = false;
   endTurn();
-  if (!p.parryHit && !run.over) log("Your parry meets empty air.", "warn");
+  if (!p.parryHit && !run.over) log("Your deflector closes on nothing.", "warn");
   return true;
 }
 function actFlask() {
@@ -618,15 +621,15 @@ function actFlask() {
   p.flask -= 1;
   const heal = flaskHeal();
   p.hp = Math.min(p.maxHp, p.hp + heal);
-  sfx("flask");
-  log("You drink from the flask.", "good");
-  addFloat(p.q, p.r, "+" + heal, "#7fbf7f");
+  sfx("repair");
+  log("Repair cell injected.", "good");
+  addFloat(p.q, p.r, "+" + heal, "#5fe0aa");
   endTurn();
   return true;
 }
 function actRest() {
   const p = run.player;
-  const b = run.bonfire;
+  const b = run.bay;
   if (!b || b.used || hexDist(p.q, p.r, b.q, b.r) > 1) return false;
   b.used = true;
   p.hp = p.maxHp;
@@ -651,10 +654,10 @@ function actRest() {
         n++;
       }
     }
-    if (n) log("You rest. The dark stirs — the floor lives again.", "warn");
-    else log("You rest by the fire.", "good");
+    if (n) log("Docked. Systems restored — but the sector reinitializes.", "warn");
+    else log("Docked. Systems restored.", "good");
   } else {
-    log("You rest. Beyond waits the King.", "good");
+    log("Docked. Beyond this bay: the OVERSEER.", "good");
   }
   showShop();
   render();
@@ -674,7 +677,7 @@ function inCombat() {
 }
 function spendGearTurn() {
   if (inCombat() && !run.over) {
-    log("You fumble with your gear as the dark closes in.", "warn");
+    log("You swap hardware with hostiles in sensor range.", "warn");
     endTurn();
     return true;
   }
@@ -688,27 +691,27 @@ function equipItem(idx) {
     p.bag[idx] = p.weapon;
     p.weapon = item;
     recalc();
-    log(item.name + " in hand.", "good");
+    log(item.name + " online.", "good");
     spendGearTurn();
     return true;
   }
-  if (item.type === "charm") {
-    const slot = p.charms.findIndex(c => !c);
+  if (item.type === "module") {
+    const slot = p.modules.findIndex(c => !c);
     if (slot < 0) return false;         // unequip one first
-    p.charms[slot] = item;
+    p.modules[slot] = item;
     p.bag.splice(idx, 1);
     recalc();
-    log(item.name + " equipped.", "good");
+    log(item.name + " installed.", "good");
     spendGearTurn();
     return true;
   }
   return false;
 }
-function unequipCharm(slot) {
+function unequipModule(slot) {
   const p = run.player;
-  const c = p.charms[slot];
+  const c = p.modules[slot];
   if (!c || p.bag.length >= BAG_SIZE) return false;
-  p.charms[slot] = null;
+  p.modules[slot] = null;
   p.bag.push(c);
   recalc();
   spendGearTurn();
@@ -717,7 +720,7 @@ function unequipCharm(slot) {
 function dropItem(idx) {
   const p = run.player;
   if (!p.bag[idx]) return false;
-  log(p.bag[idx].name + " left to the dark.", "");
+  log(p.bag[idx].name + " jettisoned.", "");
   p.bag.splice(idx, 1);
   return true;
 }
@@ -725,16 +728,16 @@ function useConsumable(idx, target) {
   const p = run.player;
   const item = p.bag[idx];
   if (!item || item.type !== "consumable" || run.over) return false;
-  if (item.kind === "salts") {
+  if (item.kind === "cell") {
     p.st = p.maxSt;
     p.hp = Math.min(p.maxHp, p.hp + 2);
     p.bag.splice(idx, 1);
-    log("The salts burn bright. You are ready.", "good");
-    sfx("flask");
+    log("Power cell spent. Capacitors full.", "good");
+    sfx("repair");
     endTurn();
     return true;
   }
-  if (item.kind === "knife") {
+  if (item.kind === "dart") {
     if (!target) return false;
     const d = axisDir(p.q, p.r, target.q, target.r);
     if (d < 0 || hexDist(p.q, p.r, target.q, target.r) > 4) return false;
@@ -764,16 +767,16 @@ function afterPlayerMove() {
     const s = run.shards[i];
     if (s.q === p.q && s.r === p.r) {
       p.souls += s.souls;
-      addFloat(p.q, p.r, "+" + s.souls + " souls", "#8fd48a");
-      sfx("souls");
+      addFloat(p.q, p.r, "+" + s.souls + " cores", "#7fe0f4");
+      sfx("core");
       run.shards.splice(i, 1);
     }
   }
   if (run.bloodstain && run.bloodstain.q === p.q && run.bloodstain.r === p.r) {
     p.souls += run.bloodstain.souls;
-    log("You recover " + run.bloodstain.souls + " souls from your predecessor.", "good");
-    addFloat(p.q, p.r, "+" + run.bloodstain.souls + " souls", "#8fd48a");
-    sfx("souls");
+    log("You reclaim " + run.bloodstain.souls + " cores from your wreck.", "good");
+    addFloat(p.q, p.r, "+" + run.bloodstain.souls + " cores", "#7fe0f4");
+    sfx("core");
     run.bloodstain = null;
     const per = persist();
     delete per.stain;
@@ -784,27 +787,27 @@ function afterPlayerMove() {
   if (chest) {
     if (giveItem(chest.item)) {
       chest.opened = true;
-      log("You find: " + chest.item.name + ".", "good");
-      addFloat(p.q, p.r, chest.item.name, "#f0c690");
-      sfx("souls");
+      log("Cache open: " + chest.item.name + ".", "good");
+      addFloat(p.q, p.r, chest.item.name, "#8fe0f0");
+      sfx("core");
     } else {
-      log("Your bag is full. Drop something first.", "warn");
+      log("Storage full. Jettison something first.", "warn");
     }
   }
   const li = run.groundLoot.findIndex(l => l.q === p.q && l.r === p.r);
   if (li >= 0) {
     const l = run.groundLoot[li];
     if (giveItem(l.item)) {
-      log("You take: " + l.item.name + ".", "good");
-      addFloat(p.q, p.r, l.item.name, "#f0c690");
-      sfx("souls");
+      log("Recovered: " + l.item.name + ".", "good");
+      addFloat(p.q, p.r, l.item.name, "#8fe0f0");
+      sfx("core");
       run.groundLoot.splice(li, 1);
     } else {
-      log("Your bag is full. Drop something first.", "warn");
+      log("Storage full. Jettison something first.", "warn");
     }
   }
-  if (run.shrine && !run.shrine.used && run.shrine.q === p.q && run.shrine.r === p.r) {
-    showShrine();
+  if (run.terminal && !run.terminal.used && run.terminal.q === p.q && run.terminal.r === p.r) {
+    showTerminal();
   }
   if (run.stairs && run.stairs.q === p.q && run.stairs.r === p.r) {
     sfx("stairs");
@@ -820,22 +823,22 @@ function hurtEnemy(e, dmg, label) {
   if (e.hp <= 0) {
     const def = ENEMY[e.type];
     let souls = e.elite ? def.souls * 3 : def.souls;
-    if (hasCharm("magnet")) souls = Math.round(souls * 4 / 3);
+    if (hasModule("salvage")) souls = Math.round(souls * 4 / 3);
     run.player.souls += souls;
     run.kills++;
-    if (run.player.weapon.affix === "leech" && run.player.hp > 0) {
+    if (run.player.weapon.affix === "siphon" && run.player.hp > 0) {
       run.player.hp = Math.min(run.player.maxHp, run.player.hp + 1);
-      addFloat(run.player.q, run.player.r, "+1", "#7fbf7f");
+      addFloat(run.player.q, run.player.r, "+1", "#5fe0aa");
     }
     // elites carry loot to the grave
     if (e.elite) run.groundLoot.push({ q: e.q, r: e.r, item: rollLoot(mulberry32((run.seed ^ e.id * 7919) >>> 0), run.floor, true) });
-    if (souls) addFloat(e.q, e.r, "+" + souls + " souls", "#8fd48a");
+    if (souls) addFloat(e.q, e.r, "+" + souls + " cores", "#7fe0f4");
     burst(hexX(e.q, e.r), hexY(e.q, e.r), def.color, 14, 100);
-    burst(hexX(e.q, e.r), hexY(e.q, e.r), "#8fd48a", 5, 60);
+    burst(hexX(e.q, e.r), hexY(e.q, e.r), "#5fd6f0", 5, 60);
     sfx("die");
     run.enemies.splice(run.enemies.indexOf(e), 1);
     if (e.type === "boss") winRun();
-    else log(def.name + " destroyed.", "");
+    else log(def.name + " scrapped.", "");
   }
 }
 
@@ -848,9 +851,9 @@ function hurtPlayer(e, dmg) {
     e.stagger = 2;
     e.state = "idle";
     e.windupHexes = [];
-    log("PARRIED! " + ENEMY[e.type].name + " is staggered.", "good");
-    addFloat(e.q, e.r, "staggered", "#f0c060");
-    burst(hexX(p.q, p.r), hexY(p.q, p.r), "#f0d060", 12, 90);
+    log("DEFLECTED! " + ENEMY[e.type].name + " overloads.", "good");
+    addFloat(e.q, e.r, "overloaded", "#f0c060");
+    burst(hexX(p.q, p.r), hexY(p.q, p.r), "#7fe6f4", 14, 100);
     sfx("parry");
     return;
   }
@@ -880,12 +883,12 @@ function endTurn() {
     if (e.type === "boss") resolveBossStrike(e, hexes, struck);
     else {
       if (struck) hurtPlayer(e, e.dmg);
-      // rhythm enemies recover after striking: archers reload, wardens
-      // re-set their shield (your window to flank), bellows re-stuff the bag
-      if (e.type === "archer" || e.type === "warden" || e.type === "bellows") e.rest = 1;
+      // rhythm units recover after striking: rail drones recharge, bulwarks
+      // re-seat their shield (your window to flank), mortars reload
+      if (e.type === "railer" || e.type === "bulwark" || e.type === "mortar") e.rest = 1;
       // stagger 2, not 1: the decision loop below decrements once this same
       // turn, so 2 nets the player exactly one real punish window
-      if (e.type === "brute") { e.stagger = 2; addFloat(e.q, e.r, "staggered", "#f0c060"); }
+      if (e.type === "crusher") { e.stagger = 2; addFloat(e.q, e.r, "overloaded", "#f0c060"); }
     }
     if (run.over) return;
   }
@@ -950,7 +953,7 @@ function aiAct(e, flow) {
     else return;
   }
   switch (e.type) {
-    case "hollow":
+    case "scrapper":
       if (dist === 1) {
         faceToward(e, p.q, p.r);
         e.state = "windup";
@@ -958,7 +961,7 @@ function aiAct(e, flow) {
         e.windupHexes = [key(p.q, p.r)];
       } else stepEnemyToward(e, flow);
       break;
-    case "warden":
+    case "bulwark":
       if (e.rest > 0) { e.rest--; break; }
       if (dist === 1) {
         faceToward(e, p.q, p.r);   // facing locks for the swing — flank now
@@ -970,7 +973,7 @@ function aiAct(e, flow) {
         faceToward(e, p.q, p.r);   // shield tracks you while it advances
       }
       break;
-    case "bellows": {
+    case "mortar": {
       if (e.rest > 0) { e.rest--; break; }
       if (dist <= 1) { stepEnemyAway(e, flow); break; }
       if (dist >= 2 && dist <= 5) {
@@ -988,7 +991,7 @@ function aiAct(e, flow) {
       } else stepEnemyToward(e, flow);
       break;
     }
-    case "stalker": {
+    case "ripper": {
       if (dist === 1) {
         faceToward(e, p.q, p.r);
         e.state = "windup";
@@ -1000,9 +1003,9 @@ function aiAct(e, flow) {
       }
       break;
     }
-    case "archer": {
+    case "railer": {
       if (e.rest > 0) { e.rest--; break; }
-      // flee only when adjacent: a kiting range-2 archer can never be
+      // flee only when adjacent: a kiting range-2 drone can never be
       // caught on foot (equal speeds), which soft-locks melee play
       if (dist <= 1) { stepEnemyAway(e, flow); break; }
       const d = axisDir(e.q, e.r, p.q, p.r);
@@ -1039,7 +1042,7 @@ function aiAct(e, flow) {
       } else stepEnemyToward(e, flow);
       break;
     }
-    case "brute": {
+    case "crusher": {
       if (dist === 1) {
         faceToward(e, p.q, p.r);
         e.state = "windup";
@@ -1061,8 +1064,8 @@ function bossAct(e, flow, dist) {
   if (e.bossCount >= 3) {
     e.bossCount = 0;
     e.stagger = 1;
-    log("The Ashen King catches his breath.", "good");
-    addFloat(e.q, e.r, "exhausted", "#f0c060");
+    log("The OVERSEER vents heat.", "good");
+    addFloat(e.q, e.r, "overheated", "#f0c060");
     return;
   }
   if (!e.bossPhase2 && e.hp <= e.maxHp / 2) {
@@ -1072,7 +1075,7 @@ function bossAct(e, flow, dist) {
     e.windupTimer = 2;
     e.windupKind = "slam";
     e.windupHexes = DIRS.map(([dq, dr]) => key(e.q + dq, e.r + dr));
-    log("The King draws deep on the ember...", "warn");
+    log("The OVERSEER floods its core...", "warn");
     return;
   }
   if (dist === 1) {
@@ -1123,20 +1126,20 @@ function resolveBossStrike(e, hexes, struck) {
     if (landing) { e.q = landing[0]; e.r = landing[1]; }
   } else if (e.windupKind === "slam") {
     if (struck) hurtPlayer(e, 6);
-    // summon two hollows
+    // fabricate two scrappers
     const free = [];
     for (const [dq, dr] of DIRS) {
       const q = e.q + dq * 2, r = e.r + dr * 2;
       if (walkable(q, r) && !occupied(q, r)) free.push([q, r]);
     }
-    const summons = ["hollow", "warden"];
+    const summons = ["scrapper", "bulwark"];
     for (let i = 0; i < 2 && free.length; i++) {
       const [q, r] = free.splice((i * 3) % free.length, 1)[0];
-      const h = spawnEnemy(summons[i] || "hollow", q, r);
+      const h = spawnEnemy(summons[i] || "scrapper", q, r);
       h.awake = true;
     }
     e.stagger = 2;   // resolved pre-decrement this turn; nets one window
-    log("Hollows claw out of the ash!", "warn");
+    log("Fabricators spit out fresh units!", "warn");
   } else {
     if (struck) hurtPlayer(e, 5);
   }
@@ -1147,17 +1150,17 @@ function dieRun() {
   const p = run.player;
   p.dead = true;
   run.over = true;
-  sfx("youdied");
+  sfx("shutdown");
   const per = persist();
   per.deaths = (per.deaths || 0) + 1;
   per.best = Math.max(per.best || 0, run.floor);
   if (p.souls > 0) per.stain = { floor: run.floor, souls: p.souls };
   savePersist(per);
   document.getElementById("death-souls").textContent =
-    p.souls > 0 ? p.souls + " souls left behind on floor " + run.floor + " — reclaim them next run."
-                : "You carried nothing worth reclaiming.";
+    p.souls > 0 ? p.souls + " cores scattered in Sector " + run.floor + " — reclaim them from your wreck."
+                : "You carried nothing worth salvaging.";
   document.getElementById("death-stats").textContent =
-    "Floor " + run.floor + " · " + run.kills + " kills · turn " + run.turn;
+    "Sector " + run.floor + " · " + run.kills + " scrapped · cycle " + run.turn;
   document.getElementById("death").classList.remove("hidden");
 }
 
@@ -1171,7 +1174,7 @@ function winRun() {
   delete per.stain;
   savePersist(per);
   document.getElementById("win-stats").textContent =
-    run.kills + " kills · " + run.turn + " turns · " + run.player.souls + " souls unspent";
+    run.kills + " scrapped · " + run.turn + " cycles · " + run.player.souls + " cores unspent";
   document.getElementById("win").classList.remove("hidden");
 }
 
@@ -1222,18 +1225,28 @@ function sfx(name) {
   if (muted) return;
   try {
     switch (name) {
-      case "strike": tone(240, 0.09, "triangle", 0.18, 150); noiseBurst(0.05, 0.1, 3000); break;
-      case "hit":    tone(95, 0.16, "square", 0.2, 60); break;
-      case "slam":   tone(60, 0.35, "square", 0.3, 35); noiseBurst(0.25, 0.22, 700); break;
-      case "block":  tone(720, 0.06, "square", 0.12, 500); tone(510, 0.1, "triangle", 0.1); break;
-      case "parry":  tone(1150, 0.16, "sine", 0.22, 1650); break;
-      case "roll":   noiseBurst(0.16, 0.12, 1300); break;
-      case "die":    tone(170, 0.22, "sawtooth", 0.16, 55); noiseBurst(0.12, 0.12, 1400); break;
-      case "youdied":tone(58, 1.6, "sawtooth", 0.25, 36); break;
-      case "flask":  tone(390, 0.09, "sine", 0.15, 500); setTimeout(() => tone(490, 0.1, "sine", 0.15, 620), 90); break;
-      case "souls":  tone(880, 0.18, "sine", 0.1, 1180); break;
-      case "stairs": tone(300, 0.5, "triangle", 0.14, 130); break;
-      case "win":    [440, 550, 660, 880].forEach((f, i) => setTimeout(() => tone(f, 0.35, "triangle", 0.16), i * 130)); break;
+      // servo-driven strike: a short mechanical zap with a metal transient
+      case "strike":  tone(280, 0.08, "sawtooth", 0.16, 170); noiseBurst(0.05, 0.12, 3400); break;
+      case "hit":     tone(110, 0.14, "square", 0.2, 62); noiseBurst(0.07, 0.14, 1800); break;
+      case "slam":    tone(58, 0.34, "square", 0.3, 32); noiseBurst(0.26, 0.24, 620); break;
+      // shield field rejecting a hit: high electronic ping
+      case "block":   tone(1320, 0.07, "square", 0.13, 900); tone(660, 0.12, "sine", 0.1, 520); break;
+      // deflector overload: bright rising chirp
+      case "parry":   tone(900, 0.05, "square", 0.14, 1500);
+                      setTimeout(() => tone(1500, 0.17, "sine", 0.2, 2300), 45); break;
+      case "dash":    noiseBurst(0.18, 0.14, 1600); tone(420, 0.16, "sine", 0.08, 900); break;
+      // a machine losing power: descending saw + debris
+      case "die":     tone(220, 0.3, "sawtooth", 0.17, 48); noiseBurst(0.16, 0.14, 1200); break;
+      case "shutdown":tone(240, 1.9, "sawtooth", 0.26, 28); noiseBurst(0.5, 0.1, 500); break;
+      // nanite injection: rising hiss
+      case "repair":  noiseBurst(0.14, 0.07, 2600);
+                      tone(420, 0.1, "sine", 0.14, 560);
+                      setTimeout(() => tone(620, 0.12, "sine", 0.13, 800), 95); break;
+      case "core":    tone(1050, 0.09, "square", 0.09, 1400);
+                      setTimeout(() => tone(1560, 0.12, "sine", 0.09), 70); break;
+      case "stairs":  tone(340, 0.5, "triangle", 0.13, 120); noiseBurst(0.3, 0.06, 700); break;
+      case "win":     [523, 659, 784, 1047].forEach((f, i) =>
+                        setTimeout(() => tone(f, 0.38, "triangle", 0.16), i * 140)); break;
     }
   } catch (e) { /* audio can fail freely */ }
 }
@@ -1275,7 +1288,7 @@ function centerCam() {
   cam.ty = hexY(run.player.q, run.player.r);
 }
 
-const FLOOR_COLOR = "#3b3640";
+const FLOOR_COLOR = "#2b3540";
 let terrainCache = null, fogCache = null, fogDirty = true;
 function invalidateFloorCaches() { terrainCache = null; fogCache = null; fogDirty = true; }
 
@@ -1293,16 +1306,16 @@ function buildTerrainCache() {
     const x = hexX(t.q, t.r), y = hexY(t.q, t.r);
     hexPath(c, x, y, 1.02);
     if (t.rock) {
-      c.fillStyle = shade("#221f26", t.shade);
+      c.fillStyle = shade("#131b23", t.shade);
       c.fill();
       hexPath(c, x, y, 0.72);
-      c.fillStyle = shade("#4d4756", t.shade);
+      c.fillStyle = shade("#3b4c5c", t.shade);
       c.fill();
     } else {
       c.fillStyle = shade(FLOOR_COLOR, t.shade);
       c.fill();
       hexPath(c, x, y);
-      c.strokeStyle = "#00000038";
+      c.strokeStyle = "#0a121a55";
       c.lineWidth = 1;
       c.stroke();
     }
@@ -1324,7 +1337,7 @@ function buildFogCache() {
     const k = key(t.q, t.r);
     if (visible.has(k)) continue;
     hexPath(c, hexX(t.q, t.r), hexY(t.q, t.r), 1.04);
-    c.fillStyle = t.explored ? "#0e0d1299" : "#0e0d12";
+    c.fillStyle = t.explored ? "#080d1299" : "#080d12";
     c.fill();
   }
   fogDirty = false;
@@ -1351,7 +1364,7 @@ function render(now) {
   const shy = shake ? (Math.random() - 0.5) * shake : 0;
 
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  ctx.fillStyle = "#141216";
+  ctx.fillStyle = "#0c1015";
   ctx.fillRect(0, 0, W, H);
   ctx.setTransform(cam.zoom * DPR, 0, 0, cam.zoom * DPR,
     (W / 2 - (cam.x + shx) * cam.zoom) * DPR, (H / 2 - (cam.y + shy) * cam.zoom) * DPR);
@@ -1362,10 +1375,10 @@ function render(now) {
 
   const t = now / 1000;
 
-  /* stairs, bonfire, shards, bloodstain */
+  /* drop shaft, repair bay, cores, wreck */
   if (run.stairs && visibleOrExplored(run.stairs)) drawStairs(run.stairs);
-  if (run.bonfire && visibleOrExplored(run.bonfire)) drawBonfire(run.bonfire, t);
-  if (run.shrine && visibleOrExplored(run.shrine)) drawShrine(run.shrine, t);
+  if (run.bay && visibleOrExplored(run.bay)) drawRepairBay(run.bay, t);
+  if (run.terminal && visibleOrExplored(run.terminal)) drawTerminal(run.terminal, t);
   for (const c of run.chests) if (visibleOrExplored(c)) drawChest(c, t);
   for (const l of run.groundLoot) if (visible.has(key(l.q, l.r))) drawLootDrop(l, t);
   for (const s of run.shards) if (visible.has(key(s.q, s.r))) drawShard(s, t);
@@ -1389,7 +1402,7 @@ function render(now) {
     }
   }
 
-  /* throwing-knife targets: first body down each clear line */
+  /* shock-dart targets: first machine down each clear lane */
   if (ui.throwItem) {
     for (let d = 0; d < 6; d++) {
       let q = run.player.q, r = run.player.r;
@@ -1401,7 +1414,7 @@ function render(now) {
         if (e) {
           if (visible.has(key(q, r))) {
             hexPath(ctx, hexX(q, r), hexY(q, r), 0.75);
-            ctx.strokeStyle = "#f0c060";
+            ctx.strokeStyle = "#5fe0f0";
             ctx.lineWidth = 2.5;
             ctx.stroke();
           }
@@ -1411,7 +1424,7 @@ function render(now) {
     }
   }
 
-  /* roll-mode targets */
+  /* dash targets */
   if (ui.rollMode && run.player.st >= run.player.rollCost) {
     for (const [dq, dr] of DIRS) {
       const q = run.player.q + dq * 2, r = run.player.r + dr * 2;
@@ -1419,7 +1432,7 @@ function render(now) {
       const mt = run.tiles.get(key(mq, mr));
       if (!mt || mt.rock || !walkable(q, r) || occupied(q, r)) continue;
       hexPath(ctx, hexX(q, r), hexY(q, r), 0.7);
-      ctx.strokeStyle = "#8fd48a";
+      ctx.strokeStyle = "#4fd6e8";
       ctx.lineWidth = 2.5;
       ctx.stroke();
     }
@@ -1496,25 +1509,41 @@ function drawPlayer(p, t) {
   p.bumpY = (p.bumpY || 0) * 0.82;
   pos.x += p.bumpX;
   pos.y += p.bumpY;
+  // chassis
   hexPath(ctx, pos.x, pos.y, 0.62);
-  ctx.fillStyle = "#dcd6c8";
+  ctx.fillStyle = "#b6c6d2";
   ctx.fill();
   hexPath(ctx, pos.x, pos.y, 0.62);
-  ctx.strokeStyle = "#8a8578";
+  ctx.strokeStyle = "#6d8494";
   ctx.lineWidth = 2;
   ctx.stroke();
-  // visor
-  ctx.fillStyle = "#2c2a33";
-  ctx.fillRect(pos.x - 8, pos.y - 4, 16, 4);
-  // plume
-  ctx.fillStyle = "#b05050";
+  // plating seam
+  ctx.strokeStyle = "#8ea2b0";
+  ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.arc(pos.x, pos.y - HEX * 0.55, 4.5, 0, TAU);
+  ctx.moveTo(pos.x - 9, pos.y + 5);
+  ctx.lineTo(pos.x + 9, pos.y + 5);
+  ctx.stroke();
+  // optic bar
+  ctx.fillStyle = "#0f1c24";
+  ctx.fillRect(pos.x - 9, pos.y - 5, 18, 6);
+  ctx.fillStyle = "#4fd6e8";
+  ctx.fillRect(pos.x - 7, pos.y - 4, 14, 3);
+  // power indicator: dims as the capacitor drains
+  const lit = p.maxSt ? clamp(p.st / p.maxSt, 0, 1) : 0;
+  ctx.fillStyle = `rgba(79,214,232,${0.25 + lit * 0.75})`;
+  ctx.beginPath();
+  ctx.arc(pos.x, pos.y - HEX * 0.55, 3.5, 0, TAU);
   ctx.fill();
   if (p.parry) {
-    hexPath(ctx, pos.x, pos.y, 0.85);
-    ctx.strokeStyle = "#f0d060";
+    // deflector field
+    hexPath(ctx, pos.x, pos.y, 0.9);
+    ctx.strokeStyle = "#7fe6f4";
     ctx.lineWidth = 3;
+    ctx.stroke();
+    hexPath(ctx, pos.x, pos.y, 0.78);
+    ctx.strokeStyle = "rgba(127,230,244,0.45)";
+    ctx.lineWidth = 1.5;
     ctx.stroke();
   }
 }
@@ -1522,7 +1551,7 @@ function drawEnemy(e, t, dt) {
   const pos = entityPos(e);
   const def = ENEMY[e.type];
   e.flash = Math.max(0, (e.flash || 0) - dt);
-  const big = e.type === "boss" ? 1.0 : e.type === "brute" ? 0.78 : 0.55;
+  const big = e.type === "boss" ? 1.0 : e.type === "crusher" ? 0.78 : 0.55;
   ctx.save();
   ctx.translate(pos.x, pos.y);
   // facing wedge
@@ -1537,26 +1566,25 @@ function drawEnemy(e, t, dt) {
   ctx.lineTo(-HEX * big * 0.65, -HEX * big * 0.7);
   ctx.closePath();
   ctx.fill();
-  if (e.elite) {
-    ctx.strokeStyle = "#f0d060";
-    ctx.lineWidth = 2;
-    ctx.stroke();
-  }
-  // eye
-  ctx.fillStyle = e.type === "boss" ? "#ffe9a0" : "#f0dcd0";
+  // chassis edge — everything down here is welded metal
+  ctx.strokeStyle = e.elite ? "#f0d060" : "#0f1720";
+  ctx.lineWidth = e.elite ? 2 : 1.2;
+  ctx.stroke();
+  // hostile optic
+  ctx.fillStyle = e.type === "boss" ? "#ffe07a" : "#ff6a52";
   ctx.beginPath();
   ctx.arc(HEX * big * 0.3, 0, HEX * big * 0.16, 0, TAU);
   ctx.fill();
-  // warden: the shield IS the tell — a steel bar across its front arc
-  if (e.type === "warden") {
+  // bulwark: the shield IS the tell — an emitter bar across its front arc
+  if (e.type === "bulwark") {
     ctx.strokeStyle = e.stagger > 0 ? "#55606e" : "#c8d8e8";
     ctx.lineWidth = 4;
     ctx.beginPath();
     ctx.arc(0, 0, HEX * big * 1.05, -1.15, 1.15);
     ctx.stroke();
   }
-  // bellows: the bomb it's about to throw
-  if (e.type === "bellows") {
+  // mortar: the charge it's about to lob
+  if (e.type === "mortar") {
     ctx.fillStyle = e.state === "windup" ? "#e06040" : "#3a3230";
     ctx.beginPath();
     ctx.arc(-HEX * big * 0.35, 0, HEX * big * 0.34, 0, TAU);
@@ -1565,10 +1593,10 @@ function drawEnemy(e, t, dt) {
   ctx.restore();
   if (e.type === "boss") {
     // crown
-    ctx.fillStyle = "#f0d060";
-    ctx.font = "bold 14px sans-serif";
+    ctx.fillStyle = "#ffe07a";
+    ctx.font = "bold 15px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("♔", pos.x, pos.y - HEX * 0.9);
+    ctx.fillText("◈", pos.x, pos.y - HEX * 0.9);
   }
   // state markers
   if (e.state === "windup") {
@@ -1591,106 +1619,153 @@ function drawEnemy(e, t, dt) {
     ctx.fillRect(pos.x - w / 2, pos.y + HEX * big * 0.8 + 3, w * clamp(e.hp / e.maxHp, 0, 1), 3.5);
   }
 }
+/* drop shaft to the next sector: an open floor hatch, lit from below */
 function drawStairs(s) {
   const x = hexX(s.q, s.r), y = hexY(s.q, s.r);
-  hexPath(ctx, x, y, 0.8);
-  ctx.fillStyle = "#191721";
+  hexPath(ctx, x, y, 0.82);
+  ctx.fillStyle = "#070c11";
   ctx.fill();
-  ctx.strokeStyle = "#6b647a";
+  ctx.strokeStyle = "#3f6f82";
   ctx.lineWidth = 2;
-  for (let i = 3; i > 0; i--) {
-    hexPath(ctx, x, y, 0.22 * i);
+  hexPath(ctx, x, y, 0.82);
+  ctx.stroke();
+  // descending chevrons
+  ctx.strokeStyle = "#4fd6e8";
+  ctx.lineWidth = 2.5;
+  for (let i = 0; i < 3; i++) {
+    const oy = -8 + i * 8;
+    ctx.globalAlpha = 0.35 + i * 0.25;
+    ctx.beginPath();
+    ctx.moveTo(x - 7, y + oy);
+    ctx.lineTo(x, y + oy + 5);
+    ctx.lineTo(x + 7, y + oy);
     ctx.stroke();
   }
-}
-function drawBonfire(b, t) {
-  const x = hexX(b.q, b.r), y = hexY(b.q, b.r);
-  // coiled sword + flame
-  ctx.strokeStyle = "#7a7468";
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(x, y + 8);
-  ctx.lineTo(x, y - 14);
-  ctx.stroke();
-  if (!b.used) {
-    const fl = 0.8 + 0.2 * Math.sin(t * 7);
-    const grad = ctx.createRadialGradient(x, y, 2, x, y, 22 * fl);
-    grad.addColorStop(0, "rgba(255,180,80,0.85)");
-    grad.addColorStop(1, "rgba(255,120,40,0)");
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.arc(x, y, 22 * fl, 0, TAU);
-    ctx.fill();
-  }
-  ctx.fillStyle = b.used ? "#55504a" : "#ffb450";
-  ctx.beginPath();
-  ctx.arc(x, y + 4, 5, 0, TAU);
-  ctx.fill();
-}
-function drawShard(s, t) {
-  const x = hexX(s.q, s.r), y = hexY(s.q, s.r) + Math.sin(t * 3 + s.q) * 2;
-  ctx.fillStyle = "#8fd48a";
-  ctx.globalAlpha = 0.85;
-  ctx.beginPath();
-  ctx.ellipse(x, y, 4, 7, 0, 0, TAU);
-  ctx.fill();
   ctx.globalAlpha = 1;
 }
-function drawShrine(s, t) {
-  const x = hexX(s.q, s.r), y = hexY(s.q, s.r);
-  const glow = s.used ? 0 : 0.55 + 0.25 * Math.sin(t * 3);
-  if (glow) {
-    const grad = ctx.createRadialGradient(x, y, 2, x, y, 20);
-    grad.addColorStop(0, `rgba(170,110,220,${glow * 0.5})`);
-    grad.addColorStop(1, "rgba(170,110,220,0)");
+/* repair bay: a docking pylon; live bays hum with a coolant glow */
+function drawRepairBay(b, t) {
+  const x = hexX(b.q, b.r), y = hexY(b.q, b.r);
+  if (!b.used) {
+    const fl = 0.85 + 0.15 * Math.sin(t * 5);
+    const grad = ctx.createRadialGradient(x, y, 2, x, y, 24 * fl);
+    grad.addColorStop(0, "rgba(80,230,190,0.5)");
+    grad.addColorStop(1, "rgba(60,200,160,0)");
     ctx.fillStyle = grad;
     ctx.beginPath();
-    ctx.arc(x, y, 20, 0, TAU);
+    ctx.arc(x, y, 24 * fl, 0, TAU);
     ctx.fill();
   }
-  ctx.fillStyle = s.used ? "#4a4452" : "#9a6ac2";
+  // pylon
+  ctx.fillStyle = b.used ? "#3a444e" : "#6d8494";
+  ctx.fillRect(x - 3, y - 14, 6, 22);
+  ctx.fillStyle = b.used ? "#2e3740" : "#4a5c6a";
+  ctx.fillRect(x - 10, y + 6, 20, 5);
+  // cross-brace: the universal "repair" read
+  ctx.strokeStyle = b.used ? "#4a5560" : "#5fe0b8";
+  ctx.lineWidth = 3;
   ctx.beginPath();
-  ctx.moveTo(x, y - 13);
-  ctx.lineTo(x + 7, y + 6);
-  ctx.lineTo(x, y + 10);
-  ctx.lineTo(x - 7, y + 6);
-  ctx.closePath();
-  ctx.fill();
+  ctx.moveTo(x - 8, y - 6);
+  ctx.lineTo(x + 8, y - 6);
+  ctx.stroke();
 }
+/* loose core fragment */
+function drawShard(s, t) {
+  const x = hexX(s.q, s.r), y = hexY(s.q, s.r) + Math.sin(t * 3 + s.q) * 2;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(t * 1.5 + s.q);
+  ctx.fillStyle = "#5fd6f0";
+  ctx.globalAlpha = 0.9;
+  ctx.fillRect(-3.5, -3.5, 7, 7);
+  ctx.strokeStyle = "#b0f4ff";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(-3.5, -3.5, 7, 7);
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+/* corrupted terminal: a screen still running something it should not */
+function drawTerminal(s, t) {
+  const x = hexX(s.q, s.r), y = hexY(s.q, s.r);
+  const live = !s.used;
+  if (live) {
+    const glow = 0.5 + 0.3 * Math.sin(t * 3);
+    const grad = ctx.createRadialGradient(x, y, 2, x, y, 22);
+    grad.addColorStop(0, `rgba(224,112,200,${glow * 0.5})`);
+    grad.addColorStop(1, "rgba(224,112,200,0)");
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(x, y, 22, 0, TAU);
+    ctx.fill();
+  }
+  ctx.fillStyle = live ? "#3d2a44" : "#2e3740";
+  ctx.fillRect(x - 9, y - 12, 18, 20);
+  ctx.strokeStyle = live ? "#e070c8" : "#4a5560";
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(x - 9, y - 12, 18, 20);
+  if (live) {
+    // glitching scanlines
+    ctx.fillStyle = "#e070c8";
+    for (let i = 0; i < 4; i++) {
+      const w = 4 + ((Math.sin(t * 9 + i * 2.1) + 1) * 5);
+      ctx.globalAlpha = 0.5 + 0.4 * Math.sin(t * 7 + i);
+      ctx.fillRect(x - 6, y - 8 + i * 4, w, 2);
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+/* supply cache */
 function drawChest(c, t) {
   const x = hexX(c.q, c.r), y = hexY(c.q, c.r);
   if (!c.opened) {
     const glow = 0.4 + 0.2 * Math.sin(t * 4 + c.q);
-    const grad = ctx.createRadialGradient(x, y, 2, x, y, 16);
-    grad.addColorStop(0, `rgba(240,200,120,${glow})`);
-    grad.addColorStop(1, "rgba(240,200,120,0)");
+    const grad = ctx.createRadialGradient(x, y, 2, x, y, 17);
+    grad.addColorStop(0, `rgba(90,220,240,${glow})`);
+    grad.addColorStop(1, "rgba(90,220,240,0)");
     ctx.fillStyle = grad;
     ctx.beginPath();
-    ctx.arc(x, y, 16, 0, TAU);
+    ctx.arc(x, y, 17, 0, TAU);
     ctx.fill();
   }
-  ctx.fillStyle = c.opened ? "#4a4038" : "#7a5c34";
-  ctx.fillRect(x - 9, y - 5, 18, 11);
-  ctx.fillStyle = c.opened ? "#3a322c" : "#9a7844";
-  ctx.fillRect(x - 9, y - 8, 18, 5);
-  ctx.fillStyle = c.opened ? "#55504a" : "#f0c060";
-  ctx.fillRect(x - 1.5, y - 5, 3, 4);
+  ctx.fillStyle = c.opened ? "#333c45" : "#4f636f";
+  ctx.fillRect(x - 10, y - 7, 20, 14);
+  ctx.strokeStyle = c.opened ? "#2a323a" : "#7695a5";
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(x - 10, y - 7, 20, 14);
+  // status lamp
+  ctx.fillStyle = c.opened ? "#3f4a54" : "#5fe0f0";
+  ctx.fillRect(x - 2.5, y - 2.5, 5, 5);
 }
+/* a dropped part, glinting */
 function drawLootDrop(l, t) {
   const x = hexX(l.q, l.r), y = hexY(l.q, l.r) + Math.sin(t * 3 + l.q) * 1.5;
-  ctx.fillStyle = "#f0c690";
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(0.7);
+  ctx.fillStyle = "#8fe0f0";
   ctx.fillRect(-2, -8, 4, 16);
+  ctx.fillStyle = "#cff6ff";
+  ctx.fillRect(-2, -8, 4, 4);
   ctx.restore();
 }
+/* your previous frame, still leaking cores */
 function drawStain(b, t) {
   const x = hexX(b.q, b.r), y = hexY(b.q, b.r);
-  ctx.fillStyle = `rgba(120,220,140,${0.5 + 0.3 * Math.sin(t * 4)})`;
+  const pulse = 0.5 + 0.3 * Math.sin(t * 4);
+  const grad = ctx.createRadialGradient(x, y, 1, x, y, 15);
+  grad.addColorStop(0, `rgba(95,214,240,${pulse * 0.7})`);
+  grad.addColorStop(1, "rgba(95,214,240,0)");
+  ctx.fillStyle = grad;
   ctx.beginPath();
-  ctx.arc(x, y, 8, 0, TAU);
+  ctx.arc(x, y, 15, 0, TAU);
   ctx.fill();
+  // broken chassis
+  ctx.strokeStyle = `rgba(180,235,250,${0.5 + 0.3 * pulse})`;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x - 7, y + 4); ctx.lineTo(x + 2, y - 2); ctx.lineTo(x + 7, y + 5);
+  ctx.moveTo(x - 3, y - 6); ctx.lineTo(x + 4, y + 6);
+  ctx.stroke();
 }
 
 /* ================================= UI =================================== */
@@ -1717,15 +1792,15 @@ function refreshHud() {
   document.getElementById("souls").textContent = p.souls;
   document.getElementById("floor-num").textContent = run.floor;
   document.getElementById("weapon-name").textContent = p.weapon.name;
-  document.getElementById("btn-bag").textContent = "Bag " + p.bag.length + "/" + BAG_SIZE;
+  document.getElementById("btn-bag").textContent = "Cargo " + p.bag.length + "/" + BAG_SIZE;
 
   const rollBtn = document.getElementById("btn-roll");
-  rollBtn.textContent = p.rollCost === 2 ? "Roll" : `Roll (${p.rollCost})`;
+  rollBtn.textContent = p.rollCost === 2 ? "Dash" : `Dash (${p.rollCost})`;
   rollBtn.classList.toggle("active", ui.rollMode);
   rollBtn.disabled = p.st < p.rollCost || run.over;
   document.getElementById("btn-parry").disabled = p.st < p.parryCost || run.over;
   document.getElementById("btn-flask").disabled = p.flask <= 0 || p.hp >= p.maxHp || run.over;
-  const b = run.bonfire;
+  const b = run.bay;
   document.getElementById("btn-rest").classList.toggle("hidden",
     !b || b.used || hexDist(p.q, p.r, b.q, b.r) > 1 || run.over);
 }
@@ -1736,7 +1811,7 @@ function renderLog() {
     `<div class="${l.cls}">${l.msg}</div>`).join("");
 }
 
-/* ------- shop (bonfire) ------- */
+/* ------- repair bay fabrication ------- */
 let bought = {};
 function showShop() {
   const p = run.player;
@@ -1748,14 +1823,14 @@ function showShop() {
     const el = document.createElement("button");
     el.className = "shop-item";
     el.disabled = p.souls < cost;
-    el.innerHTML = `<b>${u.name}</b><span>${u.desc}</span><em>${cost} souls</em>`;
+    el.innerHTML = `<b>${u.name}</b><span>${u.desc}</span><em>${cost} cores</em>`;
     el.addEventListener("click", () => {
       if (p.souls < cost) return;
       p.souls -= cost;
       bought[u.id] = n + 1;
       u.apply(p);
       recalc();
-      log(u.name + " acquired.", "good");
+      log(u.name + " installed.", "good");
       showShop();
       refreshHud();
     });
@@ -1768,8 +1843,8 @@ document.getElementById("shop-close").addEventListener("click", () => {
   refreshHud();
 });
 
-/* ------- dark shrine: pick a pact ------- */
-function showShrine() {
+/* ------- corrupted terminal: install a protocol ------- */
+function showTerminal() {
   const p = run.player;
   const rng = mulberry32((run.seed ^ (run.floor * 104729)) >>> 0);
   const eligible = PACTS.filter(pa => pa.can(p));
@@ -1777,7 +1852,7 @@ function showShrine() {
   const offers = [];
   const pool = [...eligible];
   while (offers.length < 2 && pool.length) offers.push(pool.splice((rng() * pool.length) | 0, 1)[0]);
-  const box = document.getElementById("shrine-items");
+  const box = document.getElementById("terminal-items");
   box.innerHTML = "";
   for (const pa of offers) {
     const el = document.createElement("button");
@@ -1786,19 +1861,19 @@ function showShrine() {
     el.addEventListener("click", () => {
       pa.apply(p);
       recalc();
-      run.shrine.used = true;
-      log("The shrine drinks. " + pa.name + " sealed.", "sys");
-      sfx("souls");
-      document.getElementById("shrine").classList.add("hidden");
+      run.terminal.used = true;
+      log("Terminal accepts. " + pa.name + " installed.", "sys");
+      sfx("core");
+      document.getElementById("terminal").classList.add("hidden");
       refreshHud();
     });
     box.appendChild(el);
   }
-  document.getElementById("shrine").classList.remove("hidden");
+  document.getElementById("terminal").classList.remove("hidden");
 }
-document.getElementById("shrine-leave").addEventListener("click", () => {
-  document.getElementById("shrine").classList.add("hidden");
-  log("You leave the shrine unanswered.", "");
+document.getElementById("terminal-leave").addEventListener("click", () => {
+  document.getElementById("terminal").classList.add("hidden");
+  log("You leave the terminal alone.", "");
 });
 
 /* ------- inventory panel ------- */
@@ -1824,23 +1899,23 @@ function itemCard(item, buttons) {
 function refreshInv() {
   const p = run.player;
   document.getElementById("inv-note").textContent = inCombat()
-    ? "⚠ Enemies watch you — changing gear will cost your turn."
-    : "No hostile eyes. Gear changes are free.";
+    ? "⚠ Hostiles in sensor range — swapping hardware will cost your turn."
+    : "No contacts. Hardware swaps are free.";
   const eq = document.getElementById("inv-equipped");
   eq.innerHTML = "";
   eq.appendChild(itemCard(p.weapon, []));
   eq.lastChild.classList.add("equipped");
-  p.charms.forEach((c, slot) => {
+  p.modules.forEach((c, slot) => {
     if (c) {
       const card = itemCard(c, [["Unequip", () => {
-        if (unequipCharm(slot)) { refreshInv(); refreshHud(); }
+        if (unequipModule(slot)) { refreshInv(); refreshHud(); }
       }, p.bag.length >= BAG_SIZE]]);
       card.classList.add("equipped");
       eq.appendChild(card);
     } else {
       const empty = document.createElement("div");
       empty.className = "item-card empty-slot";
-      empty.textContent = "empty charm slot";
+      empty.textContent = "empty module slot";
       eq.appendChild(empty);
     }
   });
@@ -1853,15 +1928,15 @@ function refreshInv() {
     const buttons = [];
     if (item.type === "weapon") {
       buttons.push(["Equip", () => { equipItem(idx); refreshInv(); refreshHud(); }]);
-    } else if (item.type === "charm") {
-      const free = p.charms.some(c => !c);
+    } else if (item.type === "module") {
+      const free = p.modules.some(c => !c);
       buttons.push(["Equip", () => { equipItem(idx); refreshInv(); refreshHud(); }, !free]);
     } else if (item.type === "consumable") {
-      if (item.kind === "knife") {
+      if (item.kind === "dart") {
         buttons.push(["Throw", () => {
           ui.throwItem = item.id;
           closeInv();
-          showMsg("Pick a target down a clear line.");
+          showMsg("Pick a target down a clear lane.");
           refreshHud();
         }, run.over]);
       } else {
@@ -1882,14 +1957,14 @@ const inspectEl = document.getElementById("inspect");
 function showInspect(e, sx, sy) {
   const def = ENEMY[e.type];
   const state =
-    e.stagger > 0 ? "<span class='i-good'>STAGGERED — ripostes deal double</span>" :
+    e.stagger > 0 ? "<span class='i-good'>OVERLOADED — counterstrikes deal double</span>" :
     e.state === "windup" ? (e.windupTimer > 1
-      ? "<span class='i-warn'>winding up — strikes in 2 turns</span>"
-      : "<span class='i-warn'>strikes NEXT turn</span>") :
-    e.rest > 0 ? "<span class='i-good'>resting</span>" : "prowling";
+      ? "<span class='i-warn'>charging — fires in 2 turns</span>"
+      : "<span class='i-warn'>fires NEXT turn</span>") :
+    e.rest > 0 ? "<span class='i-good'>recharging</span>" : "hunting";
   inspectEl.innerHTML =
-    `<b>${e.elite ? "Elite " : ""}${def.name}</b>` +
-    `<div>${e.hp}/${e.maxHp} hp · hits for ${e.dmg}</div>` +
+    `<b>${e.elite ? "Prime " : ""}${def.name}</b>` +
+    `<div>${e.hp}/${e.maxHp} integrity · hits for ${e.dmg}</div>` +
     `<div>${state}</div><div class="i-trait">${TRAITS[e.type]}</div>`;
   inspectEl.style.display = "block";
   const r = inspectEl.getBoundingClientRect();
@@ -1925,7 +2000,7 @@ function tryPlayerAction(q, r) {
     const idx = p.bag.findIndex(i => i.id === ui.throwItem);
     ui.throwItem = null;
     if (idx >= 0 && enemy) {
-      if (!useConsumable(idx, enemy)) log("No clear line for the throw.", "warn");
+      if (!useConsumable(idx, enemy)) log("No clear lane for the dart.", "warn");
     }
     refreshHud();
     return;
@@ -2089,9 +2164,9 @@ window.addEventListener("keydown", ev => {
 function showMenu() {
   const per = persist();
   document.getElementById("menu-stats").textContent =
-    (per.deaths || 0) + " deaths · " + (per.wins || 0) + " victories · deepest: floor " + (per.best || 0);
+    (per.deaths || 0) + " units lost · " + (per.wins || 0) + " cores taken · deepest: Sector " + (per.best || 0);
   document.getElementById("stain-note").textContent =
-    per.stain ? "A bloodstain with " + per.stain.souls + " souls waits on floor " + per.stain.floor + "." : "";
+    per.stain ? "A wreck holding " + per.stain.souls + " cores waits in Sector " + per.stain.floor + "." : "";
   document.getElementById("menu").classList.remove("hidden");
 }
 function startRun(seed) {
@@ -2101,7 +2176,7 @@ function startRun(seed) {
   document.getElementById("menu").classList.add("hidden");
   document.getElementById("death").classList.add("hidden");
   document.getElementById("win").classList.add("hidden");
-  document.getElementById("shrine").classList.add("hidden");
+  document.getElementById("terminal").classList.add("hidden");
   document.getElementById("inv").classList.add("hidden");
   newRun(seed);
   cam.x = hexX(run.player.q, run.player.r);
@@ -2138,9 +2213,9 @@ window.RL = {
   actStep, actWait, actAttack, actRoll, actParry, actFlask, actRest,
   spawnEnemy, endTurn, bfsDist, updateFov, hexDist,
   persist, savePersist, cam,
-  ENEMY, PACTS, WEAPON_BASES, CHARMS, AFFIXES,
-  mkWeapon, mkCharm, mkConsumable, rollLoot,
-  giveItem, equipItem, unequipCharm, dropItem, useConsumable,
+  ENEMY, PACTS, WEAPON_BASES, MODULES, AFFIXES,
+  mkWeapon, mkModule, mkConsumable, rollLoot,
+  giveItem, equipItem, unequipModule, dropItem, useConsumable,
   inCombat, recalc, canReach,
   setRun(r) { run = r; },
 };
