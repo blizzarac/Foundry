@@ -53,6 +53,35 @@ html, body {
   background: radial-gradient(#c8f0be, #6da85e);
 }
 .floor-wrap { font-size: 13px; color: #9a938c; }
+#mute {
+  pointer-events: auto;
+  background: none; border: 0; font-size: 17px; cursor: pointer;
+  opacity: 0.7; padding: 2px 4px;
+}
+#mute:hover { opacity: 1; }
+
+/* ---------------- enemy inspect card ---------------- */
+#inspect {
+  position: fixed; display: none; z-index: 30; pointer-events: none;
+  background: #100e13ee; border: 1px solid #4a4452; border-radius: 9px;
+  padding: 9px 12px; font-size: 12px; line-height: 1.5; max-width: 240px;
+}
+#inspect b { color: #f0c690; font-size: 13px; }
+#inspect .i-warn { color: #e08a7a; font-weight: 600; }
+#inspect .i-good { color: #a0d890; font-weight: 600; }
+#inspect .i-trait { color: #9a938c; margin-top: 3px; }
+
+/* ---------------- weapon select ---------------- */
+#weapon-select { display: flex; gap: 8px; margin-bottom: 16px; }
+.weapon {
+  flex: 1; padding: 10px 8px; cursor: pointer; text-align: left;
+  background: #26222b; border: 1px solid #4a4452; border-radius: 10px;
+}
+.weapon:hover { background: #322d38; }
+.weapon.chosen { border-color: #ff9a3c; background: #362a20; }
+.weapon b { display: block; font-size: 12.5px; color: #f0c690; margin-bottom: 3px; }
+.weapon span { font-size: 10.5px; color: #9a938c; line-height: 1.35; display: block; }
+.shrine-title { color: #b58ade !important; }
 
 /* ---------------- log ---------------- */
 #log {
