@@ -105,7 +105,11 @@ function check(name, cond) {
     out.cleared = node1.state === "cleared" && node1.clearedTier === 1;
     out.neighborsRevealed = Object.keys(RL.profile.atlas.nodes).length > nodesBefore;
     out.keySustain = RL.profile.atlas.keys.length > keysBefore;
+    // a purged-but-not-extracted sector has no physical exit — the persistent
+    // banner is the only thing telling a player Extract is the way out
+    out.purgeBannerShows = !document.getElementById("purge-banner").classList.contains("hidden");
     RL.extractToOverworld();
+    out.purgeBannerHidesOnExtract = document.getElementById("purge-banner").classList.contains("hidden");
 
     // volatile: a machine dying next to you costs 1 integrity
     RL.fabricateKey(1);

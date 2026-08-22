@@ -3502,14 +3502,19 @@ function refreshHud() {
   const ex = document.getElementById("btn-extract");
   const inSector = run.mode === "sector" && ui.screen === "game";
   ex.classList.toggle("hidden", !inSector || run.over);
+  const purgeBanner = document.getElementById("purge-banner");
+  let purged = false;
   if (inSector) {
-    const purged = profile && profile.atlas.nodes[run.sectorNode] &&
-      profile.atlas.nodes[run.sectorNode].state === "cleared";
-    ex.classList.toggle("purged", !!purged);
+    purged = !!(profile && profile.atlas.nodes[run.sectorNode] &&
+      profile.atlas.nodes[run.sectorNode].state === "cleared");
+    ex.classList.toggle("purged", purged);
     if (ex.dataset.arm !== "1") ex.textContent = purged ? "Extract ▸" : "Extract";
   } else {
     ex.dataset.arm = "";
   }
+  // sectors have no drop shaft — extraction is the only way out, and
+  // nothing else on screen says so once the one log line scrolls away
+  purgeBanner.classList.toggle("hidden", !(inSector && purged && !run.over));
   refreshEventUI();
 }
 
