@@ -212,6 +212,8 @@ body.overworld #actions #btn-gear { display: inline-block; }
 #btn-extract.extract { background: #123a30dd; border-color: #3fc88a; color: #9ff0c8; }
 #btn-extract.purged { box-shadow: 0 0 12px #3fc88a90; }
 #node-actions { display: flex; flex-direction: column; gap: 8px; margin: 14px 0 4px; }
+#gear-keys { display: flex; flex-direction: column; gap: 6px; }
+#gear-keys-h.hidden, #gear-keys.hidden { display: none; }
 
 /* ---------------- small screens ---------------- */
 @media (max-width: 720px) {

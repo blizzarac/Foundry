@@ -377,30 +377,70 @@ const CONSUMABLE_DESC = {
 /* ============================== THE FOUNDRY =============================
    Endgame overworld (PoE2 Atlas style). After the OVERSEER falls, the
    Foundry opens: an endless hex map of sealed sector nodes spreading
-   outward from the Bay. Socket a Sector Key (T1..TIER_CAP) into a
-   frontier node to generate and enter that sector at the key's tier;
-   purge every Prime unit to clear it, revealing its neighbors. Keys drop
-   from cleared sectors. Dying consumes the key and leaves your cores as
-   a wreck in the node. Character, gear, currency and map all persist.
+   outward from the Bay. Nodes carry a biome but NO tier — the Sector Key
+   you socket sets the sector's tier (danger and rewards), exactly like a
+   PoE2 waystone sets the map level. Keys are craftable items: the same
+   currency orbs roll sector modifiers onto them, each trading danger for
+   bonus loot. Purge every Prime unit to clear a node and reveal its
+   neighbors. Dying consumes the key and leaves your cores as a wreck in
+   the node. Character, gear, currency and map all persist.
    ========================================================================= */
 const TIER_CAP = 4;
 const TIER_COLOR = ["#c8d4de", "#6fa8ff", "#ffd45c", "#ff9040"];
 const BIOMES = {
-  scrapyard: { name: "Scrapyard", rock: 0.30,
+  scrapyard: { name: "Scrapyard", abbr: "SCRP", color: "#e8875a", rock: 0.30,
     desc: "Hull heaps and fast salvage packs.",
     spawn: t => ({ scrapper: 3 + t, ripper: 1 + (t >= 2 ? 1 : 0) }) },
-  raildepot: { name: "Rail Depot", rock: 0.20,
+  raildepot: { name: "Rail Depot", abbr: "RAIL", color: "#b09340", rock: 0.20,
     desc: "Open sight lines. Artillery country.",
     spawn: t => ({ scrapper: 2, railer: 2 + (t >= 2 ? 1 : 0), mortar: t >= 2 ? 1 : 0 }) },
-  bastion:   { name: "Bastion Line", rock: 0.33,
+  bastion:   { name: "Bastion Line", abbr: "BSTN", color: "#7fa0d8", rock: 0.33,
     desc: "Dense cover held by shielded armor.",
     spawn: t => ({ scrapper: 2, bulwark: 1 + (t >= 2 ? 1 : 0), crusher: t >= 2 ? 1 : 0, ripper: t >= 3 ? 1 : 0 }) },
-  vault:     { name: "Archive Vault", rock: 0.28, chests: 2,
+  vault:     { name: "Archive Vault", abbr: "VLT", color: "#c77dff", rock: 0.28, chests: 2,
     desc: "Deep storage. Rich caches, live guards.",
     spawn: t => ({ scrapper: 2 + t, railer: 1, bulwark: t >= 3 ? 1 : 0 }) },
 };
-function tierForDist(d) { return clamp(Math.ceil(d * 0.75), 1, TIER_CAP); }
 function keyFabCost(tier) { return 30 * tier * tier; }
+
+/* Sector Key modifiers: every danger mod also raises loot quantity.
+   Normal keys carry 0 mods, Magic up to 2, Rare up to 4 — crafted with
+   the same currency orbs as gear. All mods stay deterministic. */
+const KEY_MODS = [
+  { key: "swarming",    name: "Swarming",    desc: "+50% enemy packs",                quant: 0.20, apply: m => { m.spawnMult *= 1.5; } },
+  { key: "overcharged", name: "Overcharged", desc: "machines hit for +1",             quant: 0.15, apply: m => { m.dmgAdd += 1; } },
+  { key: "armored",     name: "Armored",     desc: "machines +30% integrity",         quant: 0.15, apply: m => { m.hpMult *= 1.3; } },
+  { key: "primed",      name: "Primed",      desc: "+1 Prime unit",                   quant: 0.20, apply: m => { m.extraElites += 1; } },
+  { key: "dark",        name: "Darkened",    desc: "sensor range -2",                 quant: 0.15, apply: m => { m.fovPenalty += 2; } },
+  { key: "volatile",    name: "Volatile",    desc: "machines detonate on death: 1 dmg adjacent", quant: 0.20, apply: m => { m.volatile = true; } },
+  { key: "rusted",      name: "Rusted",      desc: "repair cells heal -3",            quant: 0.10, apply: m => { m.flaskPenalty += 3; } },
+];
+const KEY_MOD_BY = Object.fromEntries(KEY_MODS.map(m => [m.key, m]));
+const KEY_MOD_CAP = { normal: 0, magic: 2, rare: 4 };
+function makeKey(tier, rarity) {
+  return { id: ++itemSeq, tier, rarity: rarity || "normal", name: null, affixes: [] };
+}
+function addKeyMod(rng, k) {
+  if (k.affixes.length >= (KEY_MOD_CAP[k.rarity] || 0)) return false;
+  const pool = KEY_MODS.filter(m => !k.affixes.some(a => a.mod === m.key));
+  if (!pool.length) return false;
+  const m = pool[(rng() * pool.length) | 0];
+  k.affixes.push({ id: ++itemSeq, mod: m.key });
+  return true;
+}
+function keyQuant(k) {
+  return k.affixes.reduce((s, a) => s + KEY_MOD_BY[a.mod].quant, 0);
+}
+function nameRareKey(rng, k) {
+  k.name = RARE_NAME_A[(rng() * RARE_NAME_A.length) | 0] + " " +
+           RARE_NAME_B[(rng() * RARE_NAME_B.length) | 0];
+}
+function keyDisplayName(k) {
+  if (k.rarity === "rare") return (k.name || "Sealed Directive") + " (T" + k.tier + ")";
+  if (k.rarity === "magic" && k.affixes.length)
+    return KEY_MOD_BY[k.affixes[0].mod].name + " T" + k.tier + " Sector Key";
+  return "T" + k.tier + " Sector Key";
+}
 
 const UPGRADES = [
   { id: "hp",    name: "Chassis reinforcement", desc: "+4 max integrity", base: 30, apply: p => { p.baseMaxHp += 4; p.hp += 4; } },
@@ -423,7 +463,22 @@ function savePersist(p) {
 /* persistent endgame profile: your character + the Foundry overworld */
 const PROFILE_KEY = "ironhex-foundry";
 function loadProfile() {
-  try { return JSON.parse(localStorage.getItem(PROFILE_KEY) || "null"); } catch (e) { return null; }
+  try { return migrateProfile(JSON.parse(localStorage.getItem(PROFILE_KEY) || "null")); }
+  catch (e) { return null; }
+}
+// v1 -> v2: keys become craftable items; nodes drop their intrinsic tier
+function migrateProfile(pr) {
+  if (!pr) return pr;
+  if (!pr.v || pr.v < 2) {
+    for (const k of pr.atlas.keys || []) {
+      if (!k.rarity) k.rarity = "normal";
+      if (!k.affixes) k.affixes = [];
+      if (k.name === undefined) k.name = null;
+    }
+    for (const n of Object.values(pr.atlas.nodes || {})) delete n.tier;
+    pr.v = 2;
+  }
+  return pr;
 }
 let profile = loadProfile();
 function saveProfile() {
@@ -643,7 +698,8 @@ function recalc() {
   p.flaskHealBonusTotal = totals.flaskHealBonus;
   p.fovBonus = totals.fovBonus;
 }
-const flaskHeal = () => FLASK_HEAL + (run.player.flaskHealBonusTotal || 0);
+const flaskHeal = () => Math.max(1, FLASK_HEAL + (run.player.flaskHealBonusTotal || 0) -
+  ((run.mode === "sector" && run.floorConf && run.floorConf.flaskPenalty) || 0));
 
 function log(msg, cls) {
   run.log.push({ msg, cls: cls || "", t: run.turn });
@@ -846,11 +902,11 @@ function spawnEnemy(type, q, r) {
     stagger: 0, moveToggle: false, elite: false,
     bossCount: 0, bossPhase2: false,
   };
-  // keyed sectors scale machines by tier (applies to bay respawns too)
-  if (run.mode === "sector" && run.floorConf && run.floorConf.tier > 1) {
-    const t = run.floorConf.tier;
-    e.hp = e.maxHp = Math.round(d.hp * (1 + 0.25 * (t - 1)));
-    if (t >= 3) e.dmg = d.dmg + 1;
+  // keyed sectors scale machines by key tier and key mods (bay respawns too)
+  if (run.mode === "sector" && run.floorConf) {
+    const f = run.floorConf;
+    e.hp = e.maxHp = Math.round(d.hp * (1 + 0.25 * ((f.tier || 1) - 1)) * (f.hpMult || 1));
+    e.dmg = d.dmg + (f.tier >= 3 ? 1 : 0) + (f.dmgAdd || 0);
   }
   run.enemies.push(e);
   return e;
@@ -895,7 +951,10 @@ const walkable = (q, r) => {
 
 /* ------------------------------------------------------------------ FOV */
 const FOV_R = 7;
-function playerFovR() { return FOV_R + (run.player.fovBonus || 0); }
+function playerFovR() {
+  const penalty = (run.mode === "sector" && run.floorConf && run.floorConf.fovPenalty) || 0;
+  return Math.max(3, FOV_R + (run.player.fovBonus || 0) - penalty);
+}
 function losClear(aq, ar, bq, br) {
   const line = hexLine(aq, ar, bq, br);
   for (let i = 1; i < line.length - 1; i++) {
@@ -1201,17 +1260,29 @@ function hurtEnemy(e, dmg, label) {
       run.player.hp = Math.min(run.player.maxHp, run.player.hp + 1);
       addFloat(run.player.q, run.player.r, "+1", "#5fe0aa");
     }
-    // elites drop gear where they fall, plus a couple of orbs
+    // elites drop gear where they fall, plus orbs (juiced keys add more)
     if (e.elite) {
       const lrng = mulberry32((run.seed ^ e.id * 7919) >>> 0);
       run.groundLoot.push({ q: e.q, r: e.r, item: rollItemLoot(lrng, run.floor, true) });
-      grantOrbs(lrng, 2, run.floor);
+      const bonus = run.mode === "sector" && lrng() < (run.floorConf.lootBonus || 0) ? 1 : 0;
+      grantOrbs(lrng, 2 + bonus, run.floor);
     }
     if (souls) addFloat(e.q, e.r, "+" + souls + " cores", "#7fe0f4");
     burst(hexX(e.q, e.r), hexY(e.q, e.r), def.color, 14, 100);
     burst(hexX(e.q, e.r), hexY(e.q, e.r), "#5fd6f0", 5, 60);
     sfx("die");
     run.enemies.splice(run.enemies.indexOf(e), 1);
+    // Volatile key mod: the dying machine detonates, and standing next to
+    // it is a known cost — resolve the blast before purge credit
+    if (run.mode === "sector" && run.floorConf.volatile &&
+        hexDist(run.player.q, run.player.r, e.q, e.r) === 1) {
+      const pl = run.player;
+      pl.hp -= 1;
+      hitFlash = 0.3;
+      addFloat(pl.q, pl.r, "-1", "#e06060");
+      log("The " + def.name + " detonates!", "warn");
+      if (pl.hp <= 0) { dieRun(); return; }
+    }
     if (e.elite && run.mode === "sector") {
       run.eliteKilled++;
       addFloat(e.q, e.r, `PRIME DOWN ${run.eliteKilled}/${run.eliteTotal}`, "#f0d060");
@@ -1585,7 +1656,7 @@ function winRun() {
     }
     profile.atlas.unlocked = true;
     if (!profile.atlas.nodes["0,0"]) initAtlas();
-    if (first) for (let i = 0; i < 3; i++) profile.atlas.keys.push({ id: ++itemSeq, tier: 1 });
+    if (first) for (let i = 0; i < 3; i++) profile.atlas.keys.push(makeKey(1));
     saveProfile();
   }
   document.getElementById("win-again").textContent =
@@ -1632,9 +1703,9 @@ function revealNode(q, r) {
   if (profile.atlas.nodes[k]) return;
   const rng = mulberry32((profile.atlas.seed ^ (q * 73856093) ^ (r * 19349663)) >>> 0);
   const biomes = Object.keys(BIOMES);
+  // nodes have a biome but no tier: the socketed key sets the danger
   profile.atlas.nodes[k] = {
-    state: "frontier", tier: tierForDist(hexDist(q, r, 0, 0)),
-    biome: biomes[(rng() * biomes.length) | 0], wreck: 0,
+    state: "frontier", biome: biomes[(rng() * biomes.length) | 0], wreck: 0,
   };
 }
 function enterOverworld() {
@@ -1664,16 +1735,22 @@ function enterOverworld() {
   saveProfile();
   return true;
 }
-function enterNode(q, r, keyTier) {
+function enterNode(q, r, keyId) {
   const nk = key(q, r);
   const node = profile.atlas.nodes[nk];
   if (!node || node.state !== "frontier") return false;
-  if (keyTier < node.tier) { log("This node needs a T" + node.tier + "+ key.", "warn"); return false; }
-  const ki = profile.atlas.keys.findIndex(kk => kk.tier === keyTier);
+  const ki = profile.atlas.keys.findIndex(kk => kk.id === keyId);
   if (ki < 0) return false;
-  profile.atlas.keys.splice(ki, 1);
-  const tier = keyTier;
+  const skey = profile.atlas.keys.splice(ki, 1)[0];
+  const tier = skey.tier;   // the key alone sets the sector's tier
   const biome = BIOMES[node.biome];
+  // aggregate the key's sector modifiers
+  const mod = { spawnMult: 1, hpMult: 1, dmgAdd: 0, extraElites: 0,
+    fovPenalty: 0, flaskPenalty: 0, volatile: false };
+  for (const a of skey.affixes) KEY_MOD_BY[a.mod].apply(mod);
+  const quant = keyQuant(skey);
+  const spawn = {};
+  for (const [type, n] of Object.entries(biome.spawn(tier))) spawn[type] = Math.round(n * mod.spawnMult);
   run.mode = "sector";
   run.sectorNode = nk;
   run.seed = (profile.atlas.seed ^ (q * 73856093) ^ (r * 19349663) ^ (tier * 2654435761)) >>> 0;
@@ -1681,12 +1758,15 @@ function enterNode(q, r, keyTier) {
   run.over = false; run.won = false; run.turn = 0; run.kills = 0;
   run.floorConf = {
     R: 8 + (tier >= 3 ? 1 : 0),
-    spawn: biome.spawn(tier),
+    spawn,
     rock: biome.rock,
-    chests: (biome.chests || 1) + (tier >= 3 ? 1 : 0),
+    chests: (biome.chests || 1) + (tier >= 3 ? 1 : 0) + Math.floor(quant / 0.25),
     terminal: mulberry32((run.seed ^ 0x7777) >>> 0)() < 0.4,
-    eliteCount: 1 + (tier >= 3 ? 1 : 0),
+    eliteCount: 1 + (tier >= 3 ? 1 : 0) + mod.extraElites,
     tier, biomeName: biome.name,
+    hpMult: mod.hpMult, dmgAdd: mod.dmgAdd,
+    fovPenalty: mod.fovPenalty, flaskPenalty: mod.flaskPenalty,
+    volatile: mod.volatile, lootBonus: quant,
     wreckSouls: node.wreck || 0,
   };
   genFloor();
@@ -1698,7 +1778,8 @@ function enterNode(q, r, keyTier) {
   cam.x = hexX(run.player.q, run.player.r);
   cam.y = hexY(run.player.q, run.player.r);
   invalidateFloorCaches();
-  log(`T${tier} ${biome.name}. Purge ${run.eliteTotal} Prime unit${run.eliteTotal === 1 ? "" : "s"}.`, "sys");
+  const modNames = skey.affixes.map(a => KEY_MOD_BY[a.mod].name).join(", ");
+  log(`T${tier} ${biome.name}${modNames ? " [" + modNames + "]" : ""}. Purge ${run.eliteTotal} Prime unit${run.eliteTotal === 1 ? "" : "s"}.`, "sys");
   syncProfileFromPlayer();
   saveProfile();   // the key is spent the moment you jack in
   refreshHud();
@@ -1708,15 +1789,19 @@ function sectorComplete() {
   const node = profile.atlas.nodes[run.sectorNode];
   if (!node || node.state === "cleared") return;
   node.state = "cleared";
+  node.clearedTier = run.floorConf.tier;
   const [q, r] = unkey(run.sectorNode);
   for (const [dq, dr] of DIRS) revealNode(q + dq, r + dr);
-  // key sustain: always at least one key back, at tier or tier+1
+  // key sustain: always at least one key back, at tier or tier+1; juiced
+  // keys raise the chance of a second, and drops can come pre-modified
   const t = run.floorConf.tier;
-  const drops = 1 + (craftRng() < 0.3 * run.eliteTotal ? 1 : 0);
+  const drops = 1 + (craftRng() < 0.3 * run.eliteTotal + (run.floorConf.lootBonus || 0) ? 1 : 0);
   for (let i = 0; i < drops; i++) {
     const kt = clamp(t + (craftRng() < 0.35 ? 1 : 0), 1, TIER_CAP);
-    profile.atlas.keys.push({ id: ++itemSeq, tier: kt });
-    log(`Sector Key T${kt} recovered.`, "good");
+    const drop = makeKey(kt);
+    if (kt >= 2 && craftRng() < 0.2) { drop.rarity = "magic"; addKeyMod(craftRng, drop); }
+    profile.atlas.keys.push(drop);
+    log(`${keyDisplayName(drop)} recovered.`, "good");
   }
   log("SECTOR PURGED — extraction enabled.", "sys");
   addFloat(run.player.q, run.player.r, "SECTOR PURGED", "#5fe0aa");
@@ -1750,8 +1835,76 @@ function fabricateKey(tier) {
   const cost = keyFabCost(tier);
   if (tier < 1 || tier > TIER_CAP || p.souls < cost) return false;
   p.souls -= cost;
-  profile.atlas.keys.push({ id: ++itemSeq, tier });
+  profile.atlas.keys.push(makeKey(tier));
   log(`The Bay fabricates a T${tier} Sector Key (${cost} cores).`, "good");
+  sfx("core");
+  syncProfileFromPlayer();
+  saveProfile();
+  return true;
+}
+/* the same currency orbs that craft gear also craft keys */
+function canApplyOrbKey(kind, k) {
+  if (!k) return { ok: false, reason: "No key." };
+  switch (kind) {
+    case "transmute":
+    case "alch":
+      return k.rarity === "normal" ? { ok: true } : { ok: false, reason: "Needs a Normal key." };
+    case "aug":
+      if (k.rarity !== "magic") return { ok: false, reason: "Needs a Magic key." };
+      return k.affixes.length < KEY_MOD_CAP.magic ? { ok: true } : { ok: false, reason: "No room for another modifier." };
+    case "regal":
+      return k.rarity === "magic" ? { ok: true } : { ok: false, reason: "Needs a Magic key." };
+    case "exalt":
+      if (k.rarity !== "rare") return { ok: false, reason: "Needs a Rare key." };
+      return k.affixes.length < KEY_MOD_CAP.rare ? { ok: true } : { ok: false, reason: "No room for another modifier." };
+    case "chaos":
+      if (k.rarity !== "rare") return { ok: false, reason: "Needs a Rare key." };
+      return k.affixes.length ? { ok: true } : { ok: false, reason: "No modifiers to reroll." };
+  }
+  return { ok: false, reason: "Unknown orb." };
+}
+function applyOrbToKey(kind, keyId) {
+  const p = run.player;
+  const k = profile.atlas.keys.find(x => x.id === keyId);
+  if ((p.currency[kind] || 0) <= 0) return false;
+  const check = canApplyOrbKey(kind, k);
+  if (!check.ok) { log(check.reason, "warn"); return false; }
+  p.currency[kind]--;
+  switch (kind) {
+    case "transmute":
+      k.rarity = "magic";
+      addKeyMod(craftRng, k);
+      break;
+    case "aug":
+      addKeyMod(craftRng, k);
+      break;
+    case "alch": {
+      k.rarity = "rare";
+      nameRareKey(craftRng, k);
+      const n = 3 + (craftRng() < 0.5 ? 1 : 0);
+      for (let i = 0; i < n; i++) addKeyMod(craftRng, k);
+      break;
+    }
+    case "regal":
+      k.rarity = "rare";
+      nameRareKey(craftRng, k);
+      addKeyMod(craftRng, k);
+      break;
+    case "exalt":
+      addKeyMod(craftRng, k);
+      break;
+    case "chaos": {
+      // always a different mod: the removed one is excluded from the re-roll
+      const removed = k.affixes.splice((craftRng() * k.affixes.length) | 0, 1)[0];
+      const pool = KEY_MODS.filter(m => m.key !== removed.mod && !k.affixes.some(a => a.mod === m.key));
+      if (pool.length) {
+        const m = pool[(craftRng() * pool.length) | 0];
+        k.affixes.push({ id: ++itemSeq, mod: m.key });
+      }
+      break;
+    }
+  }
+  log(CURRENCY[kind].name + " → " + keyDisplayName(k) + ".", "good");
   sfx("core");
   syncProfileFromPlayer();
   saveProfile();
@@ -2125,9 +2278,9 @@ function renderOverworld(t) {
       ctx.stroke();
       ctx.fillStyle = "#3fa080";
       ctx.font = "9px monospace";
-      ctx.fillText("T" + n.tier + " ✓", x, y + 3);
+      ctx.fillText((n.clearedTier ? "T" + n.clearedTier + " " : "") + "✓", x, y + 3);
     } else {
-      const col = TIER_COLOR[n.tier - 1] || TIER_COLOR[0];
+      const col = BIOMES[n.biome].color;
       ctx.fillStyle = "#0f1a22";
       ctx.fill();
       hexPath(ctx, x, y, 0.92);
@@ -2137,8 +2290,8 @@ function renderOverworld(t) {
       ctx.stroke();
       ctx.globalAlpha = 1;
       ctx.fillStyle = col;
-      ctx.font = "bold 10px monospace";
-      ctx.fillText("T" + n.tier, x, y + 3);
+      ctx.font = "bold 9px monospace";
+      ctx.fillText(BIOMES[n.biome].abbr, x, y + 3);
       if (n.wreck > 0) {
         ctx.fillStyle = "#7fe0f4";
         ctx.font = "8px monospace";
@@ -2665,14 +2818,52 @@ function refreshGearCurrency() {
     el.appendChild(row);
   }
   if (!any) el.innerHTML = '<div class="gear-empty">No orbs. Caches and elite machines carry them.</div>';
-  if (profile && profile.atlas && profile.atlas.keys.length) {
-    const byTier = {};
-    for (const kk of profile.atlas.keys) byTier[kk.tier] = (byTier[kk.tier] || 0) + 1;
-    const row = document.createElement("div");
-    row.className = "currency-row";
-    row.innerHTML = `<b style="color:#7fdcf0">Sector Keys</b><span>` +
-      Object.keys(byTier).sort().map(t => `T${t} ×${byTier[t]}`).join(" · ") + `</span>`;
-    el.appendChild(row);
+}
+function keyOrbChoices(k) {
+  if (k.rarity === "normal") return ["transmute", "alch"];
+  if (k.rarity === "magic") return ["aug", "regal"];
+  if (k.rarity === "rare") return ["exalt", "chaos"];
+  return [];
+}
+function refreshGearKeys() {
+  const p = run.player;
+  const h = document.getElementById("gear-keys-h");
+  const el = document.getElementById("gear-keys");
+  const show = !!(profile && profile.atlas && profile.atlas.unlocked);
+  h.classList.toggle("hidden", !show);
+  el.classList.toggle("hidden", !show);
+  if (!show) return;
+  el.innerHTML = "";
+  if (!profile.atlas.keys.length) {
+    el.innerHTML = '<div class="gear-empty">No keys. Purge sectors for drops, or fabricate at the Bay.</div>';
+    return;
+  }
+  for (const k of profile.atlas.keys) {
+    const card = document.createElement("div");
+    card.className = "item-card";
+    let mods = "";
+    for (const a of k.affixes) {
+      const m = KEY_MOD_BY[a.mod];
+      mods += `<span class="mod affix">${m.desc} · +${Math.round(m.quant * 100)}% loot</span>`;
+    }
+    card.innerHTML = `<div class="item-info">` +
+      `<b style="color:${RARITY[k.rarity].color}">${keyDisplayName(k)}</b>` +
+      `<span class="item-base">Sector Key · Tier ${k.tier} · ${RARITY[k.rarity].name}` +
+      (k.affixes.length ? ` · +${Math.round(keyQuant(k) * 100)}% loot` : "") + `</span>` + mods + `</div>`;
+    const btns = document.createElement("div");
+    btns.className = "item-btns";
+    for (const kind of keyOrbChoices(k)) {
+      const n = p.currency[kind] || 0;
+      const b = document.createElement("button");
+      b.className = "orb-btn";
+      b.textContent = CURRENCY[kind].name.replace("Orb of ", "").replace(" Orb", "") + ` (${n})`;
+      b.title = CURRENCY[kind].desc;
+      b.disabled = n <= 0 || !canApplyOrbKey(kind, k).ok;
+      b.addEventListener("click", () => { if (applyOrbToKey(kind, k.id)) { refreshGear(); refreshHud(); } });
+      btns.appendChild(b);
+    }
+    card.appendChild(btns);
+    el.appendChild(card);
   }
 }
 function refreshGearTools() {
@@ -2714,6 +2905,7 @@ function refreshGear() {
   refreshGearSlots();
   refreshGearPack();
   refreshGearCurrency();
+  refreshGearKeys();
   refreshGearTools();
 }
 document.getElementById("btn-gear").addEventListener("click", () => {
@@ -2743,30 +2935,44 @@ function openNodePanel(q, r) {
       box.appendChild(b);
     }
   } else if (node.state === "cleared") {
-    title.textContent = `T${node.tier} ${BIOMES[node.biome].name}`;
-    desc.textContent = "Purged and sealed. Nothing moves in there anymore.";
+    title.textContent = BIOMES[node.biome].name;
+    desc.textContent = `Purged at T${node.clearedTier || "?"} and sealed. Nothing moves in there anymore.`;
   } else {
-    title.textContent = `T${node.tier} ${BIOMES[node.biome].name}`;
+    title.textContent = BIOMES[node.biome].name;
     desc.textContent = BIOMES[node.biome].desc +
       (node.wreck > 0 ? ` Your wreck holds ${node.wreck} cores in there.` : "") +
-      ` Requires a T${node.tier}+ key.`;
-    const byTier = {};
-    for (const kk of profile.atlas.keys) byTier[kk.tier] = (byTier[kk.tier] || 0) + 1;
+      " Any Sector Key opens it — the key sets the danger and the reward.";
+    // plain keys grouped by tier; modified keys listed individually
+    const normals = {};
+    const modded = [];
+    for (const kk of profile.atlas.keys) {
+      if (kk.rarity === "normal") (normals[kk.tier] = normals[kk.tier] || []).push(kk);
+      else modded.push(kk);
+    }
     let offered = 0;
-    for (let t = node.tier; t <= TIER_CAP; t++) {
-      if (!byTier[t]) continue;
+    for (const t of Object.keys(normals).sort((a, b) => a - b)) {
       offered++;
       const b = document.createElement("button");
       b.className = "shop-item";
-      b.innerHTML = `<b style="color:${TIER_COLOR[t - 1]}">Socket T${t} key</b>` +
-        `<span>runs this sector at T${t}</span><em>×${byTier[t]}</em>`;
-      b.addEventListener("click", () => enterNode(q, r, t));
+      b.innerHTML = `<b style="color:${TIER_COLOR[t - 1]}">Socket T${t} Sector Key</b>` +
+        `<span>runs this sector at T${t}</span><em>×${normals[t].length}</em>`;
+      b.addEventListener("click", () => enterNode(q, r, normals[t][0].id));
+      box.appendChild(b);
+    }
+    for (const kk of modded) {
+      offered++;
+      const mods = kk.affixes.map(a => KEY_MOD_BY[a.mod].desc).join(" · ");
+      const b = document.createElement("button");
+      b.className = "shop-item";
+      b.innerHTML = `<b style="color:${RARITY[kk.rarity].color}">${keyDisplayName(kk)}</b>` +
+        `<span>${mods || "no modifiers"}</span><em>+${Math.round(keyQuant(kk) * 100)}% loot</em>`;
+      b.addEventListener("click", () => enterNode(q, r, kk.id));
       box.appendChild(b);
     }
     if (!offered) {
       const none = document.createElement("p");
       none.className = "stats";
-      none.textContent = "No fitting key. Purge other sectors for drops, or fabricate one at the Bay.";
+      none.textContent = "No keys. Purge other sectors for drops, or fabricate one at the Bay.";
       box.appendChild(none);
     }
   }
@@ -3113,7 +3319,8 @@ window.RL = {
   useConsumable, inCombat, recalc, canReach,
   get profile() { return profile; },
   enterOverworld, enterNode, extractToOverworld, fabricateKey,
-  sectorComplete, revealNode, tierForDist, keyFabCost, BIOMES, TIER_CAP,
+  sectorComplete, revealNode, keyFabCost, BIOMES, TIER_CAP,
+  makeKey, addKeyMod, keyQuant, keyDisplayName, canApplyOrbKey, applyOrbToKey, KEY_MODS,
   hurtEnemy, hurtPlayer, winRun, dieRun,
   saveProfile, loadProfile, syncProfileFromPlayer,
   ui,
