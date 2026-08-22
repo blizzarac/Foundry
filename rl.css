@@ -206,6 +206,13 @@ html, body {
 .shop-item span { flex: 1; color: #7f93a2; }
 .shop-item em { font-style: normal; color: #6fe0b0; white-space: nowrap; }
 
+/* ---------------- the Foundry (overworld) ---------------- */
+body.overworld #actions button { display: none; }
+body.overworld #actions #btn-gear { display: inline-block; }
+#btn-extract.extract { background: #123a30dd; border-color: #3fc88a; color: #9ff0c8; }
+#btn-extract.purged { box-shadow: 0 0 12px #3fc88a90; }
+#node-actions { display: flex; flex-direction: column; gap: 8px; margin: 14px 0 4px; }
+
 /* ---------------- small screens ---------------- */
 @media (max-width: 720px) {
   #topbar { gap: 9px; padding: 8px 10px; flex-wrap: wrap; }

@@ -19,7 +19,7 @@
   <div id="flasks" title="Repair cells"></div>
   <div class="spacer"></div>
   <div class="souls-wrap"><span class="soul-dot"></span><span id="souls">0</span></div>
-  <div class="floor-wrap"><span id="weapon-name"></span> · Sector <span id="floor-num">1</span></div>
+  <div class="floor-wrap"><span id="weapon-name"></span> · <span id="loc-label">Sector 1</span></div>
   <button id="mute" title="Audio">🔊</button>
 </div>
 
@@ -33,7 +33,17 @@
   <button id="btn-flask" title="Inject a repair cell: restores integrity, but it costs the turn [H]">Repair</button>
   <button id="btn-wait" title="Vent heat: hold position, +2 power [Space]">Vent</button>
   <button id="btn-gear" title="Equipment [B]">Gear</button>
+  <button id="btn-extract" class="hidden extract" title="Return to the Bay">Extract</button>
   <button id="btn-rest" class="hidden rest">Dock at repair bay</button>
+</div>
+
+<div id="node" class="overlay hidden">
+  <div class="box">
+    <h2 id="node-title"></h2>
+    <p id="node-desc"></p>
+    <div id="node-actions"></div>
+    <button id="node-close" class="secondary">Close</button>
+  </div>
 </div>
 
 <div id="inv" class="overlay hidden">
@@ -64,12 +74,14 @@
       <div><b>Loot</b> drops in grades: Normal, <b>Magic</b> (up to 2 modifiers), <b>Rare</b> (up to 4) and a few <b>Uniques</b>. Equip one weapon, plating, sensor, drive and utility module each.</div>
       <div><b>Currency orbs</b> from caches and elite machines craft your gear — transmute, augment, alchemy, regal, exalt, chaos. Swapping or crafting is free — unless hostiles have you in sensor range, then it costs your turn.</div>
       <div>Fall, and your cores scatter where you died. Your next frame can reclaim them from the wreck.</div>
+      <div>Beat the OVERSEER and the <b>Foundry</b> opens: an endless overworld of keyed sector nodes that grows as you purge it. Your frame, gear and map persist between sessions.</div>
       <div><b>Hover or hold</b> on any machine to read its attack pattern.</div>
     </div>
     <button id="begin-btn">Initialize</button>
     <p id="stain-note" class="stain"></p>
     <p id="menu-stats" class="stats"></p>
     <a class="crosslink" href="hexfoundry.html">⬡ Hexfoundry — the tower defense that came before</a>
+    <a id="reset-profile" class="crosslink hidden" href="#">Reset Foundry profile</a>
   </div>
 </div>
 
@@ -86,7 +98,7 @@
 <div id="win" class="overlay hidden">
   <div class="box">
     <h1 class="won">CORE SECURED</h1>
-    <p>The OVERSEER goes dark. Its core is yours, and the foundry is finally silent.</p>
+    <p>The OVERSEER goes dark. Its core is yours — and with it, the Foundry's outer gates unlock.</p>
     <p id="win-stats" class="stats"></p>
     <button id="win-again">Descend again</button>
     <button id="win-menu" class="secondary">Menu</button>

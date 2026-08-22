@@ -33,6 +33,17 @@ Prefixes carry raw power (damage, integrity, rear-strike, repair output, core yi
 
 Corrupted terminals fabricate **corrupted rares**: strong rolls with a downside modifier baked in, and corruption seals the item against every orb. No take-backs.
 
+## The Foundry (endgame)
+
+Kill the OVERSEER once and the game changes shape: the five-sector descent becomes a one-time prologue, and the **Foundry** opens — an endless overworld hex map of sealed sector nodes spreading outward from your home dock, **the Bay**. Your character is now persistent: frame, gear, currency, and the map itself survive death and browser restarts (saved in `localStorage`).
+
+- **Sector Keys** (T1–T4 for now) open frontier nodes. Socket a key into a node and a sector generates from that node's seed at the key's tier — higher tiers mean tougher machines, deeper modifier rolls, and richer drops. Keys drop from cleared sectors (always at least one, at tier or tier+1), and the Bay fabricates them for cores.
+- Every keyed sector has a **purge objective**: kill all its Prime units. Purging a node marks it cleared and reveals its neighbors — the map literally grows as you go.
+- **Biomes** shape each sector: Scrapyards (fast salvage packs), Rail Depots (open artillery country), Bastion Lines (dense cover, shielded armor), Archive Vaults (rich caches, live guards).
+- **Death costs the key, not the character.** Your frame is rebuilt at the Bay, but the cores you carried stay in the node as a wreck — socket another key into that node to reclaim them. Extraction from a purged sector is free and repairs you fully; attrition lives inside sectors, not between them.
+
+Planned next: keys as craftable items with orb-rolled sector modifiers, gate bosses at tier bands, tiers to 15.
+
 ## The descent
 
 Five sectors of procedural machine caverns under fog of war. **Scrappers** run a broken loop and swing. **Rail Drones** rake an entire lane (their slugs don't check for friendlies) and must recharge between shots. **Bulwarks** absorb every frontal hit with a shield emitter — flank them in the beat after they swing, or deflect to overload the field. **Mortars** arc charges *over walls*: a seven-hex blast, two cycles out — cover is no cover, keep moving. **Crushers** telegraph a two-cycle shockwave ring and lock up afterward; **Rippers** cover two hexes a turn and hit hard. Sectors 2–4 hide a glowing Prime unit and a **corrupted terminal** offering corrupted rare gear — guaranteed power with a downside baked in. In Sector 5, **the OVERSEER**: cleaves, line charges, a fabricator slam below half integrity — and after every third attack it has to vent heat. Learn the cycle.
@@ -53,6 +64,7 @@ Five sectors of procedural machine caverns under fog of war. **Scrappers** run a
 Determinism makes the design testable, and it is — in headless Chromium:
 
 - A combat-and-encounter suite covers the core rules: telegraphs hit exactly the marked hexes and nothing else, dashes clear them, deflects overload, counterstrikes double, rear hits crit, repair cells get punished mid-telegraph, crushers are punishable after slamming, bulwark shields block frontal hits until flanked or deflected, mortar blasts are outrunnable, wrecks persist and are reclaimable, drop shafts are reachable across seeds, and the OVERSEER telegraphs and overheats on cycle.
+- A Foundry suite (`tests/atlas-smoke.js`) drives the endgame rules: beating the OVERSEER unlocks the overworld with three starter keys and a six-node frontier ring, socketing a key consumes it and generates a sector with the right Prime count and no drop shaft, purging every Prime clears the node, reveals its neighbors and always returns at least one key, extraction fully repairs the frame, dying stores your cores as a wreck in the node and re-keying places the wreck back in the sector, and a full page reload restores the character, the map, and the menu state.
 - An item-system suite (`tests/item-smoke.js`) drives the loot rules directly: Magic items respect the 1-prefix/1-suffix cap and Rares the 2/2 cap, no item ever rolls the same stat twice, every orb does exactly what it says (transmute, augment, alchemy, regal, exalt, chaos) and refuses the wrong rarity, corrupted items reject all orbs, implicits and modifiers apply on equip and revert on unequip, `recalc()` totals always match the sum of equipped items' effects, an equipped item can't be dropped, unequipping the weapon falls back to bare fists, elites drop gear plus two orbs, and the pre-boss armory always holds a rare weapon. Run it with `npm install playwright-core && node tests/item-smoke.js`.
 
 ## Also in this repo

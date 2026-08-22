@@ -374,6 +374,34 @@ const CONSUMABLE_DESC = {
   cell: "Restore all power and 2 integrity. Costs the turn.",
 };
 
+/* ============================== THE FOUNDRY =============================
+   Endgame overworld (PoE2 Atlas style). After the OVERSEER falls, the
+   Foundry opens: an endless hex map of sealed sector nodes spreading
+   outward from the Bay. Socket a Sector Key (T1..TIER_CAP) into a
+   frontier node to generate and enter that sector at the key's tier;
+   purge every Prime unit to clear it, revealing its neighbors. Keys drop
+   from cleared sectors. Dying consumes the key and leaves your cores as
+   a wreck in the node. Character, gear, currency and map all persist.
+   ========================================================================= */
+const TIER_CAP = 4;
+const TIER_COLOR = ["#c8d4de", "#6fa8ff", "#ffd45c", "#ff9040"];
+const BIOMES = {
+  scrapyard: { name: "Scrapyard", rock: 0.30,
+    desc: "Hull heaps and fast salvage packs.",
+    spawn: t => ({ scrapper: 3 + t, ripper: 1 + (t >= 2 ? 1 : 0) }) },
+  raildepot: { name: "Rail Depot", rock: 0.20,
+    desc: "Open sight lines. Artillery country.",
+    spawn: t => ({ scrapper: 2, railer: 2 + (t >= 2 ? 1 : 0), mortar: t >= 2 ? 1 : 0 }) },
+  bastion:   { name: "Bastion Line", rock: 0.33,
+    desc: "Dense cover held by shielded armor.",
+    spawn: t => ({ scrapper: 2, bulwark: 1 + (t >= 2 ? 1 : 0), crusher: t >= 2 ? 1 : 0, ripper: t >= 3 ? 1 : 0 }) },
+  vault:     { name: "Archive Vault", rock: 0.28, chests: 2,
+    desc: "Deep storage. Rich caches, live guards.",
+    spawn: t => ({ scrapper: 2 + t, railer: 1, bulwark: t >= 3 ? 1 : 0 }) },
+};
+function tierForDist(d) { return clamp(Math.ceil(d * 0.75), 1, TIER_CAP); }
+function keyFabCost(tier) { return 30 * tier * tier; }
+
 const UPGRADES = [
   { id: "hp",    name: "Chassis reinforcement", desc: "+4 max integrity", base: 30, apply: p => { p.baseMaxHp += 4; p.hp += 4; } },
   { id: "st",    name: "Capacitor bank",        desc: "+1 max power",     base: 50, apply: p => { p.baseMaxSt += 1; p.st += 1; } },
@@ -392,8 +420,31 @@ function savePersist(p) {
   try { localStorage.setItem("ironhex", JSON.stringify(p)); } catch (e) { /* private mode */ }
 }
 
+/* persistent endgame profile: your character + the Foundry overworld */
+const PROFILE_KEY = "ironhex-foundry";
+function loadProfile() {
+  try { return JSON.parse(localStorage.getItem(PROFILE_KEY) || "null"); } catch (e) { return null; }
+}
+let profile = loadProfile();
+function saveProfile() {
+  if (!profile) return;
+  try { localStorage.setItem(PROFILE_KEY, JSON.stringify(profile)); } catch (e) { /* private mode */ }
+}
+function bumpItemSeqFromProfile() {
+  if (!profile) return;
+  const scan = it => {
+    if (it.id > itemSeq) itemSeq = it.id;
+    for (const a of it.affixes || []) if (a.id > itemSeq) itemSeq = a.id;
+  };
+  (profile.character.items || []).forEach(scan);
+  (profile.atlas.keys || []).forEach(scan);
+}
+bumpItemSeqFromProfile();
+
 function newRun(seed) {
   run = {
+    mode: "campaign", floorConf: null, sectorNode: null,
+    eliteTotal: 0, eliteKilled: 0,
     seed: seed === undefined ? (Math.random() * 1e9) | 0 : seed,
     floor: 0,
     player: {
@@ -603,7 +654,7 @@ function showMsg(text) { log(text, "sys"); }
 
 /* ------------------------------------------------------------ floor gen */
 function genFloor() {
-  const f = FLOORS[run.floor - 1];
+  const f = run.floorConf;
   const rng = mulberry32((run.seed ^ (run.floor * 0x9e3779b9)) >>> 0);
   run.tiles = new Map();
   run.enemies = [];
@@ -641,6 +692,8 @@ function genFloor() {
     }
     spawnEnemy("boss", 0, -2);
     run.stairs = null;
+    run.eliteTotal = 0;
+    run.eliteKilled = 0;
     updateFov();
     return;
   }
@@ -649,7 +702,7 @@ function genFloor() {
   for (let q = -R; q <= R; q++) for (let r = -R; r <= R; r++) {
     const d = hexDist(q, r, 0, 0);
     if (d > R) continue;
-    const rock = d === R || rng() < 0.30;
+    const rock = d === R || rng() < (f.rock !== undefined ? f.rock : 0.30);
     run.tiles.set(key(q, r), { q, r, rock, shade: (rng() - 0.5) * 0.08, explored: false });
   }
   // largest connected floor component
@@ -703,22 +756,27 @@ function genFloor() {
       !run.enemies.some(e => key(e.q, e.r) === k);
   };
   const spots = floorKeys.filter(freeFor);
-  let elitePlaced = !f.elite;
   for (const [type, n] of Object.entries(f.spawn)) {
     for (let i = 0; i < n; i++) {
       const cand = spots.filter(freeFor);
       if (!cand.length) break;
       const k = pick(cand);
       const [q, r] = unkey(k);
-      const e = spawnEnemy(type, q, r);
-      if (!elitePlaced && ELITE_TYPES.includes(type)) {
-        e.elite = true;
-        e.hp = e.maxHp = Math.round(e.maxHp * 1.5);
-        e.dmg += 1;
-        elitePlaced = true;
-      }
+      spawnEnemy(type, q, r);
     }
   }
+  // Prime promotion: campaign floors promote a classic elite type; keyed
+  // sectors promote anyone — every sector needs its Primes to purge
+  let eliteN = f.eliteCount || 0;
+  const elig = run.enemies.filter(e => run.mode === "sector" || ELITE_TYPES.includes(e.type));
+  while (eliteN-- > 0 && elig.length) {
+    const e = elig.splice((rng() * elig.length) | 0, 1)[0];
+    e.elite = true;
+    e.hp = e.maxHp = Math.round(e.maxHp * 1.5);
+    e.dmg += 1;
+  }
+  run.eliteTotal = run.enemies.filter(e => e.elite).length;
+  run.eliteKilled = 0;
   // souls shards
   for (let i = 0; i < 3; i++) {
     const cand = floorKeys.filter(k => k !== pk && k !== far && k !== bk &&
@@ -728,7 +786,7 @@ function genFloor() {
     run.shards.push({ q, r, souls: 20 });
   }
   // chests: the other reason to explore
-  const nChests = run.floor >= 3 ? 2 : 1;
+  const nChests = f.chests !== undefined ? f.chests : (run.floor >= 3 ? 2 : 1);
   for (let i = 0; i < nChests; i++) {
     const cand = floorKeys.filter(k => {
       const d = dist.get(k);
@@ -756,18 +814,26 @@ function genFloor() {
     }
   }
 
-  // predecessor's bloodstain
-  const p = persist();
-  if (p.stain && p.stain.floor === run.floor && p.stain.souls > 0) {
+  // predecessor's bloodstain (campaign) / your wreck (keyed sector)
+  let stainSouls = 0;
+  if (run.mode === "sector") {
+    stainSouls = f.wreckSouls || 0;
+  } else {
+    const per = persist();
+    if (per.stain && per.stain.floor === run.floor && per.stain.souls > 0) stainSouls = per.stain.souls;
+  }
+  if (stainSouls > 0) {
     const cand = floorKeys.filter(k => {
       const d = dist.get(k);
       return d !== undefined && d >= 3 && k !== far;
     });
     if (cand.length) {
       const [q, r] = unkey(pick(cand));
-      run.bloodstain = { q, r, souls: p.stain.souls };
+      run.bloodstain = { q, r, souls: stainSouls };
     }
   }
+  // keyed sectors have no drop shaft — extraction is the only way out
+  if (run.mode === "sector") run.stairs = null;
   updateFov();
 }
 
@@ -780,12 +846,21 @@ function spawnEnemy(type, q, r) {
     stagger: 0, moveToggle: false, elite: false,
     bossCount: 0, bossPhase2: false,
   };
+  // keyed sectors scale machines by tier (applies to bay respawns too)
+  if (run.mode === "sector" && run.floorConf && run.floorConf.tier > 1) {
+    const t = run.floorConf.tier;
+    e.hp = e.maxHp = Math.round(d.hp * (1 + 0.25 * (t - 1)));
+    if (t >= 3) e.dmg = d.dmg + 1;
+  }
   run.enemies.push(e);
   return e;
 }
 
 function descend() {
   run.floor++;
+  const f = FLOORS[run.floor - 1];
+  run.floorConf = { R: f.R, boss: !!f.boss, spawn: f.spawn || {},
+    eliteCount: f.elite ? 1 : 0, terminal: !!f.terminal };
   genFloor();
   log(run.floor === 5 ? "OVERSEER core detected." : "Sector " + run.floor + ".", "sys");
   centerCam();
@@ -966,8 +1041,8 @@ function actRest() {
   p.flask = p.maxFlask;
   p.st = p.maxSt;
   // cores trade-off: the sector stirs back to life
-  if (run.floor < 5) {
-    const f = FLOORS[run.floor - 1];
+  if (run.mode === "sector" || run.floor < 5) {
+    const f = run.floorConf;
     const dist = bfsDist(key(p.q, p.r));
     const spots = [...run.tiles.values()].filter(t => {
       const d = dist.get(key(t.q, t.r));
@@ -1060,9 +1135,16 @@ function afterPlayerMove() {
     addFloat(p.q, p.r, "+" + run.bloodstain.souls + " cores", "#7fe0f4");
     sfx("core");
     run.bloodstain = null;
-    const per = persist();
-    delete per.stain;
-    savePersist(per);
+    if (run.mode === "sector") {
+      const node = profile.atlas.nodes[run.sectorNode];
+      if (node) node.wreck = 0;
+      syncProfileFromPlayer();
+      saveProfile();
+    } else {
+      const per = persist();
+      delete per.stain;
+      savePersist(per);
+    }
   }
   // chests: items go to the backpack; supplies and orbs increment counters
   const chest = run.chests.find(c => !c.opened && c.q === p.q && c.r === p.r);
@@ -1130,6 +1212,11 @@ function hurtEnemy(e, dmg, label) {
     burst(hexX(e.q, e.r), hexY(e.q, e.r), "#5fd6f0", 5, 60);
     sfx("die");
     run.enemies.splice(run.enemies.indexOf(e), 1);
+    if (e.elite && run.mode === "sector") {
+      run.eliteKilled++;
+      addFloat(e.q, e.r, `PRIME DOWN ${run.eliteKilled}/${run.eliteTotal}`, "#f0d060");
+      if (run.eliteKilled >= run.eliteTotal) sectorComplete();
+    }
     if (e.type === "boss") winRun();
     else log(def.name + " scrapped.", "");
   }
@@ -1446,14 +1533,33 @@ function dieRun() {
   sfx("shutdown");
   const per = persist();
   per.deaths = (per.deaths || 0) + 1;
-  per.best = Math.max(per.best || 0, run.floor);
-  if (p.souls > 0) per.stain = { floor: run.floor, souls: p.souls };
-  savePersist(per);
-  document.getElementById("death-souls").textContent =
-    p.souls > 0 ? p.souls + " cores scattered in Sector " + run.floor + " — reclaim them from your wreck."
-                : "You carried nothing worth salvaging.";
-  document.getElementById("death-stats").textContent =
-    "Sector " + run.floor + " · " + run.kills + " scrapped · cycle " + run.turn;
+  if (run.mode === "sector") {
+    // the key is already spent; the frame is rebuilt at the Bay, but the
+    // cores stay in the node as a wreck until you re-key it
+    savePersist(per);
+    const node = profile.atlas.nodes[run.sectorNode];
+    if (node && node.state !== "cleared") node.wreck = (node.wreck || 0) + p.souls;
+    const lost = p.souls;
+    p.souls = 0;
+    syncProfileFromPlayer();
+    saveProfile();
+    document.getElementById("death-souls").textContent = lost > 0
+      ? lost + " cores went down with the frame — socket another key into that node to reclaim the wreck."
+      : "The key burns out with the frame. The sector stays sealed.";
+    document.getElementById("death-stats").textContent =
+      `T${run.floorConf.tier} ${run.floorConf.biomeName} · ${run.kills} scrapped · cycle ${run.turn}`;
+    document.getElementById("death-retry").textContent = "Return to the Bay";
+  } else {
+    per.best = Math.max(per.best || 0, run.floor);
+    if (p.souls > 0) per.stain = { floor: run.floor, souls: p.souls };
+    savePersist(per);
+    document.getElementById("death-souls").textContent =
+      p.souls > 0 ? p.souls + " cores scattered in Sector " + run.floor + " — reclaim them from your wreck."
+                  : "You carried nothing worth salvaging.";
+    document.getElementById("death-stats").textContent =
+      "Sector " + run.floor + " · " + run.kills + " scrapped · cycle " + run.turn;
+    document.getElementById("death-retry").textContent = "Reinitialize";
+  }
   document.getElementById("death").classList.remove("hidden");
 }
 
@@ -1467,9 +1573,189 @@ function winRun() {
   delete per.stain;
   savePersist(per);
   const p = run.player;
+  // the OVERSEER's death cracks the Foundry open: the character you
+  // finished the prologue with becomes your persistent endgame frame
+  if (run.mode === "campaign") {
+    const first = !profile || !profile.atlas.unlocked;
+    if (!profile) {
+      profile = { v: 1, character: snapshotCharacter(p),
+        atlas: { seed: (Math.random() * 1e9) | 0, unlocked: false, nodes: {}, keys: [] } };
+    } else {
+      profile.character = snapshotCharacter(p);
+    }
+    profile.atlas.unlocked = true;
+    if (!profile.atlas.nodes["0,0"]) initAtlas();
+    if (first) for (let i = 0; i < 3; i++) profile.atlas.keys.push({ id: ++itemSeq, tier: 1 });
+    saveProfile();
+  }
+  document.getElementById("win-again").textContent =
+    profile && profile.atlas.unlocked ? "Enter the Foundry" : "Descend again";
   document.getElementById("win-stats").textContent =
     run.kills + " scrapped · " + run.turn + " cycles · " + p.souls + " cores unspent";
   document.getElementById("win").classList.remove("hidden");
+}
+
+/* ====================== THE FOUNDRY: overworld play ===================== */
+function snapshotCharacter(p) {
+  return {
+    baseMaxHp: p.baseMaxHp, baseMaxSt: p.baseMaxSt, bonusDmg: p.bonusDmg,
+    maxFlask: p.maxFlask, souls: p.souls,
+    items: p.items, equip: p.equip, currency: p.currency, consumables: p.consumables,
+    upgrades: bought,
+  };
+}
+function characterToPlayer(c) {
+  return {
+    q: 0, r: 0, hp: 1, st: 1,
+    baseMaxHp: c.baseMaxHp, baseMaxSt: c.baseMaxSt, bonusDmg: c.bonusDmg,
+    items: c.items, equip: c.equip, currency: c.currency, consumables: c.consumables,
+    flask: c.maxFlask, maxFlask: c.maxFlask, souls: c.souls,
+    parry: false, parryHit: false, dead: false,
+  };
+}
+// the live player and profile.character share item/equip/currency refs;
+// this refreshes the scalar fields before a save
+function syncProfileFromPlayer() {
+  if (!profile || !run || run.mode === "campaign") return;
+  const p = run.player, c = profile.character;
+  c.baseMaxHp = p.baseMaxHp; c.baseMaxSt = p.baseMaxSt; c.bonusDmg = p.bonusDmg;
+  c.maxFlask = p.maxFlask; c.souls = p.souls;
+  c.items = p.items; c.equip = p.equip; c.currency = p.currency; c.consumables = p.consumables;
+  c.upgrades = bought;
+}
+function initAtlas() {
+  profile.atlas.nodes["0,0"] = { state: "hub" };
+  for (const [dq, dr] of DIRS) revealNode(dq, dr);
+}
+function revealNode(q, r) {
+  const k = key(q, r);
+  if (profile.atlas.nodes[k]) return;
+  const rng = mulberry32((profile.atlas.seed ^ (q * 73856093) ^ (r * 19349663)) >>> 0);
+  const biomes = Object.keys(BIOMES);
+  profile.atlas.nodes[k] = {
+    state: "frontier", tier: tierForDist(hexDist(q, r, 0, 0)),
+    biome: biomes[(rng() * biomes.length) | 0], wreck: 0,
+  };
+}
+function enterOverworld() {
+  if (!profile || !profile.atlas.unlocked) return false;
+  bought = profile.character.upgrades || {};
+  run = {
+    mode: "overworld", floorConf: null, sectorNode: null,
+    eliteTotal: 0, eliteKilled: 0,
+    seed: 0, floor: 0,
+    player: characterToPlayer(profile.character),
+    tiles: new Map(), enemies: [], shards: [], chests: [], groundLoot: [],
+    stairs: null, bay: null, bloodstain: null, terminal: null,
+    turn: 0, kills: 0, over: false, won: false, log: [],
+  };
+  recalc();
+  const p = run.player;
+  p.hp = p.maxHp; p.st = p.maxSt; p.flask = p.maxFlask;
+  ui.screen = "overworld";
+  ui.rollMode = false; ui.throwDart = false; ui.walking = null;
+  document.body.classList.add("overworld");
+  for (const id of ["menu", "death", "win", "shop", "terminal", "inv", "node"])
+    document.getElementById(id).classList.add("hidden");
+  cam.x = 0; cam.y = 0; cam.tx = 0; cam.ty = 0; cam.zoom = 1;
+  log("The Bay. Socket a Sector Key into a frontier node.", "sys");
+  renderLog();
+  refreshHud();
+  saveProfile();
+  return true;
+}
+function enterNode(q, r, keyTier) {
+  const nk = key(q, r);
+  const node = profile.atlas.nodes[nk];
+  if (!node || node.state !== "frontier") return false;
+  if (keyTier < node.tier) { log("This node needs a T" + node.tier + "+ key.", "warn"); return false; }
+  const ki = profile.atlas.keys.findIndex(kk => kk.tier === keyTier);
+  if (ki < 0) return false;
+  profile.atlas.keys.splice(ki, 1);
+  const tier = keyTier;
+  const biome = BIOMES[node.biome];
+  run.mode = "sector";
+  run.sectorNode = nk;
+  run.seed = (profile.atlas.seed ^ (q * 73856093) ^ (r * 19349663) ^ (tier * 2654435761)) >>> 0;
+  run.floor = tier + 1;   // drives loot depth (affix tiers, rarity weights)
+  run.over = false; run.won = false; run.turn = 0; run.kills = 0;
+  run.floorConf = {
+    R: 8 + (tier >= 3 ? 1 : 0),
+    spawn: biome.spawn(tier),
+    rock: biome.rock,
+    chests: (biome.chests || 1) + (tier >= 3 ? 1 : 0),
+    terminal: mulberry32((run.seed ^ 0x7777) >>> 0)() < 0.4,
+    eliteCount: 1 + (tier >= 3 ? 1 : 0),
+    tier, biomeName: biome.name,
+    wreckSouls: node.wreck || 0,
+  };
+  genFloor();
+  ui.screen = "game";
+  ui.rollMode = false; ui.throwDart = false; ui.walking = null;
+  document.body.classList.remove("overworld");
+  document.getElementById("node").classList.add("hidden");
+  centerCam();
+  cam.x = hexX(run.player.q, run.player.r);
+  cam.y = hexY(run.player.q, run.player.r);
+  invalidateFloorCaches();
+  log(`T${tier} ${biome.name}. Purge ${run.eliteTotal} Prime unit${run.eliteTotal === 1 ? "" : "s"}.`, "sys");
+  syncProfileFromPlayer();
+  saveProfile();   // the key is spent the moment you jack in
+  refreshHud();
+  return true;
+}
+function sectorComplete() {
+  const node = profile.atlas.nodes[run.sectorNode];
+  if (!node || node.state === "cleared") return;
+  node.state = "cleared";
+  const [q, r] = unkey(run.sectorNode);
+  for (const [dq, dr] of DIRS) revealNode(q + dq, r + dr);
+  // key sustain: always at least one key back, at tier or tier+1
+  const t = run.floorConf.tier;
+  const drops = 1 + (craftRng() < 0.3 * run.eliteTotal ? 1 : 0);
+  for (let i = 0; i < drops; i++) {
+    const kt = clamp(t + (craftRng() < 0.35 ? 1 : 0), 1, TIER_CAP);
+    profile.atlas.keys.push({ id: ++itemSeq, tier: kt });
+    log(`Sector Key T${kt} recovered.`, "good");
+  }
+  log("SECTOR PURGED — extraction enabled.", "sys");
+  addFloat(run.player.q, run.player.r, "SECTOR PURGED", "#5fe0aa");
+  sfx("stairs");
+  syncProfileFromPlayer();
+  saveProfile();
+  refreshHud();
+}
+function extractToOverworld() {
+  if (run.mode !== "sector") return false;
+  const node = profile.atlas.nodes[run.sectorNode];
+  if (node && node.state === "cleared") node.wreck = 0;  // unclaimed wreck in a purged node is gone
+  run.mode = "overworld";
+  run.sectorNode = null;
+  run.enemies = [];
+  run.over = false;
+  const p = run.player;
+  p.hp = p.maxHp; p.st = p.maxSt; p.flask = p.maxFlask; p.parry = false; p.dead = false;
+  ui.screen = "overworld";
+  ui.rollMode = false; ui.throwDart = false; ui.walking = null;
+  document.body.classList.add("overworld");
+  cam.tx = 0; cam.ty = 0;
+  log("Extraction. The Bay repairs your frame.", "good");
+  syncProfileFromPlayer();
+  saveProfile();
+  refreshHud();
+  return true;
+}
+function fabricateKey(tier) {
+  const p = run.player;
+  const cost = keyFabCost(tier);
+  if (tier < 1 || tier > TIER_CAP || p.souls < cost) return false;
+  p.souls -= cost;
+  profile.atlas.keys.push({ id: ++itemSeq, tier });
+  log(`The Bay fabricates a T${tier} Sector Key (${cost} cores).`, "good");
+  sfx("core");
+  syncProfileFromPlayer();
+  saveProfile();
+  return true;
 }
 
 /* ================================ SOUND ================================= */
@@ -1587,7 +1873,7 @@ let terrainCache = null, fogCache = null, fogDirty = true;
 function invalidateFloorCaches() { terrainCache = null; fogCache = null; fogDirty = true; }
 
 function cacheSpan() {
-  const R = FLOORS[run.floor - 1].R;
+  const R = run.floorConf.R;
   return (R + 1.5) * SQ3 * HEX;
 }
 function buildTerrainCache() {
@@ -1656,6 +1942,12 @@ function render(now) {
   shake = Math.max(0, shake - dt * 26);
   const shx = shake ? (Math.random() - 0.5) * shake : 0;
   const shy = shake ? (Math.random() - 0.5) * shake : 0;
+
+  if (ui.screen === "overworld" && profile) {
+    renderOverworld(now / 1000);
+    requestAnimationFrame(render);
+    return;
+  }
 
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.fillStyle = "#0c1015";
@@ -1781,6 +2073,79 @@ function render(now) {
     ctx.fillRect(0, 0, W, H);
   }
   requestAnimationFrame(render);
+}
+
+/* the Foundry overworld: each hex is a sealed sector node */
+function renderOverworld(t) {
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.fillStyle = "#080d12";
+  ctx.fillRect(0, 0, W, H);
+  ctx.setTransform(cam.zoom * DPR, 0, 0, cam.zoom * DPR,
+    (W / 2 - cam.x * cam.zoom) * DPR, (H / 2 - cam.y * cam.zoom) * DPR);
+  const nodes = profile.atlas.nodes;
+  const pulse = 0.55 + 0.25 * Math.sin(t * 3);
+  // sealed space just past the frontier, hinted
+  const ghost = new Set();
+  for (const k in nodes) {
+    const [q, r] = unkey(k);
+    for (const [dq, dr] of DIRS) {
+      const nk = key(q + dq, r + dr);
+      if (!nodes[nk]) ghost.add(nk);
+    }
+  }
+  for (const k of ghost) {
+    const [q, r] = unkey(k);
+    hexPath(ctx, hexX(q, r), hexY(q, r), 0.9);
+    ctx.strokeStyle = "#141e28";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+  ctx.textAlign = "center";
+  for (const k in nodes) {
+    const n = nodes[k];
+    const [q, r] = unkey(k);
+    const x = hexX(q, r), y = hexY(q, r);
+    hexPath(ctx, x, y, 0.92);
+    if (n.state === "hub") {
+      ctx.fillStyle = "#12333e";
+      ctx.fill();
+      hexPath(ctx, x, y, 0.92);
+      ctx.strokeStyle = "#4fd6e8";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = "#7fe6f4";
+      ctx.font = "bold 9px monospace";
+      ctx.fillText("BAY", x, y + 3);
+    } else if (n.state === "cleared") {
+      ctx.fillStyle = "#0e1a15";
+      ctx.fill();
+      hexPath(ctx, x, y, 0.92);
+      ctx.strokeStyle = "#2f5548";
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      ctx.fillStyle = "#3fa080";
+      ctx.font = "9px monospace";
+      ctx.fillText("T" + n.tier + " ✓", x, y + 3);
+    } else {
+      const col = TIER_COLOR[n.tier - 1] || TIER_COLOR[0];
+      ctx.fillStyle = "#0f1a22";
+      ctx.fill();
+      hexPath(ctx, x, y, 0.92);
+      ctx.globalAlpha = pulse;
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = col;
+      ctx.font = "bold 10px monospace";
+      ctx.fillText("T" + n.tier, x, y + 3);
+      if (n.wreck > 0) {
+        ctx.fillStyle = "#7fe0f4";
+        ctx.font = "8px monospace";
+        ctx.fillText("✕ " + n.wreck, x, y + 13);
+      }
+    }
+  }
 }
 
 function visibleOrExplored(o) {
@@ -2062,7 +2427,7 @@ function drawStain(b, t) {
 }
 
 /* ================================= UI =================================== */
-const ui = { rollMode: false, throwDart: false, walking: null, keys: {} };
+const ui = { screen: "game", rollMode: false, throwDart: false, walking: null, keys: {} };
 
 function refreshHud() {
   const p = run.player;
@@ -2083,7 +2448,10 @@ function refreshHud() {
     fl.appendChild(d);
   }
   document.getElementById("souls").textContent = p.souls;
-  document.getElementById("floor-num").textContent = run.floor;
+  document.getElementById("loc-label").textContent =
+    ui.screen === "overworld" ? "The Foundry"
+    : run.mode === "sector" ? `T${run.floorConf.tier} ${run.floorConf.biomeName}`
+    : "Sector " + run.floor;
   const wc = activeWeaponItem();
   const wnEl = document.getElementById("weapon-name");
   wnEl.textContent = wc ? wc.name : "Bare Fists";
@@ -2098,6 +2466,17 @@ function refreshHud() {
   const b = run.bay;
   document.getElementById("btn-rest").classList.toggle("hidden",
     !b || b.used || hexDist(p.q, p.r, b.q, b.r) > 1 || run.over);
+  const ex = document.getElementById("btn-extract");
+  const inSector = run.mode === "sector" && ui.screen === "game";
+  ex.classList.toggle("hidden", !inSector || run.over);
+  if (inSector) {
+    const purged = profile && profile.atlas.nodes[run.sectorNode] &&
+      profile.atlas.nodes[run.sectorNode].state === "cleared";
+    ex.classList.toggle("purged", !!purged);
+    if (ex.dataset.arm !== "1") ex.textContent = purged ? "Extract ▸" : "Extract";
+  } else {
+    ex.dataset.arm = "";
+  }
 }
 
 function renderLog() {
@@ -2126,6 +2505,7 @@ function showShop() {
       u.apply(p);
       recalc();
       log(u.name + " installed.", "good");
+      if (run.mode !== "campaign") { syncProfileFromPlayer(); saveProfile(); }
       showShop();
       refreshHud();
     });
@@ -2174,7 +2554,10 @@ document.getElementById("terminal-leave").addEventListener("click", () => {
 /* ------- Equipment: slots, backpack, currency ------- */
 function gearOpen() { return !document.getElementById("inv").classList.contains("hidden"); }
 function openGear() { refreshGear(); refreshHud(); document.getElementById("inv").classList.remove("hidden"); }
-function closeGear() { document.getElementById("inv").classList.add("hidden"); }
+function closeGear() {
+  document.getElementById("inv").classList.add("hidden");
+  if (run && run.mode !== "campaign") { syncProfileFromPlayer(); saveProfile(); }
+}
 
 // which orbs make sense to offer on this item right now
 function orbChoices(item) {
@@ -2282,6 +2665,15 @@ function refreshGearCurrency() {
     el.appendChild(row);
   }
   if (!any) el.innerHTML = '<div class="gear-empty">No orbs. Caches and elite machines carry them.</div>';
+  if (profile && profile.atlas && profile.atlas.keys.length) {
+    const byTier = {};
+    for (const kk of profile.atlas.keys) byTier[kk.tier] = (byTier[kk.tier] || 0) + 1;
+    const row = document.createElement("div");
+    row.className = "currency-row";
+    row.innerHTML = `<b style="color:#7fdcf0">Sector Keys</b><span>` +
+      Object.keys(byTier).sort().map(t => `T${t} ×${byTier[t]}`).join(" · ") + `</span>`;
+    el.appendChild(row);
+  }
 }
 function refreshGearTools() {
   const p = run.player;
@@ -2329,6 +2721,74 @@ document.getElementById("btn-gear").addEventListener("click", () => {
 });
 document.getElementById("inv-close").addEventListener("click", closeGear);
 
+/* ------- Foundry node panel: inspect a sector, socket a key ------- */
+function openNodePanel(q, r) {
+  const nk = key(q, r);
+  const node = profile.atlas.nodes[nk];
+  if (!node) return;
+  const box = document.getElementById("node-actions");
+  const title = document.getElementById("node-title");
+  const desc = document.getElementById("node-desc");
+  box.innerHTML = "";
+  if (node.state === "hub") {
+    title.textContent = "The Bay";
+    desc.textContent = `Home dock. Cores buy fresh Sector Keys. You hold ${run.player.souls} cores.`;
+    for (let t = 1; t <= TIER_CAP; t++) {
+      const cost = keyFabCost(t);
+      const b = document.createElement("button");
+      b.className = "shop-item";
+      b.disabled = run.player.souls < cost;
+      b.innerHTML = `<b style="color:${TIER_COLOR[t - 1]}">Fabricate T${t} Sector Key</b><em>${cost} cores</em>`;
+      b.addEventListener("click", () => { if (fabricateKey(t)) { openNodePanel(q, r); refreshHud(); } });
+      box.appendChild(b);
+    }
+  } else if (node.state === "cleared") {
+    title.textContent = `T${node.tier} ${BIOMES[node.biome].name}`;
+    desc.textContent = "Purged and sealed. Nothing moves in there anymore.";
+  } else {
+    title.textContent = `T${node.tier} ${BIOMES[node.biome].name}`;
+    desc.textContent = BIOMES[node.biome].desc +
+      (node.wreck > 0 ? ` Your wreck holds ${node.wreck} cores in there.` : "") +
+      ` Requires a T${node.tier}+ key.`;
+    const byTier = {};
+    for (const kk of profile.atlas.keys) byTier[kk.tier] = (byTier[kk.tier] || 0) + 1;
+    let offered = 0;
+    for (let t = node.tier; t <= TIER_CAP; t++) {
+      if (!byTier[t]) continue;
+      offered++;
+      const b = document.createElement("button");
+      b.className = "shop-item";
+      b.innerHTML = `<b style="color:${TIER_COLOR[t - 1]}">Socket T${t} key</b>` +
+        `<span>runs this sector at T${t}</span><em>×${byTier[t]}</em>`;
+      b.addEventListener("click", () => enterNode(q, r, t));
+      box.appendChild(b);
+    }
+    if (!offered) {
+      const none = document.createElement("p");
+      none.className = "stats";
+      none.textContent = "No fitting key. Purge other sectors for drops, or fabricate one at the Bay.";
+      box.appendChild(none);
+    }
+  }
+  document.getElementById("node").classList.remove("hidden");
+}
+document.getElementById("node-close").addEventListener("click", () =>
+  document.getElementById("node").classList.add("hidden"));
+
+document.getElementById("btn-extract").addEventListener("click", () => {
+  if (run.mode !== "sector") return;
+  const btn = document.getElementById("btn-extract");
+  const purged = profile && profile.atlas.nodes[run.sectorNode] &&
+    profile.atlas.nodes[run.sectorNode].state === "cleared";
+  if (!purged && btn.dataset.arm !== "1") {
+    btn.dataset.arm = "1";
+    btn.textContent = "Abandon sector?";
+    return;
+  }
+  btn.dataset.arm = "";
+  extractToOverworld();
+});
+
 /* ------- enemy inspect: hover on desktop, long-press on touch ------- */
 const inspectEl = document.getElementById("inspect");
 function showInspect(e, sx, sy) {
@@ -2350,6 +2810,7 @@ function showInspect(e, sx, sy) {
 }
 function hideInspect() { inspectEl.style.display = "none"; }
 function enemyAtScreen(sx, sy) {
+  if (ui.screen !== "game") return undefined;
   const w = screenToWorld(sx, sy);
   const h = pixelToHex(w.x, w.y);
   return run.enemies.find(e => e.q === h.q && e.r === h.r && visible.has(key(e.q, e.r)));
@@ -2397,7 +2858,7 @@ function startWalk(tq, tr) {
   ui.walking = { tq, tr, timer: 0 };
 }
 function walkTick(dt) {
-  if (!ui.walking || run.over) { ui.walking = null; return; }
+  if (ui.screen !== "game" || !ui.walking || run.over) { ui.walking = null; return; }
   ui.walking.timer -= dt;
   if (ui.walking.timer > 0) return;
   ui.walking.timer = 0.13;
@@ -2491,6 +2952,11 @@ function endPointer(ev) {
   if (dragDist <= 8 && pointers.size === 0) {
     const w = screenToWorld(ev.clientX, ev.clientY);
     const h = pixelToHex(w.x, w.y);
+    if (ui.screen === "overworld") {
+      openNodePanel(h.q, h.r);
+      refreshHud();
+      return;
+    }
     ui.walking = null;
     tryPlayerAction(h.q, h.r);
     refreshHud();
@@ -2523,8 +2989,15 @@ document.getElementById("mute").addEventListener("click", () => {
 document.getElementById("mute").textContent = muted ? "🔇" : "🔊";
 
 window.addEventListener("keydown", ev => {
+  const kk = ev.key.toLowerCase();
+  if (ui.screen === "overworld") {
+    if (kk === "b" || kk === "i") { if (gearOpen()) closeGear(); else openGear(); }
+    else if (kk === "escape") { closeGear(); document.getElementById("node").classList.add("hidden"); }
+    refreshHud();
+    return;
+  }
   if (run.over) return;
-  const k = ev.key.toLowerCase();
+  const k = kk;
   if (k === "r") { ui.rollMode = !ui.rollMode; }
   else if (k === "f") actParry();
   else if (k === "h" || k === "q") actFlask();
@@ -2539,19 +3012,32 @@ function showMenu() {
   const per = persist();
   document.getElementById("menu-stats").textContent =
     (per.deaths || 0) + " units lost · " + (per.wins || 0) + " cores taken · deepest: Sector " + (per.best || 0);
-  document.getElementById("stain-note").textContent =
-    per.stain ? "A wreck holding " + per.stain.souls + " cores waits in Sector " + per.stain.floor + "." : "";
+  const unlocked = profile && profile.atlas && profile.atlas.unlocked;
+  document.getElementById("begin-btn").textContent = unlocked ? "Enter the Foundry" : "Initialize";
+  document.getElementById("stain-note").textContent = unlocked
+    ? (() => {
+        const cleared = Object.values(profile.atlas.nodes).filter(n => n.state === "cleared").length;
+        return `The Foundry is open — ${cleared} sector${cleared === 1 ? "" : "s"} purged, ${profile.atlas.keys.length} key${profile.atlas.keys.length === 1 ? "" : "s"} held.`;
+      })()
+    : per.stain ? "A wreck holding " + per.stain.souls + " cores waits in Sector " + per.stain.floor + "." : "";
+  const reset = document.getElementById("reset-profile");
+  reset.classList.toggle("hidden", !profile);
+  reset.textContent = "Reset Foundry profile";
+  reset.dataset.arm = "";
   document.getElementById("menu").classList.remove("hidden");
 }
 function startRun(seed) {
   bought = {};
   ui.throwDart = false;
   ui.rollMode = false;
+  ui.screen = "game";
+  document.body.classList.remove("overworld");
   document.getElementById("menu").classList.add("hidden");
   document.getElementById("death").classList.add("hidden");
   document.getElementById("win").classList.add("hidden");
   document.getElementById("terminal").classList.add("hidden");
   document.getElementById("inv").classList.add("hidden");
+  document.getElementById("node").classList.add("hidden");
   newRun(seed);
   cam.x = hexX(run.player.q, run.player.r);
   cam.y = hexY(run.player.q, run.player.r);
@@ -2559,16 +3045,47 @@ function startRun(seed) {
   refreshHud();
   renderLog();
 }
-document.getElementById("begin-btn").addEventListener("click", () => startRun());
-document.getElementById("death-retry").addEventListener("click", () => startRun());
+document.getElementById("begin-btn").addEventListener("click", () => {
+  if (profile && profile.atlas && profile.atlas.unlocked) {
+    document.getElementById("menu").classList.add("hidden");
+    enterOverworld();
+  } else startRun();
+});
+document.getElementById("death-retry").addEventListener("click", () => {
+  if (run.mode === "sector") {
+    document.getElementById("death").classList.add("hidden");
+    enterOverworld();
+  } else startRun();
+});
 document.getElementById("death-menu").addEventListener("click", () => {
   document.getElementById("death").classList.add("hidden");
   showMenu();
 });
-document.getElementById("win-again").addEventListener("click", () => startRun());
+document.getElementById("win-again").addEventListener("click", () => {
+  document.getElementById("win").classList.add("hidden");
+  if (profile && profile.atlas && profile.atlas.unlocked) enterOverworld();
+  else startRun();
+});
 document.getElementById("win-menu").addEventListener("click", () => {
   document.getElementById("win").classList.add("hidden");
   showMenu();
+});
+document.getElementById("reset-profile").addEventListener("click", ev => {
+  ev.preventDefault();
+  const el = ev.currentTarget;
+  if (el.dataset.arm !== "1") {
+    el.dataset.arm = "1";
+    el.textContent = "Click again to wipe character + map";
+    return;
+  }
+  el.dataset.arm = "";
+  try { localStorage.removeItem(PROFILE_KEY); } catch (e) { /* private mode */ }
+  profile = null;
+  showMenu();
+});
+window.addEventListener("beforeunload", () => {
+  syncProfileFromPlayer();
+  saveProfile();
 });
 
 /* --------------------------------- boot -------------------------------- */
@@ -2594,5 +3111,11 @@ window.RL = {
   activeWeaponItem, getActiveWeaponType,
   canApplyOrb, applyOrb, grantOrbs, rollOrbKind,
   useConsumable, inCombat, recalc, canReach,
+  get profile() { return profile; },
+  enterOverworld, enterNode, extractToOverworld, fabricateKey,
+  sectorComplete, revealNode, tierForDist, keyFabCost, BIOMES, TIER_CAP,
+  hurtEnemy, hurtPlayer, winRun, dieRun,
+  saveProfile, loadProfile, syncProfileFromPlayer,
+  ui,
   setRun(r) { run = r; },
 };

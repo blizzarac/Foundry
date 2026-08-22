@@ -10,5 +10,6 @@
 - **Ironhex** (main game): `index.html`, `rl.css`, `rl.js` — single-file
   vanilla-JS hex roguelike, no build step, no dependencies.
 - **Hexfoundry** (legacy tower defense): `hexfoundry.html`, `style.css`, `game.js`.
-- Item-system acceptance suite: `npm install playwright-core && node tests/item-smoke.js`
-  (set `CHROMIUM_PATH` if Playwright can't find a browser).
+- Acceptance suites: `npm install playwright-core && node tests/item-smoke.js`
+  (items) and `node tests/atlas-smoke.js` (Foundry overworld/endgame).
+  Set `CHROMIUM_PATH` if Playwright can't find a browser.
