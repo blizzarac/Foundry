@@ -394,19 +394,55 @@ const TIER_COLOR = ["#c8d4de", "#6fa8ff", "#ffd45c", "#ff9040"];
 function tierColor(t) { return TIER_COLOR[(t - 1) % 4]; }
 function atlasCap() { return (profile && profile.atlas && profile.atlas.tierCap) || 4; }
 const BIOMES = {
-  scrapyard: { name: "Scrapyard", abbr: "SCRP", color: "#e8875a", rock: 0.30,
+  scrapyard: { name: "Scrapyard", abbr: "SCRP", color: "#e8875a", rock: 0.30, terrain: "clumps",
     desc: "Hull heaps and fast salvage packs.",
     spawn: t => ({ scrapper: 3 + t, ripper: 1 + (t >= 2 ? 1 : 0) }) },
-  raildepot: { name: "Rail Depot", abbr: "RAIL", color: "#b09340", rock: 0.20,
+  raildepot: { name: "Rail Depot", abbr: "RAIL", color: "#b09340", rock: 0.20, terrain: "lanes",
     desc: "Open sight lines. Artillery country.",
     spawn: t => ({ scrapper: 2, railer: 2 + (t >= 2 ? 1 : 0), mortar: t >= 2 ? 1 : 0 }) },
-  bastion:   { name: "Bastion Line", abbr: "BSTN", color: "#7fa0d8", rock: 0.33,
+  bastion:   { name: "Bastion Line", abbr: "BSTN", color: "#7fa0d8", rock: 0.33, terrain: "chambers",
     desc: "Dense cover held by shielded armor.",
     spawn: t => ({ scrapper: 2, bulwark: 1 + (t >= 2 ? 1 : 0), crusher: t >= 2 ? 1 : 0, ripper: t >= 3 ? 1 : 0 }) },
-  vault:     { name: "Archive Vault", abbr: "VLT", color: "#c77dff", rock: 0.28, chests: 2,
+  vault:     { name: "Archive Vault", abbr: "VLT", color: "#c77dff", rock: 0.28, chests: 2, terrain: "aisles",
     desc: "Deep storage. Rich caches, live guards.",
     spawn: t => ({ scrapper: 2 + t, railer: 1, bulwark: t >= 3 ? 1 : 0 }) },
 };
+
+/* Sector identity: every biome gets its own palette and its own SHAPE of
+   space. Floors stay dark and desaturated on purpose — the red/amber
+   telegraphs must keep absolute legibility on every palette. The tier
+   tint shifts a palette darker and hotter as keys get deeper, so danger
+   reads before the HUD does. */
+const BIOME_PALETTES = {
+  scrapyard: { bg: "#120c08", floor: "#3a2c22", rockBase: "#1c120b", rockTop: "#54402c", line: "#150e08" },
+  raildepot: { bg: "#11100a", floor: "#37331f", rockBase: "#1a170d", rockTop: "#4e472b", line: "#131107" },
+  bastion:   { bg: "#0b1017", floor: "#2a3542", rockBase: "#121b25", rockTop: "#3c4e60", line: "#0a121a" },
+  vault:     { bg: "#0f0b15", floor: "#2f2839", rockBase: "#160f1f", rockTop: "#453754", line: "#110b17" },
+  overseer:  { bg: "#12100a", floor: "#333020", rockBase: "#18150c", rockTop: "#4b4530", line: "#131106" },
+  gate:      { bg: "#140b0e", floor: "#37262c", rockBase: "#1b0f13", rockTop: "#4f3541", line: "#140a0d" },
+  default:   { bg: "#0c1015", floor: "#2b3540", rockBase: "#131b23", rockTop: "#3b4c5c", line: "#0a121a" },
+};
+// the prologue inherits biome themes floor by floor
+const CAMPAIGN_THEMES = ["scrapyard", "raildepot", "vault", "bastion", "overseer"];
+function mixColor(a, b, t) {
+  const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
+  const ch = (sa, sb) => Math.round(sa * (1 - t) + sb * t);
+  const r = ch((pa >> 16) & 255, (pb >> 16) & 255);
+  const g = ch((pa >> 8) & 255, (pb >> 8) & 255);
+  const bl = ch(pa & 255, pb & 255);
+  return "#" + ((1 << 24) | (r << 16) | (g << 8) | bl).toString(16).slice(1);
+}
+function paletteFor(biomeKey, tier) {
+  const base = BIOME_PALETTES[biomeKey] || BIOME_PALETTES.default;
+  const t = clamp(((tier || 1) - 1) / 14, 0, 1) * 0.40;
+  return {
+    bg: mixColor(base.bg, "#0d0407", t),
+    floor: mixColor(base.floor, "#301218", t),
+    rockBase: mixColor(base.rockBase, "#1a080c", t),
+    rockTop: mixColor(base.rockTop, "#54222c", t),
+    line: base.line,
+  };
+}
 function keyFabCost(tier) { return Math.round(30 * Math.pow(tier, 1.7)); }
 
 /* Overworld terrain: the Foundry is a continuous landscape, not a node
@@ -873,6 +909,33 @@ function log(msg, cls) {
 function showMsg(text) { log(text, "sys"); }
 
 /* ------------------------------------------------------------ floor gen */
+/* per-biome terrain shapes. Each returns rock-or-not for a hex; the
+   structured ones use position-hashed noise so walls form coherent
+   geometry instead of per-hex static. */
+function terrainRockFn(terrain, f, rng) {
+  const s = run.seed | 0;
+  const density = f.rock !== undefined ? f.rock : 0.30;
+  switch (terrain) {
+    case "clumps":   // Scrapyard: scattered debris piles, chaotic sightlines
+      return (q, r) => vnoise(hexX(q, r) / HEX / 2.6, hexY(q, r) / HEX / 2.6, s ^ 0xC1) > 0.635;
+    case "lanes":    // Rail Depot: long corridors with doorways punched through
+      return (q, r) => ((r % 3) + 3) % 3 === 0 && hash2(q, r, s ^ 0xC2) > 0.30;
+    case "chambers": // Bastion Line: rooms joined by chokepoint doors
+      return (q, r) => {
+        const wq = ((q % 4) + 4) % 4 === 0, wr = ((r % 4) + 4) % 4 === 0;
+        return (wq || wr) && hash2(q, r, s ^ 0xC3) > 0.34;
+      };
+    case "aisles":   // Archive Vault: ordered storage rows with breaks
+      return (q, r) => {
+        if (((r % 2) + 2) % 2 !== 0) return false;
+        const seg = ((q + r) % 5 + 5) % 5;
+        return seg < 3 && hash2(q, r, s ^ 0xC4) > 0.12;
+      };
+    default:         // cavern: the original per-hex noise
+      return () => rng() < density;
+  }
+}
+
 function genFloor() {
   const f = run.floorConf;
   const rng = mulberry32((run.seed ^ (run.floor * 0x9e3779b9)) >>> 0);
@@ -927,35 +990,46 @@ function genFloor() {
     return;
   }
 
-  // cavern: noise rock, keep the largest open region
-  for (let q = -R; q <= R; q++) for (let r = -R; r <= R; r++) {
-    const d = hexDist(q, r, 0, 0);
-    if (d > R) continue;
-    const rock = d === R || rng() < (f.rock !== undefined ? f.rock : 0.30);
-    run.tiles.set(key(q, r), { q, r, rock, shade: (rng() - 0.5) * 0.08, explored: false });
-  }
-  // largest connected floor component
-  const seen = new Set();
-  let bigBest = [];
-  for (const t of run.tiles.values()) {
-    if (t.rock || seen.has(key(t.q, t.r))) continue;
-    const comp = [], stack = [key(t.q, t.r)];
-    seen.add(stack[0]);
-    while (stack.length) {
-      const k = stack.pop();
-      comp.push(k);
-      const [q, r] = unkey(k);
-      for (const [dq, dr] of DIRS) {
-        const nk = key(q + dq, r + dr);
-        const nt = run.tiles.get(nk);
-        if (nt && !nt.rock && !seen.has(nk)) { seen.add(nk); stack.push(nk); }
-      }
+  // terrain: each biome shapes space differently — debris clumps, firing
+  // lanes, walled chambers, storage aisles — all seeded, then pruned to
+  // the largest connected region like always. A structured generator that
+  // walls off too much falls back to plain cavern noise, so sectors never
+  // generate cramped.
+  let open = new Set();
+  let floorKeys = [];
+  for (const terrain of [f.terrain || "cavern", "cavern"]) {
+    const rockAt = terrainRockFn(terrain, f, rng);
+    run.tiles = new Map();
+    for (let q = -R; q <= R; q++) for (let r = -R; r <= R; r++) {
+      const d = hexDist(q, r, 0, 0);
+      if (d > R) continue;
+      const rock = d === R || rockAt(q, r);
+      run.tiles.set(key(q, r), { q, r, rock, shade: (rng() - 0.5) * 0.08, explored: false });
     }
-    if (comp.length > bigBest.length) bigBest = comp;
+    // largest connected floor component
+    const seen = new Set();
+    let bigBest = [];
+    for (const t of run.tiles.values()) {
+      if (t.rock || seen.has(key(t.q, t.r))) continue;
+      const comp = [], stack = [key(t.q, t.r)];
+      seen.add(stack[0]);
+      while (stack.length) {
+        const k = stack.pop();
+        comp.push(k);
+        const [q, r] = unkey(k);
+        for (const [dq, dr] of DIRS) {
+          const nk = key(q + dq, r + dr);
+          const nt = run.tiles.get(nk);
+          if (nt && !nt.rock && !seen.has(nk)) { seen.add(nk); stack.push(nk); }
+        }
+      }
+      if (comp.length > bigBest.length) bigBest = comp;
+    }
+    open = new Set(bigBest);
+    floorKeys = [...open];
+    if (floorKeys.length >= 40 || terrain === "cavern") break;
   }
-  const open = new Set(bigBest);
   for (const t of run.tiles.values()) if (!open.has(key(t.q, t.r))) t.rock = true;
-  const floorKeys = [...open];
   const pick = arr => arr[(rng() * arr.length) | 0];
 
   // player spawns at a rim-ish tile; stairs at max distance from spawn
@@ -1110,8 +1184,10 @@ function spawnEnemy(type, q, r) {
 function descend() {
   run.floor++;
   const f = FLOORS[run.floor - 1];
+  const theme = CAMPAIGN_THEMES[run.floor - 1];
   run.floorConf = { R: f.R, boss: !!f.boss, spawn: f.spawn || {},
-    eliteCount: f.elite ? 1 : 0, terminal: !!f.terminal };
+    eliteCount: f.elite ? 1 : 0, terminal: !!f.terminal,
+    biomeKey: theme, terrain: BIOMES[theme] ? BIOMES[theme].terrain : null };
   genFloor();
   log(run.floor === 5 ? "OVERSEER core detected." : "Sector " + run.floor + ".", "sys");
   centerCam();
@@ -2385,7 +2461,7 @@ function enterNode(q, r, keyId) {
     run.floorConf = {
       R: 9, boss: true, bossType: "sentinel", spawn: {},
       eliteCount: 0, terminal: false,
-      tier, biomeName: "Sector Gate",
+      tier, biomeName: "Sector Gate", biomeKey: "gate",
       hpMult: mod.hpMult, dmgAdd: mod.dmgAdd,
       fovPenalty: mod.fovPenalty, flaskPenalty: mod.flaskPenalty,
       volatile: mod.volatile, lootBonus: quant,
@@ -2402,7 +2478,7 @@ function enterNode(q, r, keyId) {
       chests: (biome.chests || 1) + (tier >= 3 ? 1 : 0) + Math.floor(quant / 0.25),
       terminal: mulberry32((run.seed ^ 0x7777) >>> 0)() < 0.4,
       eliteCount: 1 + (tier >= 3 ? 1 : 0) + mod.extraElites,
-      tier, biomeName: biome.name,
+      tier, biomeName: biome.name, biomeKey: node.biome, terrain: biome.terrain,
       hpMult: mod.hpMult, dmgAdd: mod.dmgAdd,
       fovPenalty: mod.fovPenalty, flaskPenalty: mod.flaskPenalty,
       volatile: mod.volatile, lootBonus: quant,
@@ -2715,9 +2791,17 @@ function centerCam() {
   cam.ty = hexY(run.player.q, run.player.r);
 }
 
-const FLOOR_COLOR = "#2b3540";
-let terrainCache = null, fogCache = null, fogDirty = true;
-function invalidateFloorCaches() { terrainCache = null; fogCache = null; fogDirty = true; }
+let terrainCache = null, fogCache = null, fogDirty = true, palCache = null;
+function invalidateFloorCaches() { terrainCache = null; fogCache = null; fogDirty = true; palCache = null; }
+// the active floor's palette: biome identity + tier tint, cached per floor
+function floorPal() {
+  if (!palCache) {
+    const f = run.floorConf || {};
+    palCache = paletteFor(f.biomeKey, f.tier);
+    palCache.fog = mixColor(palCache.bg, "#000000", 0.4);
+  }
+  return palCache;
+}
 
 function cacheSpan() {
   const R = run.floorConf.R;
@@ -2729,20 +2813,21 @@ function buildTerrainCache() {
   tc.width = tc.height = Math.ceil(span * 2 * S);
   const c = tc.getContext("2d");
   c.setTransform(S, 0, 0, S, span * S, span * S);
+  const pal = floorPal();
   for (const t of run.tiles.values()) {
     const x = hexX(t.q, t.r), y = hexY(t.q, t.r);
     hexPath(c, x, y, 1.02);
     if (t.rock) {
-      c.fillStyle = shade("#131b23", t.shade);
+      c.fillStyle = shade(pal.rockBase, t.shade);
       c.fill();
       hexPath(c, x, y, 0.72);
-      c.fillStyle = shade("#3b4c5c", t.shade);
+      c.fillStyle = shade(pal.rockTop, t.shade);
       c.fill();
     } else {
-      c.fillStyle = shade(FLOOR_COLOR, t.shade);
+      c.fillStyle = shade(pal.floor, t.shade);
       c.fill();
       hexPath(c, x, y);
-      c.strokeStyle = "#0a121a55";
+      c.strokeStyle = pal.line + "55";
       c.lineWidth = 1;
       c.stroke();
     }
@@ -2760,11 +2845,12 @@ function buildFogCache() {
   c.setTransform(1, 0, 0, 1, 0, 0);
   c.clearRect(0, 0, fogCache.canvas.width, fogCache.canvas.height);
   c.setTransform(S, 0, 0, S, span * S, span * S);
+  const fog = floorPal().fog;
   for (const t of run.tiles.values()) {
     const k = key(t.q, t.r);
     if (visible.has(k)) continue;
     hexPath(c, hexX(t.q, t.r), hexY(t.q, t.r), 1.04);
-    c.fillStyle = t.explored ? "#080d1299" : "#080d12";
+    c.fillStyle = t.explored ? fog + "99" : fog;
     c.fill();
   }
   fogDirty = false;
@@ -2797,7 +2883,7 @@ function render(now) {
   }
 
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  ctx.fillStyle = "#0c1015";
+  ctx.fillStyle = floorPal().bg;
   ctx.fillRect(0, 0, W, H);
   ctx.setTransform(cam.zoom * DPR, 0, 0, cam.zoom * DPR,
     (W / 2 - (cam.x + shx) * cam.zoom) * DPR, (H / 2 - (cam.y + shy) * cam.zoom) * DPR);
@@ -4329,5 +4415,6 @@ window.RL = {
   placeSurge, placeVault, placeConvoy, placeCorruptZone,
   ui,
   buildDebugBundle, exportDebugState, importDebugState, downloadJSON, GAME_VERSION,
+  paletteFor, mixColor, BIOME_PALETTES, CAMPAIGN_THEMES,
   setRun(r) { run = r; },
 };

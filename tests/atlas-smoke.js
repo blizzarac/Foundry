@@ -62,6 +62,40 @@ function check(name, cond) {
     RL.extractToOverworld(); // abandon: key spent, node stays frontier
     out.abandonKeepsFrontier = RL.profile.atlas.nodes[q0 + "," + r0].state === "frontier";
 
+    // sector identity: every biome has its own palette and its own SHAPE
+    // of space, tier tint shifts palettes, and layouts stay deterministic
+    out.palettesDistinct = new Set(["scrapyard", "raildepot", "bastion", "vault"]
+      .map(b => RL.paletteFor(b, 1).floor)).size === 4;
+    out.tierTintShifts = RL.paletteFor("scrapyard", 12).floor !== RL.paletteFor("scrapyard", 1).floor &&
+      RL.paletteFor("scrapyard", 1).floor === RL.paletteFor("scrapyard", 1).floor;
+    const rockSig = () => [...RL.run.tiles.values()].filter(t => t.rock).map(t => t.q + "," + t.r).join(";");
+    const openCount = () => [...RL.run.tiles.values()].filter(t => !t.rock).length;
+    const layoutSigs = {};
+    let terrainsMatch = true, roomToFight = true;
+    for (const b of ["scrapyard", "raildepot", "bastion", "vault"]) {
+      RL.run.player.souls = 99999;
+      RL.fabricateKey(1);
+      const kk = RL.profile.atlas.keys.filter(k => k.tier === 1 && k.rarity === "normal").pop();
+      const node = RL.profile.atlas.nodes[q0 + "," + r0];
+      node.biome = b;
+      RL.enterNode(q0, r0, kk.id);
+      if (RL.run.floorConf.terrain !== RL.BIOMES[b].terrain) terrainsMatch = false;
+      if (openCount() < 40) roomToFight = false;
+      layoutSigs[b] = rockSig();
+      RL.extractToOverworld();
+    }
+    out.terrainFollowsBiome = terrainsMatch;
+    out.layoutsNeverCramped = roomToFight;
+    // same node + same seed, four different biomes: four different maps
+    out.layoutsDistinct = new Set(Object.values(layoutSigs)).size === 4;
+    // determinism: re-entering the same node at the same tier rebuilds
+    // the identical map
+    RL.fabricateKey(1);
+    const kd = RL.profile.atlas.keys.filter(k => k.tier === 1 && k.rarity === "normal").pop();
+    RL.enterNode(q0, r0, kd.id);
+    out.layoutDeterministic = rockSig() === layoutSigs.vault; // node still biome "vault"
+    RL.extractToOverworld();
+
     // key crafting with the same orbs as gear
     const p = RL.run.player;
     p.currency.transmute = 2; p.currency.aug = 1; p.currency.regal = 1;
