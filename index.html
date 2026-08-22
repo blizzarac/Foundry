@@ -6,51 +6,78 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>Hexfoundry</title>
-<link rel="stylesheet" href="style.css">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><polygon points='50,3 93,26 93,74 50,97 7,74 7,26' fill='%23e8b34c'/></svg>">
+<title>Emberhex</title>
+<link rel="stylesheet" href="rl.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><polygon points='50,3 93,26 93,74 50,97 7,74 7,26' fill='%23ff9a3c'/></svg>">
 </head>
 <body>
 <canvas id="game"></canvas>
 
 <div id="topbar">
-  <div class="res"><span class="dot copper"></span><span id="res-copper">0</span><span class="rate" id="rate-copper"></span></div>
-  <div class="res"><span class="dot titanium"></span><span id="res-titanium">0</span><span class="rate" id="rate-titanium"></span></div>
-  <div class="sep"></div>
-  <div class="res">Wave <span id="wave-num">0</span><span class="dim">/</span><span id="wave-final">15</span></div>
-  <div class="res dim" id="wave-preview">…</div>
-  <button id="call-wave">Call wave ▸</button>
-  <div class="sep"></div>
-  <div class="corebar"><div id="core-hp"></div></div>
-  <button id="menu-open" title="Levels">☰</button>
+  <div class="hpwrap"><div id="hp-bar"><div id="hp-fill"></div></div><span id="hp-text">12/12</span></div>
+  <div id="stamina"></div>
+  <div id="flasks"></div>
+  <div class="spacer"></div>
+  <div class="souls-wrap"><span class="soul-dot"></span><span id="souls">0</span></div>
+  <div class="floor-wrap">Floor <span id="floor-num">1</span></div>
 </div>
 
-<div id="toolbar"></div>
-<div id="tooltip"></div>
-<div id="hint">left-drag: build, tool clears after placing (Shift: keep) &nbsp;·&nbsp; no tool: drag pans &nbsp;·&nbsp; right-drag / X: demolish (60% back) &nbsp;·&nbsp; wheel: zoom &nbsp;·&nbsp; WASD: pan &nbsp;·&nbsp; P: pause</div>
+<div id="log"></div>
 
-<div id="overlay" class="hidden">
-  <div id="overlay-box">
-    <h1 id="overlay-title">Core destroyed</h1>
-    <p id="overlay-text"></p>
-    <button id="next-btn" class="hidden">Next level ▸</button>
-    <button id="continue-btn" class="hidden">Keep playing (endless)</button>
-    <button id="restart-btn">Retry level</button>
-    <button id="menu-btn" class="secondary">Levels</button>
+<div id="actions">
+  <button id="btn-roll" title="Roll two hexes — passes through bodies and threats (2 stamina) [R]">Roll</button>
+  <button id="btn-parry" title="Parry: negate an adjacent strike and stagger the attacker (2 stamina) [F]">Parry</button>
+  <button id="btn-flask" title="Drink the ember flask: heal, but it costs the turn [H]">Flask</button>
+  <button id="btn-wait" title="Hold your ground: +2 stamina [Space]">Wait</button>
+  <button id="btn-rest" class="hidden rest">Rest at bonfire</button>
+</div>
+
+<div id="menu" class="overlay">
+  <div class="box menu-box">
+    <h1>EMBER<span>HEX</span></h1>
+    <p class="sub">A turn-based hex roguelike. Every strike is telegraphed.<br>Every death is your own.</p>
+    <div class="howto">
+      <div><b>Tap a hex</b> to step or strike. Red hexes are where enemies will hit <i>next turn</i> — don't be there.</div>
+      <div><b>Stamina</b> fuels attacks, rolls and parries; stepping and waiting restore it.</div>
+      <div><b>Parry</b> an adjacent attacker as it strikes to stagger it — then make it pay. Strike from behind for backstabs.</div>
+      <div><b>Bonfires</b> heal, refill your flask and sell upgrades — but the floor stirs back to life.</div>
+      <div>Die, and your souls stain the floor where you fell. The next you may reclaim them.</div>
+    </div>
+    <button id="begin-btn">Descend</button>
+    <p id="stain-note" class="stain"></p>
+    <p id="menu-stats" class="stats"></p>
+    <a class="crosslink" href="hexfoundry.html">⬡ Hexfoundry — the tower defense that came before</a>
   </div>
 </div>
 
-<div id="menu" class="hidden">
-  <div id="menu-box">
-    <h1>HEX<span>FOUNDRY</span></h1>
-    <p class="sub">Mine the ore. Link it home. Hold the line.</p>
-    <button id="menu-resume" class="hidden">▸ Resume game</button>
-    <div id="level-list"></div>
+<div id="death" class="overlay hidden">
+  <div class="box">
+    <h1 class="died">YOU DIED</h1>
+    <p id="death-souls"></p>
+    <p id="death-stats" class="stats"></p>
+    <button id="death-retry">Rise again</button>
+    <button id="death-menu" class="secondary">Menu</button>
   </div>
 </div>
 
-<div id="msg"></div>
+<div id="win" class="overlay hidden">
+  <div class="box">
+    <h1 class="won">THE EMBER IS YOURS</h1>
+    <p>The Ashen King falls. The hollow crown rolls into the dark.</p>
+    <p id="win-stats" class="stats"></p>
+    <button id="win-again">Descend again</button>
+    <button id="win-menu" class="secondary">Menu</button>
+  </div>
+</div>
 
-<script src="game.js"></script>
+<div id="shop" class="overlay hidden">
+  <div class="box">
+    <h2>The bonfire's bargain</h2>
+    <div id="shop-items"></div>
+    <button id="shop-close">Rise</button>
+  </div>
+</div>
+
+<script src="rl.js"></script>
 </body>
 </html>

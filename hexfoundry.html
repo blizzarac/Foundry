@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Hexfoundry</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><polygon points='50,3 93,26 93,74 50,97 7,74 7,26' fill='%23e8b34c'/></svg>">
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="topbar">
+  <div class="res"><span class="dot copper"></span><span id="res-copper">0</span><span class="rate" id="rate-copper"></span></div>
+  <div class="res"><span class="dot titanium"></span><span id="res-titanium">0</span><span class="rate" id="rate-titanium"></span></div>
+  <div class="sep"></div>
+  <div class="res">Wave <span id="wave-num">0</span><span class="dim">/</span><span id="wave-final">15</span></div>
+  <div class="res dim" id="wave-preview">…</div>
+  <button id="call-wave">Call wave ▸</button>
+  <div class="sep"></div>
+  <div class="corebar"><div id="core-hp"></div></div>
+  <button id="menu-open" title="Levels">☰</button>
+</div>
+
+<div id="toolbar"></div>
+<div id="tooltip"></div>
+<div id="hint">left-drag: build, tool clears after placing (Shift: keep) &nbsp;·&nbsp; no tool: drag pans &nbsp;·&nbsp; right-drag / X: demolish (60% back) &nbsp;·&nbsp; wheel: zoom &nbsp;·&nbsp; WASD: pan &nbsp;·&nbsp; P: pause</div>
+
+<div id="overlay" class="hidden">
+  <div id="overlay-box">
+    <h1 id="overlay-title">Core destroyed</h1>
+    <p id="overlay-text"></p>
+    <button id="next-btn" class="hidden">Next level ▸</button>
+    <button id="continue-btn" class="hidden">Keep playing (endless)</button>
+    <button id="restart-btn">Retry level</button>
+    <button id="menu-btn" class="secondary">Levels</button>
+  </div>
+</div>
+
+<div id="menu" class="hidden">
+  <div id="menu-box">
+    <h1>HEX<span>FOUNDRY</span></h1>
+    <p class="sub">Mine the ore. Link it home. Hold the line.</p>
+    <button id="menu-resume" class="hidden">▸ Resume game</button>
+    <div id="level-list"></div>
+    <a class="crosslink" href="index.html" style="display:block;margin-top:14px;font-size:12px;color:#77778a;text-decoration:none;text-align:center;">🔥 Emberhex — the new hex roguelike</a>
+  </div>
+</div>
+
+<div id="msg"></div>
+
+<script src="game.js"></script>
+</body>
+</html>
