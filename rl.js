@@ -529,6 +529,51 @@ function saveProfile() {
   if (!profile) return;
   try { localStorage.setItem(PROFILE_KEY, JSON.stringify(profile)); } catch (e) { /* private mode */ }
 }
+/* mid-run checkpoint: the full game state (prologue floor or keyed
+   sector) is saved after every turn, so a refresh resumes in place
+   instead of eating the run */
+const RUN_KEY = "ironhex-run";
+function saveRun() {
+  if (!run || run.over) return;
+  if (run.mode === "overworld" || ui.screen === "overworld") return;
+  // never checkpoint the decorative backdrop run behind the menu
+  const menuEl = document.getElementById("menu");
+  if (menuEl && !menuEl.classList.contains("hidden")) return;
+  try {
+    localStorage.setItem(RUN_KEY, JSON.stringify({
+      v: 1, bought,
+      run: { ...run, tiles: [...run.tiles.values()] },
+    }));
+  } catch (e) { /* private mode */ }
+}
+function clearRunCheckpoint() {
+  try { localStorage.removeItem(RUN_KEY); } catch (e) { /* private mode */ }
+}
+function loadRunCheckpoint() {
+  try { return JSON.parse(localStorage.getItem(RUN_KEY) || "null"); } catch (e) { return null; }
+}
+function resumeRun() {
+  const cp = loadRunCheckpoint();
+  if (!cp) return false;
+  bought = cp.bought || {};
+  run = cp.run;
+  run.tiles = new Map(run.tiles.map(t => [key(t.q, t.r), t]));
+  ui.screen = "game";
+  ui.rollMode = false; ui.throwDart = false; ui.walking = null;
+  document.body.classList.remove("overworld");
+  for (const id of ["menu", "death", "win", "shop", "terminal", "inv", "node"])
+    document.getElementById(id).classList.add("hidden");
+  recalc();
+  invalidateFloorCaches();
+  updateFov();
+  centerCam();
+  cam.x = hexX(run.player.q, run.player.r);
+  cam.y = hexY(run.player.q, run.player.r);
+  refreshHud();
+  renderLog();
+  log("Checkpoint restored.", "sys");
+  return true;
+}
 function bumpItemSeqFromProfile() {
   if (!profile) return;
   const scan = it => {
@@ -1179,6 +1224,7 @@ function actRest() {
   showShop();
   render();
   refreshHud();
+  saveRun();
   return true;
 }
 
@@ -1415,6 +1461,7 @@ function endTurn() {
   updateFov();
   centerCam();
   refreshHud();
+  saveRun();
 }
 
 function stepEnemyToward(e, flow) {
@@ -1765,6 +1812,7 @@ function dieRun() {
   const p = run.player;
   p.dead = true;
   run.over = true;
+  clearRunCheckpoint();
   sfx("shutdown");
   const per = persist();
   per.deaths = (per.deaths || 0) + 1;
@@ -1801,6 +1849,7 @@ function dieRun() {
 function winRun() {
   run.over = true;
   run.won = true;
+  clearRunCheckpoint();
   sfx("win");
   const per = persist();
   per.wins = (per.wins || 0) + 1;
@@ -1911,6 +1960,7 @@ function enterOverworld() {
   log("The Bay. Socket a Sector Key into a frontier node.", "sys");
   renderLog();
   refreshHud();
+  clearRunCheckpoint();
   saveProfile();
   return true;
 }
@@ -1983,6 +2033,7 @@ function enterNode(q, r, keyId) {
   }
   syncProfileFromPlayer();
   saveProfile();   // the key is spent the moment you jack in
+  saveRun();       // ...and a refresh resumes the sector, not the loss
   refreshHud();
   return true;
 }
@@ -2072,6 +2123,7 @@ function extractToOverworld() {
   document.body.classList.add("overworld");
   cam.tx = 0; cam.ty = 0;
   log("Extraction. The Bay repairs your frame.", "good");
+  clearRunCheckpoint();
   syncProfileFromPlayer();
   saveProfile();
   refreshHud();
@@ -3008,6 +3060,7 @@ function showShop() {
       recalc();
       log(u.name + " installed.", "good");
       if (run.mode !== "campaign") { syncProfileFromPlayer(); saveProfile(); }
+      saveRun();
       showShop();
       refreshHud();
     });
@@ -3043,6 +3096,7 @@ function showTerminal() {
       sfx("core");
       document.getElementById("terminal").classList.add("hidden");
       refreshHud();
+      saveRun();
     });
     box.appendChild(el);
   }
@@ -3059,6 +3113,7 @@ function openGear() { refreshGear(); refreshHud(); document.getElementById("inv"
 function closeGear() {
   document.getElementById("inv").classList.add("hidden");
   if (run && run.mode !== "campaign") { syncProfileFromPlayer(); saveProfile(); }
+  saveRun();
 }
 
 // which orbs make sense to offer on this item right now
@@ -3593,7 +3648,17 @@ function showMenu() {
   document.getElementById("menu-stats").textContent =
     (per.deaths || 0) + " units lost · " + (per.wins || 0) + " cores taken · deepest: Sector " + (per.best || 0);
   const unlocked = profile && profile.atlas && profile.atlas.unlocked;
-  document.getElementById("begin-btn").textContent = unlocked ? "Enter the Foundry" : "Initialize";
+  const cp = loadRunCheckpoint();
+  document.getElementById("begin-btn").textContent =
+    cp ? "Resume run" : unlocked ? "Enter the Foundry" : "Initialize";
+  const abandon = document.getElementById("abandon-run");
+  abandon.classList.toggle("hidden", !cp);
+  abandon.textContent = cp
+    ? (cp.run.mode === "sector"
+        ? `Abandon saved sector (T${cp.run.floorConf.tier} ${cp.run.floorConf.biomeName}, cycle ${cp.run.turn})`
+        : `Abandon saved run (Sector ${cp.run.floor}, cycle ${cp.run.turn})`)
+    : "";
+  abandon.dataset.arm = "";
   document.getElementById("stain-note").textContent = unlocked
     ? (() => {
         const cleared = Object.values(profile.atlas.nodes).filter(n => n.state === "cleared").length;
@@ -3618,7 +3683,9 @@ function startRun(seed) {
   document.getElementById("terminal").classList.add("hidden");
   document.getElementById("inv").classList.add("hidden");
   document.getElementById("node").classList.add("hidden");
+  clearRunCheckpoint();
   newRun(seed);
+  saveRun();
   cam.x = hexX(run.player.q, run.player.r);
   cam.y = hexY(run.player.q, run.player.r);
   centerCam();
@@ -3626,10 +3693,24 @@ function startRun(seed) {
   renderLog();
 }
 document.getElementById("begin-btn").addEventListener("click", () => {
+  if (loadRunCheckpoint()) {
+    if (resumeRun()) return;
+  }
   if (profile && profile.atlas && profile.atlas.unlocked) {
     document.getElementById("menu").classList.add("hidden");
     enterOverworld();
   } else startRun();
+});
+document.getElementById("abandon-run").addEventListener("click", ev => {
+  ev.preventDefault();
+  const el = ev.currentTarget;
+  if (el.dataset.arm !== "1") {
+    el.dataset.arm = "1";
+    el.textContent = "Click again to abandon it";
+    return;
+  }
+  clearRunCheckpoint();
+  showMenu();
 });
 document.getElementById("death-retry").addEventListener("click", () => {
   if (run.mode === "sector") {
@@ -3666,6 +3747,7 @@ document.getElementById("reset-profile").addEventListener("click", ev => {
 window.addEventListener("beforeunload", () => {
   syncProfileFromPlayer();
   saveProfile();
+  saveRun();
 });
 
 /* --------------------------------- boot -------------------------------- */
@@ -3698,6 +3780,7 @@ window.RL = {
   donutHexes, laneHexes, gateCleared, spawnGateNode, atlasCap, tierColor,
   hurtEnemy, hurtPlayer, winRun, dieRun,
   saveProfile, loadProfile, syncProfileFromPlayer,
+  saveRun, resumeRun, clearRunCheckpoint, loadRunCheckpoint,
   ui,
   setRun(r) { run = r; },
 };
