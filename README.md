@@ -18,15 +18,25 @@ Combat is **deterministic and fully telegraphed**. Every machine shows exactly w
 - **Repair bays** heal, refill and fabricate upgrades for cores — but docking reinitializes the sector, and everything you killed comes back.
 - **Fall**, and the cores you carried scatter where you died — persisted across runs. Your next frame can reclaim them from the wreck. Fall again first, and they're gone.
 
-## Salvage everything
+## The Chassis Ledger
 
-You boot with a **Scrap Blade** and one shock dart. Everything better is found: glowing **caches** in every sector, guaranteed drops from **elite units**, and a final armory cache before the boss. Weapon bases each play differently — **Blades** balanced, **Shivs** nimble (1-power dashes, +4 into an exposed core), **Cleavers** heavy (2-power plasma discharge across a three-hex arc), **Lances** with reach (strike two hexes down a line) — rolled with damage tiers (*Calibrated*, *Overcharged*, *Prototype*) and affixes (*[Siphon]*: repair on kill · *[Deflector]*: 1-power deflects · *[Servos]*: cheaper dashes). **Modules** (two slots) bend your build: Ablative Plating, Gyro Stabilizer, Targeting Chip, Salvage Protocol, Nanite Regulator. **Tools**: shock darts and power cells.
+You aren't wearing gear — you *are* the gear. Every part you salvage is a **chip** that bonds directly into your body's free-mesh network, pad to pad, rooted at your **Cognition Core**. A chip only functions while it has an unbroken chain of bonds back to the Core; sever its last path home and it goes dark where it sits, still on your board but doing nothing until reconnected. Redundant loops matter: a chip fed by two separate paths survives losing either one.
 
-Your six-slot cargo is free to manage while unobserved — but **with hostiles in sensor range, swapping hardware costs your turn**. Rummaging mid-fight is a real decision.
+Storage is shared and finite — your total **GB capacity** comes from every *online* chip's own storage contribution (Crossbar Hubs and Archive Drums carry the most), and every *online* chip's history eats into that same pool. Bond something new mid-fight and it costs your turn, same as unbonding, wielding a different weapon chip, or working the ledger — hardware surgery under fire is a real decision.
+
+That history is the ledger itself: every chip carries **entries**, permanent scars of where it's been and what it's survived. Five kinds, each with a concrete effect —
+
+- **Verified** (clean): plain, reliable stat bumps. No downside, no story.
+- **Scar**: a strong bonus paired with a real drawback baked into the same entry — compress it to shrink both halves, but a scar can never be scrubbed away.
+- **Forged**: counterfeit history — great numbers, and a chance an audit flags it, halving its effect for the rest of the run.
+- **Ghost**: entries pulled off dead machines. Powerful, but they accumulate **identity drift** — enough ghosts online and you start hearing echoes of who they used to be.
+- **Sealed**: locked entries that cost storage but grant nothing until you spend cores to decrypt them — a bet on what's inside.
+
+Repair bays offer an **Audit** for a price: it flags every online forged entry so you know what to watch. Corrupted terminals no longer sell protocols — they offer **forge-chip downloads**, freshly stamped chips carrying a guaranteed forged entry, power with a catch built in.
 
 ## The descent
 
-Five sectors of procedural machine caverns under fog of war. **Scrappers** run a broken loop and swing. **Rail Drones** rake an entire lane (their slugs don't check for friendlies) and must recharge between shots. **Bulwarks** absorb every frontal hit with a shield emitter — flank them in the beat after they swing, or deflect to overload the field. **Mortars** arc charges *over walls*: a seven-hex blast, two cycles out — cover is no cover, keep moving. **Crushers** telegraph a two-cycle shockwave ring and lock up afterward; **Rippers** cover two hexes a turn and hit hard. Sectors 2–4 hide a glowing Prime unit and a **corrupted terminal** offering firmware protocols — power that always takes something back (+2 damage for −3 max integrity, and friends). In Sector 5, **the OVERSEER**: cleaves, line charges, a fabricator slam below half integrity — and after every third attack it has to vent heat. Learn the cycle.
+Five sectors of procedural machine caverns under fog of war. **Scrappers** run a broken loop and swing. **Rail Drones** rake an entire lane (their slugs don't check for friendlies) and must recharge between shots. **Bulwarks** absorb every frontal hit with a shield emitter — flank them in the beat after they swing, or deflect to overload the field. **Mortars** arc charges *over walls*: a seven-hex blast, two cycles out — cover is no cover, keep moving. **Crushers** telegraph a two-cycle shockwave ring and lock up afterward; **Rippers** cover two hexes a turn and hit hard. Sectors 2–4 hide a glowing Prime unit and a **corrupted terminal** offering forge-chip downloads — guaranteed power with a forged entry baked in. In Sector 5, **the OVERSEER**: cleaves, line charges, a fabricator slam below half integrity — and after every third attack it has to vent heat. Learn the cycle.
 
 **Hover (or long-press) any machine** to scan its integrity, damage, current state, and how to beat it.
 
@@ -35,7 +45,7 @@ Five sectors of procedural machine caverns under fog of war. **Scrappers** run a
 | Tap / click a hex | move, or strike an adjacent machine |
 | Tap your own hex / `Space` | vent heat (+2 power) |
 | Dash button / `R`, then a highlighted hex | thruster dash |
-| Deflect `F` · Repair `H` · Cargo `B` | you know what these do |
+| Deflect `F` · Repair `H` · Ledger `B` | you know what these do |
 | Tap far ground | cautious auto-move (stops when contacts appear) |
 | Drag / pinch | pan / zoom |
 
@@ -43,9 +53,9 @@ Five sectors of procedural machine caverns under fog of war. **Scrappers** run a
 
 Determinism makes the design testable, and it is — in headless Chromium:
 
-- Sixteen scenario suites assert the rules: telegraphs hit exactly the marked hexes and nothing else, dashes clear them, deflects overload, counterstrikes double, rear hits crit, repair cells get punished mid-telegraph, crushers are punishable after slamming, bulwark shields block frontal hits until flanked or deflected, mortar blasts are outrunnable, terminal protocols trade what they promise, wrecks persist and are reclaimable, drop shafts are reachable across seeds, the OVERSEER telegraphs and overheats on cycle — plus the salvage laws: peaceful hardware swaps are free and combat swaps cost the turn, lance reach respects lanes and blockers, cleavers arc, modules apply and reverse cleanly, darts hit the first machine on the lane, caches refuse full cargo, and elites always drop.
-- A scripted dodger survives the OVERSEER's full attack rotation **without taking a single hit** — proof every telegraph is avoidable.
-- A heuristic pilot bot wins full five-sector runs on most seeds; a random-action bot always dies in Sector 1. Fair, dangerous, winnable.
+- A combat-and-encounter suite covers the core rules: telegraphs hit exactly the marked hexes and nothing else, dashes clear them, deflects overload, counterstrikes double, rear hits crit, repair cells get punished mid-telegraph, crushers are punishable after slamming, bulwark shields block frontal hits until flanked or deflected, mortar blasts are outrunnable, wrecks persist and are reclaimable, drop shafts are reachable across seeds, and the OVERSEER telegraphs and overheats on cycle.
+- A Chassis Ledger suite drives every acceptance rule directly: bonding respects free pads and remaining capacity, a chip goes dark the instant its last path to the Core is cut and comes back online the moment it's reconnected, a redundant loop survives losing either bond, only online chips count toward capacity or contribute their effects, cutting a chip down to zero bonds drops it to unbonded cargo while a chip still bonded elsewhere stays on the board dark, scars compress but never scrub, forged entries can be flagged by an audit and lose half their effect, sealed entries grant nothing until decrypted, ghost entries accumulate into identity drift at fixed thresholds, gear moves are free while unobserved and cost the turn under threat, and losing your wielded weapon chip falls back to bare fists rather than locking you out of attacking.
+- A heuristic pilot bot manages its own ledger — bonding, wielding, decrypting, cutting dead weight — and wins full five-sector runs on most seeds; a random-action bot still always dies in Sector 1. Fair, dangerous, winnable.
 
 ## Also in this repo
 
