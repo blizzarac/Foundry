@@ -145,11 +145,15 @@ window.IRONHEX_CONFIG = {
   // paces itself with the tier climb instead of capping out after the
   // prologue. Three branches; each node lists the node(s) that unlock it
   // ("requires": [] marks a branch entry point, open from the start).
-  // "kind" is small/notable/keystone: smalls carry flat stats through the
-  // same STAT_KEYS vocabulary items use, notables may instead carry a
+  // "kind" is small/notable/keystone/jewel: smalls carry flat stats through
+  // the same STAT_KEYS vocabulary items use, notables may instead carry a
   // "mech" — a key into a real combat-code branch in rl.js (the closed set
-  // TREE_MECH_KEYS) plus its magnitude — and keystones trade power for a
-  // downside. Refunding is free but only from the tip of a branch inward.
+  // TREE_MECH_KEYS) plus its magnitude — keystones trade power for a
+  // downside, and jewels are the prism sockets past each keystone that fan
+  // into a tip cluster. Each spine also hangs side twigs (nodes whose
+  // requires point at a mid-spine node), and a node with several requires
+  // opens when ANY of them is installed — the cluster rings close on
+  // themselves. Refunding is free but only from the tip of a branch inward.
   "frameTree": {
     "pointsPerPurge": 1,
     "pointsPerGate": 2,
@@ -169,6 +173,16 @@ window.IRONHEX_CONFIG = {
       { "id": "ch8", "branch": "chassis", "kind": "small",    "name": "Redundant Cores",     "requires": ["ch7"], "effect": { "maxHpBonus": 5 } },
       { "id": "chK", "branch": "chassis", "kind": "keystone", "name": "Monolith Chassis",    "requires": ["ch8"],
         "desc": "Immense mass. The frame shrugs off what would cripple anything lighter, and the thrusters pay for every gram.", "effect": { "maxHpBonus": 12, "rollCostDelta": 1 } },
+      { "id": "cht1", "branch": "chassis", "kind": "small",   "name": "Girder Struts",       "requires": ["ch1"], "effect": { "maxHpBonus": 3 } },
+      { "id": "cht2", "branch": "chassis", "kind": "small",   "name": "Coolant Shunts",      "requires": ["ch3"], "effect": { "flaskHealBonus": 2 } },
+      { "id": "cht3", "branch": "chassis", "kind": "small",   "name": "Blast Baffles",       "requires": ["ch4"], "effect": { "maxHpBonus": 4 } },
+      { "id": "cht4", "branch": "chassis", "kind": "small",   "name": "Keel Plate",          "requires": ["ch6"], "effect": { "maxHpBonus": 4 } },
+      { "id": "cht5", "branch": "chassis", "kind": "small",   "name": "Auxiliary Manifold",  "requires": ["ch7"], "effect": { "maxStBonus": 1 } },
+      { "id": "chJ",  "branch": "chassis", "kind": "jewel",   "name": "Bastion Prism",       "requires": ["chK"],
+        "desc": "A cut core socketed past the keystone: the fortress cluster grows from it.", "effect": { "maxHpBonus": 5 } },
+      { "id": "chc1", "branch": "chassis", "kind": "small",   "name": "Rampart Facet",       "requires": ["chJ"], "effect": { "maxHpBonus": 4 } },
+      { "id": "chc2", "branch": "chassis", "kind": "small",   "name": "Mender Facet",        "requires": ["chJ"], "effect": { "flaskHealBonus": 3 } },
+      { "id": "chc3", "branch": "chassis", "kind": "notable", "name": "Unbreakable",         "requires": ["chc1", "chc2"], "effect": { "maxHpBonus": 8 } },
 
       { "id": "sv1", "branch": "servos", "kind": "small",    "name": "Sharpened Strikers",   "requires": [],      "effect": { "dmg": 1 } },
       { "id": "sv2", "branch": "servos", "kind": "small",    "name": "Balanced Actuators",   "requires": ["sv1"], "effect": { "maxStBonus": 1 } },
@@ -185,6 +199,15 @@ window.IRONHEX_CONFIG = {
       { "id": "sv8", "branch": "servos", "kind": "small",    "name": "Power Feed",           "requires": ["sv7"], "effect": { "maxStBonus": 1 } },
       { "id": "svK", "branch": "servos", "kind": "keystone", "name": "Glass Core",           "requires": ["sv8"],
         "desc": "Every safety margin re-routed into the strikers. Hit like a wrecking crew; get hit like glass.", "effect": { "dmg": 2, "bsBonus": 2, "maxHpBonus": -6 } },
+      { "id": "svt1", "branch": "servos", "kind": "small",   "name": "Charge Coils",         "requires": ["sv2"], "effect": { "maxStBonus": 1 } },
+      { "id": "svt2", "branch": "servos", "kind": "small",   "name": "Whetted Edges",        "requires": ["sv4"], "effect": { "dmg": 1 } },
+      { "id": "svt3", "branch": "servos", "kind": "small",   "name": "Angle Solvers",        "requires": ["sv6"], "effect": { "bsBonus": 1 } },
+      { "id": "svt4", "branch": "servos", "kind": "small",   "name": "Feed Regulators",      "requires": ["sv7"], "effect": { "maxStBonus": 1 } },
+      { "id": "svJ",  "branch": "servos", "kind": "jewel",   "name": "Razor Prism",          "requires": ["svK"],
+        "desc": "A cut core socketed past the keystone: the killing cluster grows from it.", "effect": { "dmg": 1 } },
+      { "id": "svc1", "branch": "servos", "kind": "small",   "name": "Flenser Facet",        "requires": ["svJ"], "effect": { "bsBonus": 1 } },
+      { "id": "svc2", "branch": "servos", "kind": "small",   "name": "Cleaver Facet",        "requires": ["svJ"], "effect": { "dmg": 1 } },
+      { "id": "svc3", "branch": "servos", "kind": "notable", "name": "Executioner's Cut",    "requires": ["svc1", "svc2"], "effect": { "dmg": 2, "bsBonus": 2 } },
 
       { "id": "sy1", "branch": "systems", "kind": "small",    "name": "Wide-Band Optics",    "requires": [],      "effect": { "fovBonus": 1 } },
       { "id": "sy2", "branch": "systems", "kind": "small",    "name": "Core Magnetics",      "requires": ["sy1"], "effect": { "salvageMult": 0.1 } },
@@ -200,7 +223,16 @@ window.IRONHEX_CONFIG = {
       { "id": "sy7", "branch": "systems", "kind": "small",    "name": "Long-Range Array",    "requires": ["syN3"], "effect": { "fovBonus": 1 } },
       { "id": "sy8", "branch": "systems", "kind": "small",    "name": "Ore Divination",      "requires": ["sy7"], "effect": { "salvageMult": 0.15 } },
       { "id": "syK", "branch": "systems", "kind": "keystone", "name": "Greed Circuit",       "requires": ["sy8"],
-        "desc": "Every spare cycle diverted to acquisition. The Foundry pays out — and the deflector runs a beat behind.", "effect": { "salvageMult": 0.4, "fovBonus": 1, "parryCostDelta": 1 } }
+        "desc": "Every spare cycle diverted to acquisition. The Foundry pays out — and the deflector runs a beat behind.", "effect": { "salvageMult": 0.4, "fovBonus": 1, "parryCostDelta": 1 } },
+      { "id": "syt1", "branch": "systems", "kind": "small",   "name": "Wide Apertures",      "requires": ["sy1"], "effect": { "fovBonus": 1 } },
+      { "id": "syt2", "branch": "systems", "kind": "small",   "name": "Sorting Claws",       "requires": ["sy3"], "effect": { "salvageMult": 0.1 } },
+      { "id": "syt3", "branch": "systems", "kind": "small",   "name": "Buffer Cells",        "requires": ["sy5"], "effect": { "maxStBonus": 1 } },
+      { "id": "syt4", "branch": "systems", "kind": "small",   "name": "Assay Optics",        "requires": ["sy8"], "effect": { "salvageMult": 0.1 } },
+      { "id": "syJ",  "branch": "systems", "kind": "jewel",   "name": "Prospector Prism",    "requires": ["syK"],
+        "desc": "A cut core socketed past the keystone: the acquisition cluster grows from it.", "effect": { "salvageMult": 0.15 } },
+      { "id": "syc1", "branch": "systems", "kind": "small",   "name": "Seeker Facet",        "requires": ["syJ"], "effect": { "fovBonus": 1 } },
+      { "id": "syc2", "branch": "systems", "kind": "small",   "name": "Tithe Facet",         "requires": ["syJ"], "effect": { "salvageMult": 0.15 } },
+      { "id": "syc3", "branch": "systems", "kind": "notable", "name": "Motherlode",          "requires": ["syc1", "syc2"], "effect": { "salvageMult": 0.25, "maxStBonus": 1 } }
     ]
   },
 

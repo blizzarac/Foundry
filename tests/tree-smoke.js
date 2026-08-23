@@ -73,6 +73,20 @@ function check(name, cond) {
     out.refundRestoresPoint = RL.treeState().pts === 9;
     RL.allocateNode("sv2");
 
+    // tip clusters: a prism socket hangs off every keystone, and the
+    // cluster ring's closing notable opens through EITHER parent facet —
+    // while a socketed prism can't be pulled out from under its cluster
+    const prisms = RL.TREE_NODES.filter(n => n.kind === "jewel");
+    out.prismPerBranch = prisms.length === 3 &&
+      prisms.every(n => n.requires.every(rq => RL.TREE_NODE_BY_ID[rq].kind === "keystone"));
+    const savedNodes = RL.treeState().nodes.slice();
+    RL.treeState().nodes = ["sv1", "sv2", "svN1", "sv3", "sv4", "svN2",
+      "sv5", "sv6", "svN3", "sv7", "sv8", "svK", "svJ", "svc2"];
+    out.clusterOpensThroughEitherParent = RL.canAllocateNode("svc3").ok;
+    out.socketedPrismNotRefundable = !RL.canRefundNode("svJ").ok;
+    RL.treeState().nodes = savedNodes;
+    RL.recalc();
+
     // --- mech notables: each gates a real combat-code branch ---
     RL.treeState().pts = 40;   // enough for every chain below — points math was proven above
     RL.allocateNode("svN1");   // Momentum Reclaimer: rear-strike kill vents 2 power

@@ -143,8 +143,8 @@ function check(name, cond, detail) {
     const treeTotals = {};
     for (const n of RL.TREE_NODES) if (n.effect)
       for (const k in n.effect) treeTotals[k] = (treeTotals[k] || 0) + n.effect[k];
-    out.checks.latticeDmgBounded = (treeTotals.dmg || 0) <= 8;
-    out.checks.latticeHpBounded = (treeTotals.maxHpBonus || 0) <= 40;
+    out.checks.latticeDmgBounded = (treeTotals.dmg || 0) <= 12;
+    out.checks.latticeHpBounded = (treeTotals.maxHpBonus || 0) <= 65;
 
     return out;
   }, TIERS);

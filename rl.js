@@ -129,7 +129,7 @@ function validateConfig(cfg) {
     if (Array.isArray(ft.nodes)) {
       const ids = new Set();
       ft.nodes.forEach((n, i) => {
-        req(n.id && n.branch && n.name && ["small", "notable", "keystone"].includes(n.kind),
+        req(n.id && n.branch && n.name && ["small", "notable", "keystone", "jewel"].includes(n.kind),
           `frameTree.nodes[${i}] missing id/branch/name or bad kind`);
         req(n.id && !ids.has(n.id), `frameTree.nodes[${i}] duplicate id "${n.id}"`);
         if (n.id) ids.add(n.id);
@@ -4347,7 +4347,7 @@ document.getElementById("shop-close").addEventListener("click", () => {
    by kind (small -> ringed notable -> big keystone), curved edges that
    light up along the allocated path. Names live in the tap-detail bar,
    not on the tree — the constellation itself stays iconography. */
-const TREE_KIND_LABEL = { small: "Node", notable: "Notable", keystone: "Keystone" };
+const TREE_KIND_LABEL = { small: "Node", notable: "Notable", keystone: "Keystone", jewel: "Prism" };
 let treeSelected = null;
 function treeNodeText(n) {
   const parts = [];
@@ -4355,33 +4355,48 @@ function treeNodeText(n) {
   if (n.effect) parts.push(describeEffect(n.effect));
   return parts.join(" ");
 }
-// hand-tuned winding path per chain index (lateral, outward): curls left
-// to the first notable, swings right to the second, back left to the
-// third, then out to the keystone — one silhouette, rotated per branch
-// (and mirrored on one) so the three limbs read as siblings, not clones
+// hand-authored local coordinates per node id (lateral, outward), rotated
+// into place per branch. Each limb has its own silhouette on purpose:
+// servos runs long and blade-narrow with short sharp twigs, chassis sits
+// stocky and wide with heavy plating hung off both sides, systems sprawls
+// in a meandering scanner-web. Past each keystone a prism socket fans
+// into its tip cluster, the ring closing on the cluster notable. A node
+// missing here falls back onto the spine axis so a config addition never
+// renders at the origin.
 const TREE_LAYOUT = (() => {
-  const PATH = [
-    [0, 96], [-54, 164], [-96, 248],
-    [-52, 326], [24, 376], [100, 444],
-    [46, 518], [-30, 554], [-104, 614],
-    [-58, 688], [18, 726], [0, 810],
-  ];
+  const LOCAL = {
+    // servos: the blade
+    sv1: [0, 95], sv2: [-40, 175], svt1: [-115, 150], svN1: [-60, 265],
+    sv3: [5, 340], sv4: [65, 415], svt2: [140, 380], svN2: [35, 505],
+    sv5: [-35, 575], sv6: [-85, 655], svt3: [-160, 625], svN3: [-40, 740],
+    sv7: [25, 805], svt4: [100, 790], sv8: [0, 880], svK: [0, 960],
+    svJ: [0, 1045], svc1: [-70, 1105], svc2: [70, 1105], svc3: [0, 1175],
+    // chassis: the fortress
+    ch1: [0, 95], cht1: [85, 55], ch2: [-75, 160], chN1: [-150, 235],
+    ch3: [-70, 300], cht2: [-145, 365], ch4: [10, 360], cht3: [85, 300],
+    chN2: [60, 445], ch5: [-15, 510], ch6: [-90, 570], cht4: [-165, 535],
+    chN3: [-45, 650], ch7: [40, 620], cht5: [115, 585], ch8: [20, 715],
+    chK: [0, 800], chJ: [0, 880], chc1: [-75, 940], chc2: [75, 940], chc3: [0, 1000],
+    // systems: the scanner web
+    sy1: [0, 95], syt1: [90, 60], sy2: [80, 170], syN1: [160, 245],
+    sy3: [90, 330], syt2: [170, 395], sy4: [10, 395], syN2: [-70, 455],
+    sy5: [-140, 530], syt3: [-215, 495], sy6: [-90, 615], syN3: [-10, 675],
+    sy7: [70, 740], sy8: [140, 815], syt4: [215, 780], syK: [80, 895],
+    syJ: [10, 965], syc1: [-70, 1015], syc2: [60, 1045], syc3: [-15, 1095],
+  };
   const ANGLES = { chassis: 150, servos: -90, systems: 30 };
-  const MIRROR = { chassis: -1, servos: 1, systems: 1 };
   const pos = {};
-  for (const branch in ANGLES) {
-    const a = ANGLES[branch] * Math.PI / 180;
+  const counts = {};
+  for (const n of TREE_NODES) {
+    const a = ANGLES[n.branch] * Math.PI / 180;
     const dx = Math.cos(a), dy = Math.sin(a);
-    const chain = TREE_NODES.filter(n => n.branch === branch);
-    chain.forEach((n, i) => {
-      const [lx0, ly] = PATH[i] || [0, 96 + i * 72];
-      const lx = lx0 * MIRROR[branch];
-      pos[n.id] = [dx * ly - dy * lx, dy * ly + dx * lx];
-    });
+    counts[n.branch] = (counts[n.branch] || 0) + 1;
+    const [lx, ly] = LOCAL[n.id] || [0, 95 + counts[n.branch] * 72];
+    pos[n.id] = [dx * ly - dy * lx, dy * ly + dx * lx];
   }
   return pos;
 })();
-const TREE_R = 900;            // world half-extent the viewBox pans within
+const TREE_R = 1250;           // world half-extent the viewBox pans within
 const SVGNS = "http://www.w3.org/2000/svg";
 let treeView = null;           // current viewBox; survives re-renders, reset on open
 let treePanMoved = false;      // true while the last gesture was a drag, not a tap
@@ -4404,7 +4419,9 @@ function applyTreeView() {
   treeView.w = clamp(treeView.w, TREE_R / 4, TREE_R * 2.3);
   svg.setAttribute("viewBox", `${treeView.x} ${treeView.y} ${treeView.w} ${treeView.w}`);
 }
-function treeNodeRadius(kind) { return kind === "keystone" ? 34 : kind === "notable" ? 26 : 16; }
+function treeNodeRadius(kind) {
+  return kind === "keystone" ? 34 : kind === "jewel" ? 28 : kind === "notable" ? 26 : 16;
+}
 function renderTreeGraph() {
   const t = treeState();
   const svg = document.getElementById("tree-graph");
@@ -4466,6 +4483,8 @@ function renderTreeGraph() {
     if (treeSelected === n.id) svgEl("polygon", { points: hexPointsStr(r + 9), class: "sel-ring" }, g);
     svgEl("polygon", { points: hexPointsStr(r), class: "body" }, g);
     if (n.kind !== "small") svgEl("polygon", { points: hexPointsStr(r - 7), class: "ring" }, g);
+    // a prism socket shows its empty seat until a gem is set in it
+    if (n.kind === "jewel" && !alloc(n.id)) svgEl("polygon", { points: hexPointsStr(9), class: "socket" }, g);
     if (alloc(n.id)) svgEl("polygon", { points: hexPointsStr(r === 16 ? 6 : 9), class: "gem" }, g);
     svgEl("title", {}, g).textContent = n.name;
     g.addEventListener("click", () => {
@@ -4477,8 +4496,8 @@ function renderTreeGraph() {
   if (!treeView) {
     // open framing: the whole constellation, nudged up because the
     // servos limb points north — pinch or +/- to dive into a branch
-    const w = TREE_R * 1.95;
-    treeView = { x: -w / 2, y: -w / 2 - 140, w };
+    const w = TREE_R * 1.5;
+    treeView = { x: -w / 2, y: -w / 2 - 250, w };
   }
   applyTreeView();
 }
