@@ -123,6 +123,36 @@ function check(name, cond) {
     out.chaosKeepsCount = RL.applyOrb("chaos", plate.id) && plate.affixes.length === nowN;
     out.wrongOrbRefused = !RL.applyOrb("transmute", plate.id);
 
+    // Blessed Orb: rerolls the implicit only — affixes and rarity are
+    // untouched, and unlike the other orbs it works on any rarity
+    // (including Uniques), gated only by whether the base carries an
+    // implicit at all
+    const plateRange = RL.CFG.items.baseTypes.plating.implicit.maxHpBonus;
+    const depthScale = 1 + RL.CFG.items.implicitScaling.growthPerDepthTier * ((run.floor || 1) - 1);
+    const affixesBeforeBless = plate.affixes.length, rarityBeforeBless = plate.rarity;
+    p.currency.bless = 1;
+    out.blessRerollsImplicit = RL.applyOrb("bless", plate.id) &&
+      plate.affixes.length === affixesBeforeBless && plate.rarity === rarityBeforeBless &&
+      plate.implicit.maxHpBonus >= Math.round(plateRange.min * depthScale) - 1 &&
+      plate.implicit.maxHpBonus <= Math.round(plateRange.max * depthScale) + 1;
+    out.blessConsumesCurrency = (p.currency.bless || 0) === 0;
+    out.blessRefusedWithoutCurrency = !RL.applyOrb("bless", plate.id);
+    p.currency.bless = 1;
+    out.blessRejectsWeapon = !RL.canApplyOrb("bless", RL.itemById(p.equip.weapon)).ok;
+    // force UNIQUES[0] (Overseer's Eye, base "optics" — has a real
+    // implicit) via a zero rng; a randomly-picked unique might land on
+    // the weapon-based one, which has none and would refuse bless
+    const blessedUnique = RL.genUnique(() => 0, 3);
+    out.blessAcceptsUnique = blessedUnique.base === "optics" && RL.canApplyOrb("bless", blessedUnique).ok;
+    const corruptedForBless = RL.genCorruptedItem(mk, 3);
+    out.blessRejectsCorrupted = !RL.canApplyOrb("bless", corruptedForBless).ok;
+    out.orbChoicesOffersBlessOnUnique = RL.orbChoices(blessedUnique).includes("bless");
+    out.orbChoicesOmitsBlessOnWeapon = !RL.orbChoices(RL.itemById(p.equip.weapon)).includes("bless");
+    out.blessInShop = RL.SHOP_ORBS.some(o => o.kind === "bless" && o.cost > 0);
+    let sawBless = false;
+    for (let i = 0; i < 400 && !sawBless; i++) if (RL.rollOrbKind(mk, 5) === "bless") sawBless = true;
+    out.blessDropsFromLoot = sawBless;
+
     // recalc totals must match the sum of equipped items' effects
     const totals = {};
     for (const k of RL.STAT_KEYS) totals[k] = 0;

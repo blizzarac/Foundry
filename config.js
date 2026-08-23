@@ -108,8 +108,22 @@ window.IRONHEX_CONFIG = {
       { "kind": "aug",       "cost": 50 },
       { "kind": "alch",      "cost": 90 },
       { "kind": "regal",     "cost": 140 },
+      { "kind": "bless",     "cost": 120 },
       { "kind": "chaos",     "cost": 250 },
       { "kind": "exalt",     "cost": 400 }
+    ],
+    // weight for rollOrbKind's loot-drop pool (chests, elite kills, gate
+    // clears). weightAtDepth3Plus overrides weight from depth 3 on —
+    // exalt/chaos are rarer early since there's nothing to spend them on
+    // before Magic/Rare gear exists yet.
+    "orbDropWeights": [
+      { "kind": "transmute", "weight": 4 },
+      { "kind": "aug",       "weight": 4 },
+      { "kind": "alch",      "weight": 3 },
+      { "kind": "regal",     "weight": 2 },
+      { "kind": "bless",     "weight": 2 },
+      { "kind": "exalt",     "weight": 1, "weightAtDepth3Plus": 2 },
+      { "kind": "chaos",     "weight": 1, "weightAtDepth3Plus": 2 }
     ],
     "gambleCost": 350,
     // key fabrication: cost = round(base * tier^exponent)

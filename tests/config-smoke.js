@@ -144,6 +144,29 @@ function check(name, cond) {
     out.validatorRejectsMissingImplicitScaling = RL.validateConfig(implBad2)
       .some(e => e.includes("implicitScaling"));
 
+    // --- Blessed Orb (reroll implicits): CURRENCY entry, shop price, and
+    // loot-drop weight all trace back to config.js, not a hardcoded copy
+    out.blessCurrencyDefined = !!RL.CURRENCY.bless && !!RL.CURRENCY.bless.name;
+    out.blessShopCostFromConfig = RL.SHOP_ORBS.find(o => o.kind === "bless").cost ===
+      CFG.economy.orbs.find(o => o.kind === "bless").cost;
+    // rollOrbKind's whole weight table is config data now (not just bless's
+    // entry) — prove it by mutating the live config object rl.js actually
+    // reads (window.IRONHEX_CONFIG is only read once, at boot, so editing
+    // that afterward wouldn't touch anything — RL.CFG is the same object
+    // rollOrbKind's closure holds) and watching the odds move
+    const originalWeights = RL.CFG.economy.orbDropWeights;
+    RL.CFG.economy.orbDropWeights = originalWeights.filter(o => o.kind !== "bless");
+    let sawBlessAfterRemoval = false;
+    for (let i = 0; i < 500 && !sawBlessAfterRemoval; i++)
+      if (RL.rollOrbKind(() => i / 500, 5) === "bless") sawBlessAfterRemoval = true;
+    RL.CFG.economy.orbDropWeights = originalWeights;   // restore before later checks run
+    out.orbDropWeightsAreLiveConfig = !sawBlessAfterRemoval;
+    const validBless = RL.validateConfig(CFG).length === 0;
+    const droppedWeight = JSON.parse(JSON.stringify(CFG));
+    delete droppedWeight.economy.orbDropWeights;
+    out.validatorRejectsMissingOrbDropWeights = validBless &&
+      RL.validateConfig(droppedWeight).some(e => e.includes("orbDropWeights"));
+
     // --- affix slot restrictions: scaffolded but not yet used. Every
     // entry ships with slots:null (unrestricted, today's real behavior);
     // wiring is live in rollAffix so a later config edit is all it takes

@@ -95,6 +95,11 @@ function validateConfig(cfg) {
         `economy.upgrades[${i}] missing id/base/cap/delta`));
     req(Array.isArray(ec.restocks) && ec.restocks.length > 0, "economy.restocks must be a non-empty array");
     req(Array.isArray(ec.orbs) && ec.orbs.length > 0, "economy.orbs must be a non-empty array");
+    req(Array.isArray(ec.orbDropWeights) && ec.orbDropWeights.length > 0,
+      "economy.orbDropWeights must be a non-empty array");
+    if (Array.isArray(ec.orbDropWeights))
+      ec.orbDropWeights.forEach((o, i) => req(o.kind && typeof o.weight === "number",
+        `economy.orbDropWeights[${i}] missing kind/weight`));
     req(typeof ec.gambleCost === "number", "economy.gambleCost missing or not a number");
     req(ec.keyFab && typeof ec.keyFab.base === "number" && typeof ec.keyFab.exponent === "number",
       "economy.keyFab missing base/exponent");
@@ -563,12 +568,11 @@ const CURRENCY = {
   regal:     { name: "Regal Orb",            desc: "Upgrades a Magic item to Rare, keeping its modifiers and adding one." },
   exalt:     { name: "Exalted Orb",          desc: "Adds a modifier to a Rare item." },
   chaos:     { name: "Chaos Orb",            desc: "Removes one modifier from a Rare item and adds a new one." },
+  bless:     { name: "Blessed Orb",          desc: "Rerolls an item's implicit modifiers. Works on any rarity, including Uniques." },
 };
 function rollOrbKind(rng, depth) {
-  const w = [
-    ["transmute", 4], ["aug", 4], ["alch", 3], ["regal", 2],
-    ["exalt", depth >= 3 ? 2 : 1], ["chaos", depth >= 3 ? 2 : 1],
-  ];
+  const w = CFG.economy.orbDropWeights.map(o =>
+    [o.kind, (depth >= 3 && o.weightAtDepth3Plus !== undefined) ? o.weightAtDepth3Plus : o.weight]);
   const total = w.reduce((s, [, x]) => s + x, 0);
   let r = rng() * total;
   for (const [k, wt] of w) { if (r < wt) return k; r -= wt; }
@@ -1067,6 +1071,13 @@ let craftRng = mulberry32((Math.random() * 1e9) | 0);
 function canApplyOrb(kind, item) {
   if (!item) return { ok: false, reason: "No item." };
   if (item.corrupted) return { ok: false, reason: "Corrupted — orbs are rejected." };
+  // bless only touches the implicit, not affixes, so it works on any
+  // rarity including Uniques — checked before the unique block below,
+  // which is really an affix-crafting restriction, not an implicit one
+  if (kind === "bless") {
+    return Object.keys(BASE_TYPES[item.base].implicit).length
+      ? { ok: true } : { ok: false, reason: "This item has no implicit to reroll." };
+  }
   if (item.rarity === "unique") return { ok: false, reason: "Uniques can't be modified." };
   switch (kind) {
     case "transmute":
@@ -1124,6 +1135,11 @@ function applyOrb(kind, itemId) {
       addRandomAffix(craftRng, item, depth);
       break;
     }
+    case "bless":
+      // rerolls at the run's CURRENT depth, same as every other orb here —
+      // gear you found early catches up to your current tier when crafted
+      item.implicit = rollImplicit(craftRng, item.base, depth);
+      break;
   }
   nameItem(craftRng, item);
   recalc();
@@ -4203,11 +4219,16 @@ function closeGear() {
 
 // which orbs make sense to offer on this item right now
 function orbChoices(item) {
-  if (item.corrupted || item.rarity === "unique") return [];
-  if (item.rarity === "normal") return ["transmute", "alch"];
-  if (item.rarity === "magic") return ["aug", "regal"];
-  if (item.rarity === "rare") return ["exalt", "chaos"];
-  return [];
+  if (item.corrupted) return [];
+  // bless only touches the implicit, so — unlike the affix-crafting orbs
+  // below — it's offered on any rarity, Uniques included, as long as the
+  // base type actually carries an implicit (weapons don't)
+  const bless = Object.keys(BASE_TYPES[item.base].implicit).length ? ["bless"] : [];
+  if (item.rarity === "unique") return bless;
+  if (item.rarity === "normal") return ["transmute", "alch", ...bless];
+  if (item.rarity === "magic") return ["aug", "regal", ...bless];
+  if (item.rarity === "rare") return ["exalt", "chaos", ...bless];
+  return bless;
 }
 function itemModsHTML(item) {
   const base = BASE_TYPES[item.base];
@@ -4965,7 +4986,7 @@ window.RL = {
   equipItem, unequipItem, dropItem, sellItem, sellValue, sellKey, keySalvageValue,
   itemById, equippedItem, isEquipped, itemEffect,
   activeWeaponItem, getActiveWeaponType,
-  canApplyOrb, applyOrb, grantOrbs, rollOrbKind,
+  canApplyOrb, applyOrb, grantOrbs, rollOrbKind, orbChoices,
   useConsumable, inCombat, recalc, canReach,
   get profile() { return profile; },
   enterOverworld, enterNode, extractToOverworld, fabricateKey,
