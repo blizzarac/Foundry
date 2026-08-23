@@ -132,8 +132,13 @@ function check(name, cond) {
     // still baked into the formula
     const rolledFlat = RL.rollImplicit(() => 0.5, "bulkhead", 1);
     out.depthScalingActuallyMoves = rolled.maxHpBonus > rolledFlat.maxHpBonus;
-    // the empty-base-type case (weapons carry no implicit) stays empty
+    // the empty-ranges case (no base type ships one today, but the shape
+    // is still legal) stays empty rather than erroring — temporarily
+    // strip a real base type's implicit on the live object rl.js reads
+    const savedBladeImplicit = RL.BASE_TYPES.blade.implicit;
+    RL.BASE_TYPES.blade.implicit = {};
     out.emptyImplicitStaysEmpty = Object.keys(RL.rollImplicit(() => 0.5, "blade", 10)).length === 0;
+    RL.BASE_TYPES.blade.implicit = savedBladeImplicit;
     // validator: a malformed range (min > max, or a missing bound) is rejected
     const implBad1 = JSON.parse(JSON.stringify(CFG));
     implBad1.items.baseTypes.plating.implicit.maxHpBonus = { min: 5, max: 2 };

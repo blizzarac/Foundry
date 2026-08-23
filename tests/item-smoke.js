@@ -138,16 +138,25 @@ function check(name, cond) {
     out.blessConsumesCurrency = (p.currency.bless || 0) === 0;
     out.blessRefusedWithoutCurrency = !RL.applyOrb("bless", plate.id);
     p.currency.bless = 1;
-    out.blessRejectsWeapon = !RL.canApplyOrb("bless", RL.itemById(p.equip.weapon)).ok;
-    // force UNIQUES[0] (Overseer's Eye, base "optics" — has a real
-    // implicit) via a zero rng; a randomly-picked unique might land on
-    // the weapon-based one, which has none and would refuse bless
+    // every weapon base type now carries its own implicit (blade -> dmg,
+    // shiv -> bsBonus, cleaver -> maxStBonus, lance -> fovBonus), so bless
+    // works on the equipped starter weapon same as any other slot
+    const weaponItem = RL.itemById(p.equip.weapon);
+    const weaponStat = Object.keys(RL.CFG.items.baseTypes[weaponItem.base].implicit)[0];
+    const weaponRange = RL.CFG.items.baseTypes[weaponItem.base].implicit[weaponStat];
+    const weaponDepthScale = 1 + RL.CFG.items.implicitScaling.growthPerDepthTier * ((run.floor || 1) - 1);
+    out.blessAcceptsWeapon = RL.canApplyOrb("bless", weaponItem).ok && RL.applyOrb("bless", weaponItem.id) &&
+      weaponItem.implicit[weaponStat] >= Math.round(weaponRange.min * weaponDepthScale) - 1 &&
+      weaponItem.implicit[weaponStat] <= Math.round(weaponRange.max * weaponDepthScale) + 1;
+    // force UNIQUES[0] (Overseer's Eye, base "optics") via a zero rng so
+    // the picked unique is deterministic rather than whichever one a real
+    // roll happens to land on
     const blessedUnique = RL.genUnique(() => 0, 3);
     out.blessAcceptsUnique = blessedUnique.base === "optics" && RL.canApplyOrb("bless", blessedUnique).ok;
     const corruptedForBless = RL.genCorruptedItem(mk, 3);
     out.blessRejectsCorrupted = !RL.canApplyOrb("bless", corruptedForBless).ok;
     out.orbChoicesOffersBlessOnUnique = RL.orbChoices(blessedUnique).includes("bless");
-    out.orbChoicesOmitsBlessOnWeapon = !RL.orbChoices(RL.itemById(p.equip.weapon)).includes("bless");
+    out.orbChoicesOffersBlessOnWeapon = RL.orbChoices(weaponItem).includes("bless");
     out.blessInShop = RL.SHOP_ORBS.some(o => o.kind === "bless" && o.cost > 0);
     let sawBless = false;
     for (let i = 0; i < 400 && !sawBless; i++) if (RL.rollOrbKind(mk, 5) === "bless") sawBless = true;
@@ -260,7 +269,19 @@ function check(name, cond) {
     out.lootValid = lootOk;
 
     RL.unequipItem("weapon");
-    out.bareFistsFallback = RL.getActiveWeaponType().name === "Bare Fists" && p.dmg === 1 + p.bonusDmg + totals.dmg;
+    // recompute totals fresh post-unequip — the weapon now carries a real
+    // implicit (blade rolls dmg), so the pre-unequip `totals` above would
+    // overcount by that amount now that the slot is empty
+    const totalsBareFists = {};
+    for (const k of RL.STAT_KEYS) totalsBareFists[k] = 0;
+    for (const s of RL.SLOTS) {
+      const it = RL.equippedItem(s);
+      if (!it) continue;
+      const eff = RL.itemEffect(it);
+      for (const k of RL.STAT_KEYS) totalsBareFists[k] += eff[k];
+    }
+    out.bareFistsFallback = RL.getActiveWeaponType().name === "Bare Fists" &&
+      p.dmg === 1 + p.bonusDmg + totalsBareFists.dmg;
 
     // elite kill drops gear plus two orbs
     RL.startRun(99);

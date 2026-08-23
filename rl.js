@@ -4222,7 +4222,7 @@ function orbChoices(item) {
   if (item.corrupted) return [];
   // bless only touches the implicit, so — unlike the affix-crafting orbs
   // below — it's offered on any rarity, Uniques included, as long as the
-  // base type actually carries an implicit (weapons don't)
+  // base type actually carries an implicit (every base type does now)
   const bless = Object.keys(BASE_TYPES[item.base].implicit).length ? ["bless"] : [];
   if (item.rarity === "unique") return bless;
   if (item.rarity === "normal") return ["transmute", "alch", ...bless];

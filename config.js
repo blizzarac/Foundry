@@ -155,10 +155,15 @@ window.IRONHEX_CONFIG = {
     // varies item to item) — see implicitScaling below for how the range
     // grows with sector depth. An empty {} means the base carries none.
     "baseTypes": {
-      "blade":     { "implicit": {}, "dmg": 2, "atkCost": 1, "rollCost": 2, "bsBonus": 2 },
-      "shiv":      { "implicit": {}, "dmg": 1, "atkCost": 1, "rollCost": 1, "bsBonus": 4 },
-      "cleaver":   { "implicit": {}, "dmg": 4, "atkCost": 2, "rollCost": 2, "bsBonus": 2 },
-      "lance":     { "implicit": {}, "dmg": 2, "atkCost": 1, "rollCost": 2, "bsBonus": 2 },
+      // each weapon's implicit stat echoes its own flavor: blade is the
+      // balanced generalist (raw dmg), shiv is built to punish an exposed
+      // core (bsBonus), cleaver's discharge burns 2 power so it gets more
+      // reserve to fuel it (maxStBonus), lance's reach implicit extends
+      // engagement range the same way sensor gear does (fovBonus)
+      "blade":     { "implicit": { "dmg": { "min": 1, "max": 2 } }, "dmg": 2, "atkCost": 1, "rollCost": 2, "bsBonus": 2 },
+      "shiv":      { "implicit": { "bsBonus": { "min": 1, "max": 2 } }, "dmg": 1, "atkCost": 1, "rollCost": 1, "bsBonus": 4 },
+      "cleaver":   { "implicit": { "maxStBonus": { "min": 1, "max": 2 } }, "dmg": 4, "atkCost": 2, "rollCost": 2, "bsBonus": 2 },
+      "lance":     { "implicit": { "fovBonus": { "min": 1, "max": 2 } }, "dmg": 2, "atkCost": 1, "rollCost": 2, "bsBonus": 2 },
       "plating":   { "implicit": { "maxHpBonus": { "min": 2, "max": 4 } } },
       "bulkhead":  { "implicit": { "maxHpBonus": { "min": 4, "max": 6 }, "rollCostDelta": { "min": 1, "max": 2 } } },
       "optics":    { "implicit": { "bsBonus": { "min": 1, "max": 3 } } },
