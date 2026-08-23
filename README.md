@@ -37,6 +37,8 @@ The gear panel (`B`) is tabbed — **Equipped | Backpack | Keys | Supplies**, wi
 
 Nothing in the backpack is dead weight: every unequipped item can be **salvaged for cores** on the spot. Value follows the same axes the loot chase does — a rarity floor (Normal 5, Magic 15, Rare 40, Unique 120) plus a bonus per affix tier, so a deep-tier rare is worth carrying home; corrupted parts fetch half. Rare and Unique salvage arms on the first tap and sells on the second, so a fat-fingered tap can't vaporize the chase item. Like all gear-fiddling, salvaging is free in peace and costs the turn under hostile eyes.
 
+Sector Keys salvage too, from the Keys tab. Value is priced off what fabricating an equivalent key costs — half the tier's fab cost as a floor, plus a share per mod carried — so it never quite pays to fabricate a key and immediately break it back down, while a heavily-crafted rare key (multiple orbs sunk into it) pays out well. Rare keys arm the same way rare items do.
+
 ## The Foundry (endgame)
 
 Kill the OVERSEER once and the game changes shape: the five-sector descent becomes a one-time prologue, and the **Foundry** opens — an endless overworld hex map of sealed sector nodes spreading outward from your home dock, **the Bay**. Your character is now persistent: frame, gear, currency, and the map itself survive death and browser restarts (saved in `localStorage`).
