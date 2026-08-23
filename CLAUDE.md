@@ -12,8 +12,9 @@
 - **`config.js`**: enemy base stats/scaling, prologue floor tables, Foundry
   sector-generation coefficients (pack density, elite bump tiers, chest/
   terminal odds, key-drop odds, gate jump size, key mods), the whole
-  economy (shop upgrades, restocks, orb prices, gamble cost, key fab curve,
-  item/key salvage formulas), item/affix/rarity tables (base type stats,
+  economy (shop upgrades, restocks, orb prices, orb loot-drop weights,
+  gamble cost, key fab curve, item/key salvage formulas), item/affix/rarity
+  tables (base type stats,
   every implicit's roll range plus the depth-scaling coefficient that
   widens it, prefix/suffix pools and their tier magnitudes — plus a slot
   restriction each could carry, currently unused — corrupted-downside
