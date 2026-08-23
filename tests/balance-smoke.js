@@ -53,9 +53,14 @@ function check(name, cond, detail) {
     RL.profile.atlas.tierCap = RL.TIER_CAP;   // sample every tier, not just the starting band
 
     // the flat shop upgrades are gone — permanent frame power is the
-    // lattice now, so the "everything maxed" baseline allocates every node
+    // lattice now, so the "everything maxed" baseline allocates every
+    // node reachable by a single character: keystones are exclusive (one
+    // at a time), so the other two branches' keystone + their locked tip
+    // clusters are unreachable no matter how many points you have — the
+    // real achievable ceiling, not the sum of three mutually exclusive builds
     function maxTree() {
-      RL.profile.tree = { pts: 0, nodes: RL.TREE_NODES.map(n => n.id) };
+      const lockedOut = ["svK", "svJ", "svc1", "svc2", "svc3", "syK", "syJ", "syc1", "syc2", "syc3"];
+      RL.profile.tree = { pts: 0, nodes: RL.TREE_NODES.filter(n => !lockedOut.includes(n.id)).map(n => n.id) };
       RL.recalc();
     }
     function equipTierGear(p, tier) {
@@ -143,8 +148,8 @@ function check(name, cond, detail) {
     const treeTotals = {};
     for (const n of RL.TREE_NODES) if (n.effect)
       for (const k in n.effect) treeTotals[k] = (treeTotals[k] || 0) + n.effect[k];
-    out.checks.latticeDmgBounded = (treeTotals.dmg || 0) <= 12;
-    out.checks.latticeHpBounded = (treeTotals.maxHpBonus || 0) <= 65;
+    out.checks.latticeDmgBounded = (treeTotals.dmg || 0) <= 10;
+    out.checks.latticeHpBounded = (treeTotals.maxHpBonus || 0) <= 35;
 
     return out;
   }, TIERS);

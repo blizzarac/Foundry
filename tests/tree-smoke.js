@@ -215,11 +215,64 @@ function check(name, cond) {
     out.migrationDropsRanks = migrated.character.upgrades === undefined;
     out.migrationGrantsRetroPoints = migrated.tree &&
       migrated.tree.pts === 2 * CFG.frameTree.pointsPerPurge + CFG.frameTree.pointsPerGate;
-    out.migrationBumpsVersion = migrated.v === 5;
+    out.migrationBumpsVersion = migrated.v === 6;
     // an already-current profile is left alone
     const fresh = RL.migrateProfile(JSON.parse(JSON.stringify(migrated)));
     out.migrationIdempotent = fresh.character.souls === migrated.character.souls &&
       fresh.tree.pts === migrated.tree.pts;
+
+    // --- migration: v5 saves with multiple keystones keep one, cascade-
+    // strip the other keystones' now-orphaned jewel/facets/notable, and
+    // refund a point per stripped node ---
+    const v5Save = {
+      v: 5,
+      character: { baseMaxHp: 12, baseMaxSt: 3, bonusDmg: 0, maxFlask: 3, souls: 0,
+        items: [], equip: {}, currency: {}, consumables: {} },
+      atlas: { seed: 1, unlocked: true, tierCap: 12, keys: [], nodes: { "0,0": { state: "hub" } } },
+      tree: {
+        pts: 3,
+        // chK's full cluster, svK bare, syK's full cluster — three
+        // keystones at once, exactly the pre-tightening real-world case
+        nodes: [
+          "ch1", "ch2", "chN1", "ch3", "ch4", "chN2", "ch5", "ch6", "chN3", "ch7", "ch8",
+          "chK", "chJ", "chc1", "chc2", "chc3",
+          "sv1", "sv2", "svN1", "sv3", "sv4", "svN2", "sv5", "sv6", "svN3", "sv7", "sv8", "svK",
+          "sy1", "sy2", "syN1", "sy3", "sy4", "syN2", "sy5", "sy6", "syN3", "sy7", "sy8",
+          "syK", "syJ", "syc1", "syc2", "syc3",
+        ],
+      },
+    };
+    const beforeCount = v5Save.tree.nodes.length;
+    const migrated6 = RL.migrateProfile(JSON.parse(JSON.stringify(v5Save)));
+    const keptKeystones = migrated6.tree.nodes.filter(id => RL.TREE_NODE_BY_ID[id].kind === "keystone");
+    out.migrationKeepsOneKeystone = keptKeystones.length === 1 && keptKeystones[0] === "chK";
+    // chK's cluster (chJ/chc1/chc2/chc3) survives since chK is the one kept
+    out.migrationKeepsKeptClusterIntact = ["chJ", "chc1", "chc2", "chc3"].every(id => migrated6.tree.nodes.includes(id));
+    // svK had no cluster installed (bare keystone) -> just itself removed;
+    // syK's full cluster (syJ + 2 facets + notable) is orphaned and removed too
+    out.migrationStripsOrphanedClusters = !migrated6.tree.nodes.includes("svK") &&
+      !["syK", "syJ", "syc1", "syc2", "syc3"].some(id => migrated6.tree.nodes.includes(id));
+    // exactly 6 nodes stripped (svK, syK, syJ, syc1, syc2, syc3) -> 6 points refunded
+    const removedCount = beforeCount - migrated6.tree.nodes.length;
+    out.migrationRefundsStrippedPoints = removedCount === 6 &&
+      migrated6.tree.pts === v5Save.tree.pts + 6;
+    out.migrationV5ToV6BumpsVersion = migrated6.v === 6;
+
+    // --- the exclusivity rule itself: a second keystone is refused live ---
+    // both branches' pre-keystone chains installed, so svK's ONLY blocker
+    // once chK is taken is the exclusivity rule, not a missing prerequisite
+    RL.profile.tree = {
+      pts: 5,
+      nodes: [
+        "ch1", "ch2", "chN1", "ch3", "ch4", "chN2", "ch5", "ch6", "chN3", "ch7", "ch8",
+        "sv1", "sv2", "svN1", "sv3", "sv4", "svN2", "sv5", "sv6", "svN3", "sv7", "sv8",
+      ],
+    };
+    out.firstKeystoneAllocates = RL.allocateNode("chK");
+    out.secondKeystoneRefused = !RL.canAllocateNode("svK").ok;
+    // stripping the first keystone (after clearing its dependents, since
+    // refund is tip-inward) reopens the slot for a different one
+    out.secondKeystoneOpensAfterRefund = RL.refundNode("chK") && RL.canAllocateNode("svK").ok;
 
     try { localStorage.removeItem("ironhex-foundry"); localStorage.removeItem("ironhex-run"); } catch (e) {}
     return out;

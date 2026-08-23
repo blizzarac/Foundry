@@ -45,7 +45,8 @@
   `node tests/checkpoint-smoke.js` (mid-run save/resume across reloads),
   `node tests/events-smoke.js` (Foundry Anomalies node events),
   `node tests/tree-smoke.js` (frame lattice: point grants, allocation
-  graph, every mech notable's combat branch, v5 migration refunds),
+  graph, every mech notable's combat branch, keystone exclusivity,
+  v5/v6 migration refunds),
   `node tests/boss-smoke.js` (gate guardian ladder: band→boss config
   mapping, every WARDEN/CRUCIBLE/FORGE-PRIME verb and phase, apex node
   lifecycle and rewards),

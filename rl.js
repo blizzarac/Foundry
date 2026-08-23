@@ -841,6 +841,11 @@ function canAllocateNode(id) {
   if (t.pts <= 0) return { ok: false, reason: "No lattice points — purge sectors to earn more." };
   if (n.requires.length && !n.requires.some(r => t.nodes.includes(r)))
     return { ok: false, reason: "Connected node required first." };
+  // only one keystone active at a time — they're meant to be a tradeoff,
+  // and stacking all three lets one keystone's stat quietly cancel
+  // another's downside instead of committing to either
+  if (n.kind === "keystone" && t.nodes.some(x => TREE_NODE_BY_ID[x] && TREE_NODE_BY_ID[x].kind === "keystone"))
+    return { ok: false, reason: "Only one keystone at a time — remove the active one first." };
   return { ok: true };
 }
 function allocateNode(id) {
@@ -963,6 +968,37 @@ function migrateProfile(pr) {
       delete c.upgrades;
     }
     pr.v = 5;
+  }
+  // v5 -> v6: keystones are now exclusive — one active at a time, since
+  // stacking let one keystone's stat quietly cancel another's downside
+  // instead of committing to either. A save with more than one installed
+  // keeps the first (definition order: chassis, servos, systems) and
+  // cascade-strips the rest — a keystone's jewel, that jewel's two
+  // facets, and their closing notable all become orphaned the instant
+  // their keystone is gone, exactly like a manual tip-inward refund
+  // would leave them, so the same "no requires left standing" rule
+  // removes them in passes. Every stripped node refunds its point.
+  if (pr.v < 6 && pr.tree) {
+    const installed = new Set(pr.tree.nodes);
+    const keystones = TREE_NODES.filter(n => n.kind === "keystone" && installed.has(n.id));
+    for (const k of keystones.slice(1)) {
+      installed.delete(k.id);
+      pr.tree.pts++;
+      let shrank = true;
+      while (shrank) {
+        shrank = false;
+        for (const id of [...installed]) {
+          const n = TREE_NODE_BY_ID[id];
+          if (n && n.requires.length && n.requires.every(r => !installed.has(r))) {
+            installed.delete(id);
+            pr.tree.pts++;
+            shrank = true;
+          }
+        }
+      }
+    }
+    pr.tree.nodes = [...installed];
+    pr.v = 6;
   }
   return pr;
 }
@@ -2920,7 +2956,7 @@ function winRun() {
   if (run.mode === "campaign") {
     const first = !profile || !profile.atlas.unlocked;
     if (!profile) {
-      profile = { v: 5, character: snapshotCharacter(p), tree: { pts: 0, nodes: [] },
+      profile = { v: 6, character: snapshotCharacter(p), tree: { pts: 0, nodes: [] },
         atlas: { seed: (Math.random() * 1e9) | 0, unlocked: false, nodes: {}, keys: [], tierCap: CFG.levelGen.startingTierCap } };
     } else {
       profile.character = snapshotCharacter(p);
