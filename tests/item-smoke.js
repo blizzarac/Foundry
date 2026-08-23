@@ -254,7 +254,8 @@ function check(name, cond) {
       topInside: top.top >= -0.5 && top.right <= window.innerWidth + 0.5,
       boxFits: bb.top >= -0.5 && bb.height <= window.innerHeight + 0.5,
       boxScrolls: box.scrollHeight > box.clientHeight,
-      varsPublished: !!document.documentElement.style.getPropertyValue("--vv-h"),
+      barHeightPublished: !!document.documentElement.style.getPropertyValue("--bar-h"),
+      logClearsBar: document.getElementById("log").getBoundingClientRect().bottom <= bar.top + 0.5,
       resetZoomOk: RL.resetZoom() === true,
       // the bar spans the screen to wrap cleanly, so taps beside the
       // buttons must still reach the board underneath
