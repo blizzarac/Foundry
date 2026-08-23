@@ -377,7 +377,7 @@ const TRAITS = {
   boss:     "Overheats after every third attack. Below half integrity, it calls the fabricators.",
   sentinel: "Gate guardian. Its field slam covers everything around it EXCEPT its coolant vents — stand IN a gap. Its sweep alternates lanes: the amber lanes fire one turn after the red ones, so dodge into amber, then step back. Overheats after every third attack.",
   warden:   "Gate guardian. Siege artillery: its barrage tracks where you STOOD — keep two hexes of motion between you and the mark. Crossfire lanes fire in rotating pairs. A frontal shield scatters head-on strikes: flank it, or wait for the overheat after every third attack.",
-  crucible: "Gate guardian. A rolling forge-wave: the near ring fires first and the far ring follows, so dash INSIDE it (adjacent is a cold spot) or sprint clear. Up close it vents six short spokes, and mid-fight it fabricates rippers. Overheats after every third attack.",
+  crucible: "Gate guardian. A rolling forge-wave: the near ring fires first and the far ring follows, so dash INSIDE it (adjacent is a cold spot) or sprint clear. Up close it vents six short spokes, and mid-fight it fabricates rippers — thin them as they come or they'll pile up. Overheats after every third attack.",
   prime:    "The FORGE-PRIME. The Foundry's heart runs the whole curriculum: slam and charge, then shielded crossfire, then rolling waves — and below a third of its core it barely pauses to vent. Everything is telegraphed. Nothing is optional.",
   hauler:   "Salvage convoy hauler. Doesn't fight — just walks its route. Cut it off before it reaches the far side, or it and its cargo are gone.",
 };
@@ -1061,7 +1061,7 @@ const GAME_VERSION = "2026-08-23-config";
 // static site to bake in a real deploy timestamp, so this is it. Shown
 // as a footer note on the intro/menu page, so it's always clear which
 // build a given browser tab is actually running before you dive in.
-const DEPLOY_TIME = "2026-08-23T15:03:52Z";
+const DEPLOY_TIME = "2026-08-23T15:17:40Z";
 function showDeployBadge() {
   const el = document.getElementById("deploy-badge");
   if (!el) return;
@@ -2674,20 +2674,28 @@ function crucibleAct(e, flow, dist) {
     e.bossCount++;
     log("The CRUCIBLE vents six spokes of slag.", "warn");
   } else {
-    // forge-call: fabricate rippers from the slag at ring 4
+    // forge-call: fabricate rippers from the slag at ring 4 — capped at 4
+    // concurrently alive, so a long fight (which cautious, careful play
+    // naturally produces) can't snowball into an unmanageable swarm.
+    // Once at cap the beat is spent testing whether the player has been
+    // clearing adds along the way, not just tunnel-visioning the boss.
     e.atkCycle = cyc + 1;
     e.bossCount++;
-    const spots = ringHexes(e, 4, 4).map(unkey).filter(([q, r]) => !occupied(q, r));
-    const step = Math.max(1, (spots.length / 2) | 0);
-    let made = 0;
-    for (let i = 0; i < spots.length && made < 2; i += step) {
-      const [q, r] = spots[i];
-      spawnEnemy("ripper", q, r).summoned = true;
-      made++;
-    }
-    if (made) {
-      log("The CRUCIBLE fabricates rippers from raw slag.", "warn");
-      sfx("block");
+    const aliveSummoned = run.enemies.filter(x => x.summoned && x.hp > 0).length;
+    const room = Math.min(2, Math.max(0, 4 - aliveSummoned));
+    if (room > 0) {
+      const spots = ringHexes(e, 4, 4).map(unkey).filter(([q, r]) => !occupied(q, r));
+      const step = Math.max(1, (spots.length / 2) | 0);
+      let made = 0;
+      for (let i = 0; i < spots.length && made < room; i += step) {
+        const [q, r] = spots[i];
+        spawnEnemy("ripper", q, r).summoned = true;
+        made++;
+      }
+      if (made) {
+        log("The CRUCIBLE fabricates rippers from raw slag.", "warn");
+        sfx("block");
+      }
     }
   }
 }

@@ -137,6 +137,15 @@ function check(name, cond) {
     c.atkCycle = 2; c.state = "idle";
     RL.crucibleAct(c, null, 4);
     out.forgeCallSummons = RL.run.enemies.filter(e => e.type === "ripper").length === rippersBefore + 2;
+    // a long fight can't snowball into an unmanageable swarm: force the
+    // forge-call branch repeatedly (bypassing the vent so nothing else
+    // interrupts it) and confirm alive summoned rippers plateau at the cap
+    for (let i = 0; i < 6; i++) {
+      c.atkCycle = 2; c.bossCount = 0; c.state = "idle";
+      RL.crucibleAct(c, null, 4);
+    }
+    const aliveSummoned = RL.run.enemies.filter(e => e.type === "ripper" && e.summoned && e.hp > 0).length;
+    out.forgeCallCapped = aliveSummoned > 0 && aliveSummoned <= 4;
     RL.extractToOverworld();
 
     // === band 12 gate wakes the CRUCIBLE for real, and its fall opens the summit
