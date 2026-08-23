@@ -1061,7 +1061,7 @@ const GAME_VERSION = "2026-08-23-config";
 // static site to bake in a real deploy timestamp, so this is it. Shown
 // as a footer note on the intro/menu page, so it's always clear which
 // build a given browser tab is actually running before you dive in.
-const DEPLOY_TIME = "2026-08-23T15:17:40Z";
+const DEPLOY_TIME = "2026-08-23T15:25:00Z";
 function showDeployBadge() {
   const el = document.getElementById("deploy-badge");
   if (!el) return;
@@ -2935,16 +2935,20 @@ function dieRun(killer) {
     // to reclaim it from. Say so plainly instead of pointing at a wreck
     // that was never created.
     const wreckStored = !!(node && node.state !== "cleared");
-    if (wreckStored) node.wreck = (node.wreck || 0) + p.souls;
-    const lost = p.souls;
-    p.souls = 0;
+    const carried = p.souls;
+    if (wreckStored) {
+      node.wreck = (node.wreck || 0) + p.souls;
+      p.souls = 0;
+    }
+    // with no wreck to store them in, there's no legitimate reason to
+    // destroy the cores either — the player keeps what they were carrying
     syncProfileFromPlayer();
     saveProfile();
-    document.getElementById("death-souls").textContent = lost <= 0
+    document.getElementById("death-souls").textContent = carried <= 0
       ? "The key burns out with the frame. The sector stays sealed."
       : wreckStored
-      ? lost + " cores went down with the frame — socket another key into that node to reclaim the wreck."
-      : lost + " cores went down with the frame — the sector was already purged, so they're gone for good.";
+      ? carried + " cores went down with the frame — socket another key into that node to reclaim the wreck."
+      : "The sector was already purged, so your " + carried + " cores ride back with you.";
     document.getElementById("death-stats").textContent =
       `T${run.floorConf.tier} ${run.floorConf.biomeName} · ${run.kills} scrapped · cycle ${run.turn}`;
     document.getElementById("death-retry").textContent = "Return to the Bay";

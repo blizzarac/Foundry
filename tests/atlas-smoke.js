@@ -170,8 +170,8 @@ function check(name, cond) {
     // death AFTER purge: a sector flips "cleared" the instant the last
     // Prime dies, while you're still standing in it — die before reaching
     // Extract and there is no wreck to store (a cleared node can never be
-    // re-entered), so the death screen must say the cores are gone rather
-    // than point at a wreck that was never created
+    // re-entered). With nowhere to stash them, the cores ride back with
+    // the player instead of vanishing — the death screen must say so.
     RL.fabricateKey(1);
     const kDead = RL.profile.atlas.keys.find(k => k.tier === 1 && k.rarity === "normal");
     const [qD, rD] = frontierKeys()[0].split(",").map(Number);
@@ -182,9 +182,10 @@ function check(name, cond) {
     RL.run.player.souls = 321;
     RL.dieRun();
     out.deathAfterPurgeNoWreck = !purgedNode.wreck;
+    out.deathAfterPurgeKeepsCores = RL.run.player.souls === 321 && RL.profile.character.souls === 321;
     const deathText = document.getElementById("death-souls").textContent;
     out.deathAfterPurgeHonestText = deathText.includes("already purged") &&
-      !deathText.includes("socket another key");
+      deathText.includes("321") && !deathText.includes("socket another key");
     RL.enterOverworld();   // mirrors the real "Return to the Bay" flow
     RL.run.player.souls = 99999;
 
