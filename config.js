@@ -91,8 +91,10 @@ window.IRONHEX_CONFIG = {
   },
 
   "economy": {
-    // shop upgrade ranks: cost = round(base * 2^ranksBought); delta adds
-    // flat amounts to the named player fields on purchase
+    // RETIRED shop upgrades, kept only so the profile migration can refund
+    // exactly what old saves spent (cost = round(base * 2^ranksBought)) and
+    // strip exactly the stats those ranks granted. The live replacement is
+    // the frame lattice ("frameTree" section below); nothing sells these.
     "upgrades": [
       { "id": "hp",    "name": "Chassis reinforcement", "desc": "+4 max integrity", "base": 30, "cap": 5, "delta": { "baseMaxHp": 4, "hp": 4 } },
       { "id": "st",    "name": "Capacitor bank",        "desc": "+1 max power",     "base": 50, "cap": 2, "delta": { "baseMaxSt": 1, "st": 1 } },
@@ -135,6 +137,71 @@ window.IRONHEX_CONFIG = {
       "keyBaseFrac": 0.5,
       "keyPerModFrac": 0.15
     }
+  },
+
+  // The frame lattice: the permanent upgrade tree that replaced the shop's
+  // flat frame upgrades. Points come from Foundry milestones, never cores —
+  // one per first-time sector purge, more per SENTINEL gate — so the tree
+  // paces itself with the tier climb instead of capping out after the
+  // prologue. Three branches; each node lists the node(s) that unlock it
+  // ("requires": [] marks a branch entry point, open from the start).
+  // "kind" is small/notable/keystone: smalls carry flat stats through the
+  // same STAT_KEYS vocabulary items use, notables may instead carry a
+  // "mech" — a key into a real combat-code branch in rl.js (the closed set
+  // TREE_MECH_KEYS) plus its magnitude — and keystones trade power for a
+  // downside. Refunding is free but only from the tip of a branch inward.
+  "frameTree": {
+    "pointsPerPurge": 1,
+    "pointsPerGate": 2,
+    "nodes": [
+      { "id": "ch1", "branch": "chassis", "kind": "small",    "name": "Plating Weave",       "requires": [],      "effect": { "maxHpBonus": 3 } },
+      { "id": "ch2", "branch": "chassis", "kind": "small",    "name": "Sealed Joints",       "requires": ["ch1"], "effect": { "maxHpBonus": 3 } },
+      { "id": "chN1", "branch": "chassis", "kind": "notable", "name": "Reactive Plating",    "requires": ["ch2"],
+        "desc": "A successful deflect vents its charge back: refunds 2 power.", "mech": { "key": "parryRefund", "power": 2 } },
+      { "id": "ch3", "branch": "chassis", "kind": "small",    "name": "Nanite Lattice",      "requires": ["chN1"], "effect": { "flaskHealBonus": 2 } },
+      { "id": "ch4", "branch": "chassis", "kind": "small",    "name": "Composite Hull",      "requires": ["ch3"], "effect": { "maxHpBonus": 4 } },
+      { "id": "chN2", "branch": "chassis", "kind": "notable", "name": "Aegis Long-Field",    "requires": ["ch4"],
+        "desc": "The deflector field extends to the sensor horizon: deflect catches strikes from any distance, not just adjacent.", "mech": { "key": "parryRange", "power": 1 } },
+      { "id": "ch5", "branch": "chassis", "kind": "small",    "name": "Hardened Mounts",     "requires": ["chN2"], "effect": { "parryCostDelta": -1 } },
+      { "id": "ch6", "branch": "chassis", "kind": "small",    "name": "Ablative Mesh",       "requires": ["ch5"], "effect": { "maxHpBonus": 4 } },
+      { "id": "chN3", "branch": "chassis", "kind": "notable", "name": "Triage Loop",         "requires": ["ch6"], "effect": { "flaskHealBonus": 4 } },
+      { "id": "ch7", "branch": "chassis", "kind": "small",    "name": "Bulk Frame",          "requires": ["chN3"], "effect": { "maxHpBonus": 5 } },
+      { "id": "ch8", "branch": "chassis", "kind": "small",    "name": "Redundant Cores",     "requires": ["ch7"], "effect": { "maxHpBonus": 5 } },
+      { "id": "chK", "branch": "chassis", "kind": "keystone", "name": "Monolith Chassis",    "requires": ["ch8"],
+        "desc": "Immense mass. The frame shrugs off what would cripple anything lighter, and the thrusters pay for every gram.", "effect": { "maxHpBonus": 12, "rollCostDelta": 1 } },
+
+      { "id": "sv1", "branch": "servos", "kind": "small",    "name": "Sharpened Strikers",   "requires": [],      "effect": { "dmg": 1 } },
+      { "id": "sv2", "branch": "servos", "kind": "small",    "name": "Balanced Actuators",   "requires": ["sv1"], "effect": { "maxStBonus": 1 } },
+      { "id": "svN1", "branch": "servos", "kind": "notable", "name": "Momentum Reclaimer",   "requires": ["sv2"],
+        "desc": "A rear-strike kill vents 2 power back into the reserve.", "mech": { "key": "bsKillRefund", "power": 2 } },
+      { "id": "sv3", "branch": "servos", "kind": "small",    "name": "Flanking Routines",    "requires": ["svN1"], "effect": { "bsBonus": 1 } },
+      { "id": "sv4", "branch": "servos", "kind": "small",    "name": "Light Alloy Frame",    "requires": ["sv3"], "effect": { "rollCostDelta": -1 } },
+      { "id": "svN2", "branch": "servos", "kind": "notable", "name": "Executioner Logic",    "requires": ["sv4"],
+        "desc": "+1 strike damage against overloaded machines — folded into the hit before the riposte doubles it.", "mech": { "key": "staggerBonus", "power": 1 } },
+      { "id": "sv5", "branch": "servos", "kind": "small",    "name": "Overvolted Blades",    "requires": ["svN2"], "effect": { "dmg": 1 } },
+      { "id": "sv6", "branch": "servos", "kind": "small",    "name": "Deep Reserve",         "requires": ["sv5"], "effect": { "maxStBonus": 1 } },
+      { "id": "svN3", "branch": "servos", "kind": "notable", "name": "Twin Actuators",       "requires": ["sv6"], "effect": { "dmg": 1, "bsBonus": 2 } },
+      { "id": "sv7", "branch": "servos", "kind": "small",    "name": "Killing Geometry",     "requires": ["svN3"], "effect": { "bsBonus": 2 } },
+      { "id": "sv8", "branch": "servos", "kind": "small",    "name": "Power Feed",           "requires": ["sv7"], "effect": { "maxStBonus": 1 } },
+      { "id": "svK", "branch": "servos", "kind": "keystone", "name": "Glass Core",           "requires": ["sv8"],
+        "desc": "Every safety margin re-routed into the strikers. Hit like a wrecking crew; get hit like glass.", "effect": { "dmg": 2, "bsBonus": 2, "maxHpBonus": -6 } },
+
+      { "id": "sy1", "branch": "systems", "kind": "small",    "name": "Wide-Band Optics",    "requires": [],      "effect": { "fovBonus": 1 } },
+      { "id": "sy2", "branch": "systems", "kind": "small",    "name": "Core Magnetics",      "requires": ["sy1"], "effect": { "salvageMult": 0.1 } },
+      { "id": "syN1", "branch": "systems", "kind": "notable", "name": "Salvage Rites",       "requires": ["sy2"],
+        "desc": "Prime kills yield one extra currency orb.", "mech": { "key": "eliteOrbBonus", "power": 1 } },
+      { "id": "sy3", "branch": "systems", "kind": "small",    "name": "Refinery Loop",       "requires": ["syN1"], "effect": { "salvageMult": 0.1 } },
+      { "id": "sy4", "branch": "systems", "kind": "small",    "name": "Signal Boosters",     "requires": ["sy3"], "effect": { "fovBonus": 1 } },
+      { "id": "syN2", "branch": "systems", "kind": "notable", "name": "Deep-Cycle Scanners", "requires": ["sy4"],
+        "desc": "Dropped gear rolls its modifiers 2 tiers deeper than the sector it fell in.", "mech": { "key": "lootDepthBonus", "power": 2 } },
+      { "id": "sy5", "branch": "systems", "kind": "small",    "name": "Cargo Manifests",     "requires": ["syN2"], "effect": { "salvageMult": 0.15 } },
+      { "id": "sy6", "branch": "systems", "kind": "small",    "name": "Auxiliary Cell",      "requires": ["sy5"], "effect": { "maxStBonus": 1 } },
+      { "id": "syN3", "branch": "systems", "kind": "notable", "name": "Reclamation Protocol", "requires": ["sy6"], "effect": { "siphonOnKill": 1 } },
+      { "id": "sy7", "branch": "systems", "kind": "small",    "name": "Long-Range Array",    "requires": ["syN3"], "effect": { "fovBonus": 1 } },
+      { "id": "sy8", "branch": "systems", "kind": "small",    "name": "Ore Divination",      "requires": ["sy7"], "effect": { "salvageMult": 0.15 } },
+      { "id": "syK", "branch": "systems", "kind": "keystone", "name": "Greed Circuit",       "requires": ["sy8"],
+        "desc": "Every spare cycle diverted to acquisition. The Foundry pays out — and the deflector runs a beat behind.", "effect": { "salvageMult": 0.4, "fovBonus": 1, "parryCostDelta": 1 } }
+    ]
   },
 
   "items": {

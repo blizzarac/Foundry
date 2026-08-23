@@ -12,8 +12,13 @@
 - **`config.js`**: enemy base stats/scaling, prologue floor tables, Foundry
   sector-generation coefficients (pack density, elite bump tiers, chest/
   terminal odds, key-drop odds, gate jump size, key mods), the whole
-  economy (shop upgrades, restocks, orb prices, orb loot-drop weights,
-  gamble cost, key fab curve, item/key salvage formulas), item/affix/rarity
+  economy (restocks, orb prices, orb loot-drop weights, gamble cost, key
+  fab curve, item/key salvage formulas, plus the retired shop upgrades
+  kept only as migration-refund data), the frame lattice (points per
+  purge/gate and every tree node: branch, edges, stat magnitudes, each
+  notable's mech key + power — the mech *implementations* are combat
+  code in rl.js, keyed by the closed TREE_MECH_KEYS set the validator
+  enforces), item/affix/rarity
   tables (base type stats,
   every implicit's roll range plus the depth-scaling coefficient that
   widens it, prefix/suffix pools and their tier magnitudes — plus a slot
@@ -38,6 +43,8 @@
   (items), `node tests/atlas-smoke.js` (Foundry overworld/endgame),
   `node tests/checkpoint-smoke.js` (mid-run save/resume across reloads),
   `node tests/events-smoke.js` (Foundry Anomalies node events),
+  `node tests/tree-smoke.js` (frame lattice: point grants, allocation
+  graph, every mech notable's combat branch, v5 migration refunds),
   `node tests/debug-export-smoke.js` (debug state export/import round-trip),
   `node tests/dash-smoke.js` (free-form thruster dash geometry),
   `node tests/config-smoke.js` (proves config.js is the real source of the

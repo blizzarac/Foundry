@@ -289,7 +289,7 @@ function check(name, cond) {
   const r4 = await page.evaluate(() => {
     const RL = window.RL;
     const out = {};
-    out.migrated = RL.profile.v === 4;
+    out.migrated = RL.profile.v === 5;   // v4 events backfill + v5 frame lattice
     out.frontierNodesHaveEventField = Object.values(RL.profile.atlas.nodes)
       .filter(n => n.state === "frontier")
       .every(n => n.event !== undefined);

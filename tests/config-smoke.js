@@ -61,15 +61,29 @@ function check(name, cond) {
     out.elitePromotionShapeMatchesConfig = typeof promo.hpMult === "number" && typeof promo.dmgAdd === "number" &&
       e2.maxHp === Math.round(hpBefore * promo.hpMult);
 
-    // shop upgrades: base/cap come from config, not a hardcoded array
-    const hpU = RL.UPGRADES.find(u => u.id === "hp");
-    const hpCfg = CFG.economy.upgrades.find(u => u.id === "hp");
-    out.upgradesFromConfig = hpU.base === hpCfg.base && hpU.cap === hpCfg.cap;
-    // and the generic apply() combinator actually applies the configured delta
-    const before = { baseMaxHp: p1.baseMaxHp, hp: p1.hp };
-    hpU.apply(p1);
-    out.upgradeApplyUsesDelta = p1.baseMaxHp === before.baseMaxHp + hpCfg.delta.baseMaxHp &&
-      p1.hp === before.hp + hpCfg.delta.hp;
+    // frame lattice: the node table is the literal config array, not a copy,
+    // and the validator walks the graph — a broken edge or unknown mech key
+    // is a named boot error, not a silently dead branch
+    out.treeNodesAreConfigTable = RL.TREE_NODES === CFG.frameTree.nodes;
+    const ftBadEdge = JSON.parse(JSON.stringify(CFG));
+    ftBadEdge.frameTree.nodes[1].requires = ["no-such-node"];
+    out.validatorRejectsBadTreeEdge = RL.validateConfig(ftBadEdge)
+      .some(e => e.includes("requires unknown node") || e.includes("unreachable"));
+    const ftBadMech = JSON.parse(JSON.stringify(CFG));
+    const mechNode = ftBadMech.frameTree.nodes.find(n => n.mech);
+    mechNode.mech.key = "notARealMechanic";
+    out.validatorRejectsUnknownMechKey = RL.validateConfig(ftBadMech)
+      .some(e => e.includes("known mechanic"));
+    const ftOrphan = JSON.parse(JSON.stringify(CFG));
+    // cutting every entry point (making all nodes require something)
+    // orphans the whole graph — the reachability walk must catch it
+    for (const n of ftOrphan.frameTree.nodes) if (!n.requires.length) n.requires = ["chK"];
+    out.validatorRejectsOrphanedTree = RL.validateConfig(ftOrphan)
+      .some(e => e.includes("unreachable") || e.includes("no entry nodes"));
+    // retired shop upgrades stay in config purely as migration data — the
+    // refund math reads base costs and deltas from here
+    out.retiredUpgradesStillValidated = Array.isArray(CFG.economy.upgrades) &&
+      CFG.economy.upgrades.every(u => u.id && typeof u.base === "number" && u.delta);
 
     // key fabrication cost formula
     out.keyFabCostUsesConfig = RL.keyFabCost(5) ===

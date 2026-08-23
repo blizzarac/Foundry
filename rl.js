@@ -113,6 +113,50 @@ function validateConfig(cfg) {
     }
   }
 
+  // frame lattice: ids unique, every edge points at a real node, every
+  // node reachable from a branch entry, effects use the stat vocabulary,
+  // mech keys name real code branches — a typo here would silently orphan
+  // half a branch, so the whole graph is walked at boot
+  const TREE_STAT_KEYS = ["dmg", "maxHpBonus", "maxStBonus", "bsBonus", "flaskHealBonus",
+    "salvageMult", "siphonOnKill", "rollCostDelta", "parryCostDelta", "fovBonus"];
+  const MECH_KEYS = ["parryRefund", "parryRange", "bsKillRefund", "staggerBonus", "eliteOrbBonus", "lootDepthBonus"];
+  req(cfg.frameTree, "frameTree missing");
+  if (cfg.frameTree) {
+    const ft = cfg.frameTree;
+    for (const k of ["pointsPerPurge", "pointsPerGate"])
+      req(typeof ft[k] === "number", `frameTree.${k} missing or not a number`);
+    req(Array.isArray(ft.nodes) && ft.nodes.length > 0, "frameTree.nodes must be a non-empty array");
+    if (Array.isArray(ft.nodes)) {
+      const ids = new Set();
+      ft.nodes.forEach((n, i) => {
+        req(n.id && n.branch && n.name && ["small", "notable", "keystone"].includes(n.kind),
+          `frameTree.nodes[${i}] missing id/branch/name or bad kind`);
+        req(n.id && !ids.has(n.id), `frameTree.nodes[${i}] duplicate id "${n.id}"`);
+        if (n.id) ids.add(n.id);
+        req(Array.isArray(n.requires), `frameTree.nodes[${i}] requires must be an array`);
+        req(!!(n.effect || n.mech), `frameTree.nodes[${i}] ("${n.id}") needs an effect and/or a mech`);
+        if (n.effect) for (const k in n.effect)
+          req(TREE_STAT_KEYS.includes(k) && typeof n.effect[k] === "number",
+            `frameTree.nodes[${i}].effect.${k} is not a known stat/number`);
+        if (n.mech)
+          req(MECH_KEYS.includes(n.mech.key) && typeof n.mech.power === "number",
+            `frameTree.nodes[${i}].mech must name a known mechanic with a numeric power`);
+      });
+      for (const n of ft.nodes) for (const r of n.requires || [])
+        req(ids.has(r), `frameTree node "${n.id}" requires unknown node "${r}"`);
+      // reachability: flood from the entry nodes (empty requires)
+      const reach = new Set(ft.nodes.filter(n => (n.requires || []).length === 0).map(n => n.id));
+      req(reach.size > 0, "frameTree has no entry nodes (empty requires)");
+      let grew = true;
+      while (grew) {
+        grew = false;
+        for (const n of ft.nodes)
+          if (!reach.has(n.id) && (n.requires || []).some(r => reach.has(r))) { reach.add(n.id); grew = true; }
+      }
+      for (const n of ft.nodes) req(reach.has(n.id), `frameTree node "${n.id}" is unreachable from any entry node`);
+    }
+  }
+
   const BASE_TYPE_KEYS = ["blade", "shiv", "cleaver", "lance", "plating", "bulkhead",
     "optics", "array", "servo", "regulator", "capacitor", "recycler", "reclaimer", "dampener"];
   req(cfg.items, "items missing");
@@ -541,6 +585,10 @@ function rollBaseType(rng) {
   return keys[0];
 }
 function rollItemLoot(rng, depth, elite) {
+  // Deep-Cycle Scanners lattice node: drops roll their mods deeper than
+  // the sector they fell in — applied here so every loot source (elites,
+  // chests, caches) benefits identically
+  if (run && run.player && run.player.treeMech) depth += run.player.treeMech.lootDepthBonus || 0;
   const rarity = rollRarity(rng, depth, elite);
   if (rarity === "unique") return genUnique(rng, depth);
   return genItem(rng, rollBaseType(rng), rarity, depth);
@@ -743,16 +791,76 @@ function keyDisplayName(k) {
   return "T" + k.tier + " Sector Key";
 }
 
-// Capped and steep on purpose: the shop is meant to carry the prologue,
-// not the endgame — flat, permanent power stacked against enemies that
-// scale by tier would break the curve at either end. Past the cap, power
-// comes from gear, where an ARPG's chase belongs. Costs/caps/deltas come
-// from config.js (economy.upgrades); apply is a generic additive combinator
-// since every upgrade is just "add flat deltas to named player fields."
-const UPGRADES = CFG.economy.upgrades.map(u => ({
-  ...u,
-  apply: p => { for (const k in u.delta) p[k] = (p[k] || 0) + u.delta[k]; },
-}));
+/* The frame lattice: the permanent upgrade tree that replaced the shop's
+   flat frame upgrades (which capped out after the prologue and went dead).
+   Points come from Foundry milestones — first-time sector purges and
+   SENTINEL gates — never from cores, so the tree paces itself with the
+   tier climb the way PoE2's atlas passives do. Node data (three branches
+   of smalls, notables, keystones) lives in config.js (frameTree); the
+   notables' "mech" keys gate the real combat-code branches implemented
+   where each mechanic lives (parry, kill, loot). The lattice is part of
+   the endgame frame: it never applies to a prologue run — the rig you
+   descend with predates it. */
+const TREE_NODES = CFG.frameTree.nodes;
+const TREE_NODE_BY_ID = Object.fromEntries(TREE_NODES.map(n => [n.id, n]));
+// profile.tree: { pts: unspent points, nodes: [allocated ids] }
+function treeState() {
+  if (!profile) return null;
+  if (!profile.tree) profile.tree = { pts: 0, nodes: [] };
+  return profile.tree;
+}
+function treeAllocated(id) {
+  const t = treeState();
+  return !!t && t.nodes.includes(id);
+}
+function canAllocateNode(id) {
+  const t = treeState();
+  const n = TREE_NODE_BY_ID[id];
+  if (!t || !n) return { ok: false, reason: "No such node." };
+  if (t.nodes.includes(id)) return { ok: false, reason: "Already installed." };
+  if (t.pts <= 0) return { ok: false, reason: "No lattice points — purge sectors to earn more." };
+  if (n.requires.length && !n.requires.some(r => t.nodes.includes(r)))
+    return { ok: false, reason: "Connected node required first." };
+  return { ok: true };
+}
+function allocateNode(id) {
+  const check = canAllocateNode(id);
+  if (!check.ok) return false;
+  const t = treeState();
+  t.pts -= 1;
+  t.nodes.push(id);
+  if (run) recalc();
+  saveProfile();
+  return true;
+}
+// refunds are free but only from the tip inward: a node someone else
+// hangs off can't be pulled out from under them
+function canRefundNode(id) {
+  const t = treeState();
+  if (!t || !t.nodes.includes(id)) return { ok: false, reason: "Not installed." };
+  if (TREE_NODES.some(n => t.nodes.includes(n.id) && n.requires.includes(id)))
+    return { ok: false, reason: "Other installed nodes depend on this one." };
+  return { ok: true };
+}
+function refundNode(id) {
+  if (!canRefundNode(id).ok) return false;
+  const t = treeState();
+  t.nodes.splice(t.nodes.indexOf(id), 1);
+  t.pts += 1;
+  if (run) recalc();
+  saveProfile();
+  return true;
+}
+function grantTreePoints(n) {
+  const t = treeState();
+  if (!t || !n) return;
+  t.pts += n;
+  log(`Frame lattice: +${n} point${n === 1 ? "" : "s"} (${t.pts} unspent).`, "good");
+}
+// the lattice belongs to the persistent endgame frame, not the prologue rig
+function treeApplies() {
+  return !!(profile && profile.tree && run && run.mode !== "campaign");
+}
 // consumable restocks: repeatable, so the bay stays worth a visit forever
 const SHOP_RESTOCKS = CFG.economy.restocks;
 // currency orbs at a premium over drop rates: cores flow into crafting
@@ -807,6 +915,35 @@ function migrateProfile(pr) {
     }
     pr.v = 4;
   }
+  // v4 -> v5: shop frame upgrades retired in favor of the frame lattice.
+  // Refund every core spent on ranks (the retired cost curve is still in
+  // config for exactly this), strip the stats those ranks granted, and
+  // grant lattice points for every sector already purged — the same
+  // points a fresh climb would have earned (gates are the cleared nodes
+  // that still carry their gate band).
+  if (pr.v < 5) {
+    let pts = 0;
+    for (const n of Object.values(pr.atlas.nodes || {}))
+      if (n.state === "cleared")
+        pts += n.band ? CFG.frameTree.pointsPerGate : CFG.frameTree.pointsPerPurge;
+    pr.tree = { pts, nodes: [] };
+    const c = pr.character;
+    const ranks = (c && c.upgrades) || {};
+    if (c) {
+      let refund = 0;
+      for (const u of CFG.economy.upgrades) {
+        const bought = ranks[u.id] || 0;
+        for (let i = 0; i < bought; i++) refund += Math.round(u.base * Math.pow(2, i));
+        for (const k in u.delta) if (typeof c[k] === "number") c[k] -= u.delta[k] * bought;
+      }
+      c.baseMaxHp = Math.max(1, c.baseMaxHp);
+      c.baseMaxSt = Math.max(1, c.baseMaxSt);
+      c.maxFlask = Math.max(1, c.maxFlask);
+      c.souls += refund;
+      delete c.upgrades;
+    }
+    pr.v = 5;
+  }
   return pr;
 }
 let profile = loadProfile();
@@ -826,7 +963,7 @@ function saveRun() {
   if (menuEl && !menuEl.classList.contains("hidden")) return;
   try {
     localStorage.setItem(RUN_KEY, JSON.stringify({
-      v: 1, bought,
+      v: 1,
       run: { ...run, tiles: [...run.tiles.values()] },
     }));
   } catch (e) { /* private mode */ }
@@ -840,7 +977,6 @@ function loadRunCheckpoint() {
 function resumeRun() {
   const cp = loadRunCheckpoint();
   if (!cp) return false;
-  bought = cp.bought || {};
   run = cp.run;
   run.tiles = new Map(run.tiles.map(t => [key(t.q, t.r), t]));
   ui.screen = "game";
@@ -1169,7 +1305,7 @@ function describeEffect(effect) {
   return parts.length ? parts.join(", ") : "no active effect";
 }
 
-/* derive combat stats from equipped gear + protocol upgrades */
+/* derive combat stats from equipped gear + the frame lattice */
 function recalc() {
   const p = run.player;
   const weaponType = getActiveWeaponType();
@@ -1181,6 +1317,19 @@ function recalc() {
     const eff = itemEffect(item);
     for (const k of STAT_KEYS) totals[k] += eff[k];
   }
+  // frame lattice: allocated stat nodes sum into the same totals as gear;
+  // mech nodes set the flags the combat code branches on. Zeroed flags in
+  // the prologue — the lattice belongs to the endgame frame only.
+  const mech = { parryRefund: 0, parryRange: 0, bsKillRefund: 0, staggerBonus: 0, eliteOrbBonus: 0, lootDepthBonus: 0 };
+  if (treeApplies()) {
+    for (const id of profile.tree.nodes) {
+      const n = TREE_NODE_BY_ID[id];
+      if (!n) continue;   // config may have dropped a node an old save allocated
+      if (n.effect) for (const k in n.effect) totals[k] += n.effect[k];
+      if (n.mech) mech[n.mech.key] += n.mech.power;
+    }
+  }
+  p.treeMech = mech;
   p.dmg = weaponType.dmg + p.bonusDmg + totals.dmg;
   p.atkCost = weaponType.atkCost;
   p.bsBonus = weaponType.bsBonus + totals.bsBonus;
@@ -1593,6 +1742,9 @@ function strikeOne(e, primary) {
     return;
   }
   let dmg = p.dmg + (rear && primary ? p.bsBonus : 0);
+  // Executioner Logic lattice node: bonus vs overloaded machines, folded
+  // in before the riposte double like any other part of the hit
+  if (e.stagger > 0 && p.treeMech && p.treeMech.staggerBonus) dmg += p.treeMech.staggerBonus;
   if (e.stagger > 0) dmg *= 2;
   hurtEnemy(e, dmg, rear && primary ? "backstab" : e.stagger > 0 ? "riposte" : null);
 }
@@ -1887,6 +2039,12 @@ function hurtEnemy(e, dmg, label) {
       run.player.hp = Math.min(run.player.maxHp, run.player.hp + 1);
       addFloat(run.player.q, run.player.r, "+1", "#5fe0aa");
     }
+    // Momentum Reclaimer lattice node: a rear-strike kill vents power back
+    if (label === "backstab" && run.player.treeMech && run.player.treeMech.bsKillRefund) {
+      const pk = run.player;
+      pk.st = Math.min(pk.maxSt, pk.st + pk.treeMech.bsKillRefund);
+      addFloat(pk.q, pk.r, "+" + pk.treeMech.bsKillRefund + " power", "#7fe6f4");
+    }
     // elites drop gear where they fall, plus orbs (juiced keys add more);
     // a Corrupted Zone kill rolls its loot from deeper in the tier bands
     if (e.elite) {
@@ -1894,7 +2052,9 @@ function hurtEnemy(e, dmg, label) {
       const depth = run.floor + (inCorruptZone(e.q, e.r) ? 4 : 0);
       run.groundLoot.push({ q: e.q, r: e.r, item: rollItemLoot(lrng, depth, true) });
       const bonus = run.mode === "sector" && lrng() < (run.floorConf.lootBonus || 0) ? 1 : 0;
-      grantOrbs(lrng, 2 + bonus, run.floor);
+      // Salvage Rites lattice node: every Prime pays out an extra orb
+      const treeOrbs = (run.player.treeMech && run.player.treeMech.eliteOrbBonus) || 0;
+      grantOrbs(lrng, 2 + bonus + treeOrbs, run.floor);
     }
     // Salvage Convoy hauler: cargo drop, a real shot at a Sector Key
     if (e.convoy) {
@@ -1938,8 +2098,11 @@ function hurtEnemy(e, dmg, label) {
 
 function hurtPlayer(e, dmg) {
   const p = run.player;
-  // parry: negates a strike from an ADJACENT attacker, staggers it
-  if (p.parry && hexDist(p.q, p.r, e.q, e.r) === 1) {
+  // parry: negates a strike from an ADJACENT attacker, staggers it —
+  // unless the Aegis Long-Field lattice node extends the field to any range
+  const parryReach = hexDist(p.q, p.r, e.q, e.r) === 1 ||
+    !!(p.treeMech && p.treeMech.parryRange);
+  if (p.parry && parryReach) {
     p.parry = false;
     p.parryHit = true;
     e.stagger = 2;
@@ -1948,6 +2111,11 @@ function hurtPlayer(e, dmg) {
     e.windupNext = null;
     log("DEFLECTED! " + ENEMY[e.type].name + " overloads.", "good");
     addFloat(e.q, e.r, "overloaded", "#f0c060");
+    // Reactive Plating lattice node: the caught strike vents power back
+    if (p.treeMech && p.treeMech.parryRefund) {
+      p.st = Math.min(p.maxSt, p.st + p.treeMech.parryRefund);
+      addFloat(p.q, p.r, "+" + p.treeMech.parryRefund + " power", "#7fe6f4");
+    }
     burst(hexX(p.q, p.r), hexY(p.q, p.r), "#7fe6f4", 14, 100);
     sfx("parry");
     return;
@@ -2415,7 +2583,7 @@ function winRun() {
   if (run.mode === "campaign") {
     const first = !profile || !profile.atlas.unlocked;
     if (!profile) {
-      profile = { v: 3, character: snapshotCharacter(p),
+      profile = { v: 5, character: snapshotCharacter(p), tree: { pts: 0, nodes: [] },
         atlas: { seed: (Math.random() * 1e9) | 0, unlocked: false, nodes: {}, keys: [], tierCap: CFG.levelGen.startingTierCap } };
     } else {
       profile.character = snapshotCharacter(p);
@@ -2438,7 +2606,6 @@ function snapshotCharacter(p) {
     baseMaxHp: p.baseMaxHp, baseMaxSt: p.baseMaxSt, bonusDmg: p.bonusDmg,
     maxFlask: p.maxFlask, souls: p.souls,
     items: p.items, equip: p.equip, currency: p.currency, consumables: p.consumables,
-    upgrades: bought,
   };
 }
 function characterToPlayer(c) {
@@ -2458,7 +2625,6 @@ function syncProfileFromPlayer() {
   c.baseMaxHp = p.baseMaxHp; c.baseMaxSt = p.baseMaxSt; c.bonusDmg = p.bonusDmg;
   c.maxFlask = p.maxFlask; c.souls = p.souls;
   c.items = p.items; c.equip = p.equip; c.currency = p.currency; c.consumables = p.consumables;
-  c.upgrades = bought;
 }
 /* ============================ FOUNDRY ANOMALIES =========================
    Endgame node events. Rolled once, permanently, the moment a frontier
@@ -2770,7 +2936,6 @@ function revealArea(q0, r0) {
 }
 function enterOverworld() {
   if (!profile || !profile.atlas.unlocked) return false;
-  bought = profile.character.upgrades || {};
   run = {
     mode: "overworld", floorConf: null, sectorNode: null,
     eliteTotal: 0, eliteKilled: 0,
@@ -2901,6 +3066,7 @@ function sectorComplete() {
       !Object.values(profile.atlas.nodes).some(n => n.state === "gate")) {
     spawnGateNode(run.sectorNode);
   }
+  grantTreePoints(CFG.frameTree.pointsPerPurge);
   log("SECTOR PURGED — extraction enabled.", "sys");
   addFloat(run.player.q, run.player.r, "SECTOR PURGED", "#5fe0aa");
   sfx("stairs");
@@ -2943,6 +3109,7 @@ function gateCleared() {
   for (let i = 0; i < gc.keysGranted; i++)
     profile.atlas.keys.push(makeKey(Math.min(oldCap + 1, profile.atlas.tierCap)));
   grantOrbs(craftRng, gc.orbsGranted + (craftRng() < (run.floorConf.lootBonus || 0) ? 1 : 0), run.floor);
+  grantTreePoints(CFG.frameTree.pointsPerGate);
   log(`THE GATE FALLS. Sector Keys up to T${profile.atlas.tierCap} now drop. Extraction enabled.`, "sys");
   addFloat(run.player.q, run.player.r, "GATE FALLS", "#5fe0aa");
   sfx("win");
@@ -4054,7 +4221,6 @@ function renderLog() {
 }
 
 /* ------- repair bay fabrication ------- */
-let bought = {};
 // null on a plain open; a string re-render (after a purchase) flashes it
 function showShop(feedback) {
   const p = run.player;
@@ -4095,19 +4261,20 @@ function showShop(feedback) {
   // is hidden while shopping — show it again in here
   document.getElementById("shop-souls").textContent = p.souls;
 
-  head("Frame upgrades");
-  for (const u of UPGRADES) {
-    const n = bought[u.id] || 0;
-    const maxed = n >= u.cap;   // saves from before the cap keep any extra ranks already bought
-    const cost = Math.round(u.base * Math.pow(2, n));
-    offer(maxed || p.souls < cost,
-      `<b>${u.name}</b><span>${u.desc}</span><em>${maxed ? "MAX" : cost + " cores"}</em>`, () => {
-        if (maxed || p.souls < cost) return;
-        bought[u.id] = n + 1;
-        u.apply(p);
-        recalc();
-        log(u.name + " installed.", "good");
-        paid(cost, u.name + " installed — " + cost + " cores");
+  // the flat frame upgrades this section used to sell were retired for the
+  // frame lattice — a milestone-paced tree that can't be bought with cores
+  head("Frame lattice");
+  if (run.mode === "campaign") {
+    offer(true, `<b>Frame lattice</b><span>Dormant. The lattice wakes with the Foundry — ` +
+      `defeat the OVERSEER to bring it online.</span><em>—</em>`, () => {});
+  } else {
+    const t = treeState();
+    const spent = t ? t.nodes.length : 0;
+    offer(false, `<b>Frame lattice</b><span>Permanent frame modifications. ` +
+      `Purging sectors earns lattice points.</span>` +
+      `<em>${t ? t.pts : 0} pts · ${spent}/${TREE_NODES.length}</em>`, () => {
+        document.getElementById("shop").classList.add("hidden");
+        showTree();
       });
   }
 
@@ -4171,6 +4338,72 @@ function showShop(feedback) {
 }
 document.getElementById("shop-close").addEventListener("click", () => {
   document.getElementById("shop").classList.add("hidden");
+  refreshHud();
+});
+
+/* ------- frame lattice UI ------- */
+const TREE_BRANCH_LABEL = { chassis: "Chassis", servos: "Servos", systems: "Systems" };
+const TREE_KIND_LABEL = { small: "Node", notable: "Notable", keystone: "Keystone" };
+let treeSelected = null;
+function treeNodeText(n) {
+  const parts = [];
+  if (n.desc) parts.push(n.desc);
+  if (n.effect) parts.push(describeEffect(n.effect));
+  return parts.join(" ");
+}
+function showTree() {
+  const t = treeState();
+  if (!t) return;
+  document.getElementById("tree-sub").textContent =
+    `${t.pts} point${t.pts === 1 ? "" : "s"} unspent · ${t.nodes.length}/${TREE_NODES.length} installed — ` +
+    `purging sectors earns points; removal is free from the tip of a branch inward.`;
+  const cols = document.getElementById("tree-cols");
+  cols.innerHTML = "";
+  for (const branch of Object.keys(TREE_BRANCH_LABEL)) {
+    const col = document.createElement("div");
+    col.className = "tree-col";
+    const h = document.createElement("div");
+    h.className = "tree-branch-head";
+    h.textContent = TREE_BRANCH_LABEL[branch];
+    col.appendChild(h);
+    for (const n of TREE_NODES.filter(x => x.branch === branch)) {
+      const b = document.createElement("button");
+      const state = t.nodes.includes(n.id) ? "allocated"
+        : canAllocateNode(n.id).ok ? "avail" : "locked";
+      b.className = `tree-node ${n.kind} ${state}` + (treeSelected === n.id ? " selected" : "");
+      b.innerHTML = `<b>${n.name}</b><span>${treeNodeText(n)}</span>`;
+      b.addEventListener("click", () => { treeSelected = n.id; showTree(); });
+      col.appendChild(b);
+    }
+    cols.appendChild(col);
+  }
+  const det = document.getElementById("tree-detail");
+  det.innerHTML = "";
+  const sel = treeSelected && TREE_NODE_BY_ID[treeSelected];
+  det.classList.toggle("hidden", !sel);
+  if (sel) {
+    const info = document.createElement("div");
+    info.innerHTML = `<b>${sel.name}</b> · ${TREE_KIND_LABEL[sel.kind]}<span>${treeNodeText(sel)}</span>`;
+    det.appendChild(info);
+    const act = document.createElement("button");
+    if (t.nodes.includes(sel.id)) {
+      const refund = canRefundNode(sel.id);
+      act.textContent = refund.ok ? "Remove (free)" : refund.reason;
+      act.disabled = !refund.ok;
+      act.addEventListener("click", () => { if (refundNode(sel.id)) { sfx("core"); showTree(); } });
+    } else {
+      const can = canAllocateNode(sel.id);
+      act.textContent = can.ok ? "Install — 1 point" : can.reason;
+      act.disabled = !can.ok;
+      act.addEventListener("click", () => { if (allocateNode(sel.id)) { sfx("core"); showTree(); } });
+    }
+    det.appendChild(act);
+  }
+  document.getElementById("tree").classList.remove("hidden");
+}
+document.getElementById("tree-close").addEventListener("click", () => {
+  document.getElementById("tree").classList.add("hidden");
+  treeSelected = null;
   refreshHud();
 });
 
@@ -4876,7 +5109,6 @@ function showMenu() {
   document.getElementById("menu").classList.remove("hidden");
 }
 function startRun(seed) {
-  bought = {};
   ui.throwDart = false;
   ui.rollMode = false;
   ui.screen = "game";
@@ -5007,8 +5239,8 @@ window.RL = {
   sectorComplete, revealArea, worldCell, keyFabCost, BIOMES, TIER_CAP,
   makeKey, addKeyMod, keyQuant, keyDisplayName, canApplyOrbKey, applyOrbToKey, KEY_MODS,
   donutHexes, laneHexes, gateCleared, spawnGateNode, atlasCap, tierColor,
-  hurtEnemy, hurtPlayer, winRun, dieRun,
-  saveProfile, loadProfile, syncProfileFromPlayer,
+  hurtEnemy, hurtPlayer, strikeOne, winRun, dieRun,
+  saveProfile, loadProfile, migrateProfile, syncProfileFromPlayer,
   saveRun, resumeRun, clearRunCheckpoint, loadRunCheckpoint,
   NODE_EVENTS, EVENT_GLYPH, EVENT_NAME, EVENT_DESC, EVENT_WEIGHTS, EVENT_DENSITY,
   WAVE_INTERVAL, WAVE_COUNT, VAULT_LOCKDOWN_CYCLES,
@@ -5017,7 +5249,9 @@ window.RL = {
   placeSurge, placeVault, placeConvoy, placeCorruptZone,
   ui,
   buildDebugBundle, exportDebugState, importDebugState, downloadJSON, GAME_VERSION,
-  UPGRADES, AFFIX_TIER_BANDS, SHOP_RESTOCKS, SHOP_ORBS, GAMBLE_COST, showShop,
+  AFFIX_TIER_BANDS, SHOP_RESTOCKS, SHOP_ORBS, GAMBLE_COST, showShop,
+  TREE_NODES, TREE_NODE_BY_ID, treeState, treeApplies, canAllocateNode, allocateNode,
+  canRefundNode, refundNode, grantTreePoints, showTree,
   CFG, CFG_ERRORS, validateConfig,
   paletteFor, mixColor, BIOME_PALETTES, CAMPAIGN_THEMES,
   resize, resetZoom, syncBarHeight,

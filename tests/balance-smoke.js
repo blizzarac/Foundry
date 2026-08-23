@@ -52,8 +52,10 @@ function check(name, cond, detail) {
     RL.revealArea(0, 0);
     RL.profile.atlas.tierCap = RL.TIER_CAP;   // sample every tier, not just the starting band
 
-    function maxShop(p) {
-      for (const u of RL.UPGRADES) for (let i = 0; i < u.cap; i++) u.apply(p);
+    // the flat shop upgrades are gone — permanent frame power is the
+    // lattice now, so the "everything maxed" baseline allocates every node
+    function maxTree() {
+      RL.profile.tree = { pts: 0, nodes: RL.TREE_NODES.map(n => n.id) };
       RL.recalc();
     }
     function equipTierGear(p, tier) {
@@ -87,31 +89,45 @@ function check(name, cond, detail) {
       return sample;
     }
 
-    // --- Character A: shop-maxed, starter weapon only (no gear chase)
-    maxShop(RL.run.player);
-    const shopOnly = tiers.map(t => sampleTier(t));
-    out.table.push({ who: "shop-only", rows: shopOnly });
+    // --- Character A: bare frame, starter weapon only (no gear chase, no
+    // lattice) — the do-nothing baseline enemies must out-scale
+    const bare = tiers.map(t => sampleTier(t));
+    out.table.push({ who: "bare-frame", rows: bare });
 
-    // --- Character B: shop-maxed + a tier-appropriate rare weapon/plate
-    // re-rolled fresh at each tier tested, simulating real available loot
+    // --- Character B: a tier-appropriate rare weapon/plate re-rolled
+    // fresh at each tier tested, simulating real available loot
     const geared = tiers.map(t => {
       equipTierGear(RL.run.player, t);
       return sampleTier(t);
     });
     out.table.push({ who: "geared", rows: geared });
 
-    // shop alone must NOT keep pace: TTK should grow meaningfully from
+    // --- Character C: same gear plus the ENTIRE frame lattice (all 3
+    // keystones at once — a stronger frame than any real build can be)
+    maxTree();
+    const latticed = tiers.map(t => {
+      equipTierGear(RL.run.player, t);
+      return sampleTier(t);
+    });
+    out.table.push({ who: "geared+full-lattice", rows: latticed });
+
+    // a static frame must NOT keep pace: TTK should grow meaningfully from
     // T1 to T15 against a static weapon (enemies out-scale flat power)
-    out.checks.shopOnlyFallsBehind = shopOnly[shopOnly.length - 1].ttk > shopOnly[0].ttk;
+    out.checks.bareFrameFallsBehind = bare[bare.length - 1].ttk > bare[0].ttk;
 
     // tier-appropriate gear should stay in a playable band at EVERY
     // tested tier: never a one-shot machine, never a slog
     out.checks.gearedTTKBand = geared.every(s => s.ttk >= 1 && s.ttk <= 6);
     out.checks.gearedHTDBand = geared.every(s => s.htd >= 3 && s.htd <= 20);
 
+    // even the impossible everything-lattice build stays inside a sane
+    // band: the full tree is a climb's worth of milestones, not a cheat
+    out.checks.fullLatticeTTKBand = latticed.every(s => s.ttk >= 1 && s.ttk <= 6);
+    out.checks.fullLatticeHTDBand = latticed.every(s => s.htd >= 3 && s.htd <= 30);
+
     // the enemy curve itself must actually steepen by the documented
     // multipliers: hp ~5.9x from T1->T15 (1 + 0.35*14), dmg step +1/2 tiers
-    const t1 = shopOnly[0], t15 = shopOnly[shopOnly.length - 1];
+    const t1 = bare[0], t15 = bare[bare.length - 1];
     out.checks.hpCurveSteep = Math.abs(t15.enemyHp / t1.enemyHp - 5.9) < 0.6;
     out.checks.dmgCurveSteep = t15.enemyDmg - t1.enemyDmg >= 5;
 
@@ -121,18 +137,14 @@ function check(name, cond, detail) {
     out.checks.tier5Unlocks = bands.some(b => b.w[4] > 0 && b.minDepth <= 13);
     out.checks.tier4LockedEarly = bands.filter(b => b.minDepth < 9).every(b => b.w[3] === 0);
 
-    // shop caps: buying past cap is refused, and the button-level cap
-    // matches what a maxed character actually received
-    const p2 = RL.run.player;
-    const before = p2.souls;
-    p2.souls = 999999;
-    let boughtPastCap = false;
-    for (const u of RL.UPGRADES) {
-      const before2 = JSON.stringify(u.apply.toString());
-      // bought[] tracking lives in the shop UI layer; verify via cap value directly
-      if (u.cap <= 0) boughtPastCap = true;
-    }
-    out.checks.allUpgradesHaveCaps = RL.UPGRADES.every(u => typeof u.cap === "number" && u.cap > 0 && u.cap <= 5);
+    // the lattice's total flat-stat budget stays bounded: summing every
+    // node's effects must land well under what tier gear provides, so
+    // milestones supplement the gear chase instead of replacing it
+    const treeTotals = {};
+    for (const n of RL.TREE_NODES) if (n.effect)
+      for (const k in n.effect) treeTotals[k] = (treeTotals[k] || 0) + n.effect[k];
+    out.checks.latticeDmgBounded = (treeTotals.dmg || 0) <= 8;
+    out.checks.latticeHpBounded = (treeTotals.maxHpBonus || 0) <= 40;
 
     return out;
   }, TIERS);

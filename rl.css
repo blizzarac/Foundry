@@ -281,6 +281,52 @@ html, body {
 .shop-item span { flex: 1; color: #7f93a2; }
 .shop-item em { font-style: normal; color: #6fe0b0; white-space: nowrap; }
 
+/* ---------------- frame lattice ---------------- */
+#tree-cols { display: flex; gap: 8px; margin-bottom: 12px; align-items: flex-start; }
+.tree-col { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.tree-branch-head {
+  font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: #5d7080;
+  text-align: center; margin-bottom: 6px;
+}
+.tree-node {
+  display: block; width: 100%; text-align: left; position: relative;
+  background: #16202a !important; color: #cfdae2 !important;
+  border: 1px solid #2f4152 !important; border-radius: 4px !important;
+  padding: 7px 8px !important; font-size: 11px !important;
+  margin: 0 !important; cursor: pointer;
+}
+/* connector stub between nodes in a chain */
+.tree-node + .tree-node { margin-top: 12px !important; }
+.tree-node + .tree-node::before {
+  content: ""; position: absolute; left: 50%; top: -13px;
+  width: 2px; height: 12px; background: #2f4152;
+}
+.tree-node b { display: block; color: #9fb2c2; font-size: 11px; }
+.tree-node span { display: block; color: #66798a; font-size: 10px; line-height: 1.35; }
+.tree-node.notable { border-color: #7a5f2f !important; }
+.tree-node.notable b { color: #e8c060; }
+.tree-node.keystone { border-color: #7a3a52 !important; }
+.tree-node.keystone b { color: #f08fb0; }
+.tree-node.allocated { background: #1c3040 !important; box-shadow: inset 0 0 0 1px #4fc0e0; }
+.tree-node.allocated b { color: #8fe0f0; }
+.tree-node.allocated + .tree-node.allocated::before { background: #4fc0e0; }
+.tree-node.locked { opacity: 0.45; }
+.tree-node.selected { outline: 2px solid #8fe0f0; outline-offset: 1px; }
+#tree-detail {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
+  background: #16202a; border: 1px solid #2f4152; border-radius: 4px; padding: 9px 12px;
+}
+#tree-detail b { color: #8fe0f0; }
+#tree-detail div { flex: 1; font-size: 12px; color: #9fb2c2; text-align: left; }
+#tree-detail span { display: block; color: #7f93a2; font-size: 11px; margin-top: 2px; }
+#tree-detail button {
+  background: #1d3a2f; color: #9ff0c8; border: 1px solid #3fc88a;
+  border-radius: 4px; padding: 8px 12px; font-size: 12px; white-space: nowrap;
+}
+#tree-detail button:disabled {
+  opacity: 0.5; background: #1a242e; color: #7f93a2; border-color: #2f4152;
+}
+
 /* ---------------- the Foundry (overworld) ---------------- */
 body.overworld #actions button { display: none; }
 body.overworld #actions #btn-gear { display: inline-block; }
