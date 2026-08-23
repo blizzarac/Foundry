@@ -39,6 +39,7 @@ function mulberry32(seed) {
 /* ------------------------------------------------------------- hex math */
 const HEX = 30;
 const DIRS = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
+const DASH_RANGE = 2;
 const key = (q, r) => q + "," + r;
 const unkey = k => k.split(",").map(Number);
 const hexX = (q, r) => HEX * (SQ3 * q + SQ3 / 2 * r);
@@ -947,6 +948,7 @@ function recalc() {
   p.cleave = !!weaponType.cleave;
   p.reach = !!weaponType.reach;
   p.rollCost = clamp(weaponType.rollCost + totals.rollCostDelta, 1, 4);
+  p.dashRange = DASH_RANGE;   // furthest a dash can reach; any shorter hop is legal
   p.parryCost = clamp(2 + totals.parryCostDelta, 1, 3);
   p.maxHp = Math.max(1, p.baseMaxHp + totals.maxHpBonus);
   p.hp = Math.min(p.hp, p.maxHp);
@@ -1383,19 +1385,60 @@ function actAttack(e) {
   endTurn();
   return true;
 }
+/* Thruster dash: any hex up to dashRange away, at any distance — not just
+   a fixed hop down one of the six axes. The lane still has to be straight:
+   only steps that keep closing on the target count, so a dash crosses
+   bodies and threatened ground but never rounds a corner or punches rock.
+   Where a target has two equally-short lanes, either one will do. */
+function dashPath(q, r) {
+  const p = run.player;
+  const total = hexDist(p.q, p.r, q, r);
+  let frontier = [[p.q, p.r, []]];
+  for (let step = 1; step <= total; step++) {
+    const next = [];
+    const seen = new Set();
+    for (const [cq, cr, path] of frontier) {
+      for (const [ddq, ddr] of DIRS) {
+        const nq = cq + ddq, nr = cr + ddr;
+        if (hexDist(nq, nr, q, r) !== total - step) continue;
+        const k = key(nq, nr);
+        if (seen.has(k)) continue;
+        const t = run.tiles.get(k);
+        if (!t || t.rock) continue;
+        seen.add(k);
+        next.push([nq, nr, path.concat([[nq, nr]])]);
+      }
+    }
+    frontier = next;
+    if (!frontier.length) return null;
+  }
+  const hit = frontier.find(([fq, fr]) => fq === q && fr === r);
+  return hit ? hit[2] : null;
+}
+function canDashTo(q, r) {
+  const p = run.player;
+  const d = hexDist(p.q, p.r, q, r);
+  if (d < 1 || d > p.dashRange) return false;
+  if (!walkable(q, r) || occupied(q, r)) return false;
+  return !!dashPath(q, r);
+}
+function dashTargets() {
+  const p = run.player, R = p.dashRange, out = [];
+  for (let dq = -R; dq <= R; dq++) {
+    for (let dr = Math.max(-R, -dq - R); dr <= Math.min(R, -dq + R); dr++) {
+      if (dq === 0 && dr === 0) continue;
+      if (canDashTo(p.q + dq, p.r + dr)) out.push([p.q + dq, p.r + dr]);
+    }
+  }
+  return out;
+}
 function actRoll(dq, dr) {
-  // 2 hexes along one direction; pass through anything but rock; land free
   const p = run.player;
   if (!canAfford(p.rollCost)) return false;
-  const d = DIRS.findIndex(([q, r]) => q === dq && r === dr);
-  if (d < 0) return false;
-  const mq = p.q + dq, mr = p.r + dr;
-  const lq = p.q + dq * 2, lr = p.r + dr * 2;
-  const mt = run.tiles.get(key(mq, mr));
-  if (!mt || mt.rock) return false;           // can't roll into a wall
-  if (!walkable(lq, lr) || occupied(lq, lr)) return false;
+  const q = p.q + dq, r = p.r + dr;
+  if (!canDashTo(q, r)) return false;
   p.st -= p.rollCost;
-  p.q = lq; p.r = lr;
+  p.q = q; p.r = r;
   log("Thrusters fire.", "");
   sfx("dash");
   afterPlayerMove();
@@ -3105,15 +3148,15 @@ function render(now) {
 
   /* dash targets */
   if (ui.rollMode && run.player.st >= run.player.rollCost) {
-    for (const [dq, dr] of DIRS) {
-      const q = run.player.q + dq * 2, r = run.player.r + dr * 2;
-      const mq = run.player.q + dq, mr = run.player.r + dr;
-      const mt = run.tiles.get(key(mq, mr));
-      if (!mt || mt.rock || !walkable(q, r) || occupied(q, r)) continue;
+    for (const [q, r] of dashTargets()) {
+      // the far ring reads brighter, so the longest hop stays easy to pick
+      const far = hexDist(run.player.q, run.player.r, q, r) >= run.player.dashRange;
       hexPath(ctx, hexX(q, r), hexY(q, r), 0.7);
       ctx.strokeStyle = "#4fd6e8";
+      ctx.globalAlpha = far ? 1 : 0.45;
       ctx.lineWidth = 2.5;
       ctx.stroke();
+      ctx.globalAlpha = 1;
     }
   }
 
@@ -4292,15 +4335,8 @@ function tryPlayerAction(q, r) {
   if (run.over) return;
   const enemy = run.enemies.find(e => e.q === q && e.r === r && visible.has(key(e.q, e.r)));
   if (ui.rollMode) {
-    const dq = q - p.q, dr = r - p.r;
-    for (const [ddq, ddr] of DIRS) {
-      if (ddq * 2 === dq && ddr * 2 === dr) {
-        if (actRoll(ddq, ddr)) ui.rollMode = false;
-        refreshHud();
-        return;
-      }
-    }
-    ui.rollMode = false;
+    if (canDashTo(q, r) && actRoll(q - p.q, r - p.r)) ui.rollMode = false;
+    else ui.rollMode = false;   // a tap anywhere else just cancels the dash
     refreshHud();
     return;
   }
@@ -4630,6 +4666,7 @@ window.RL = {
   get run() { return run; },
   newRun, startRun, descend,
   actStep, actWait, actAttack, actRoll, actParry, actFlask, actRest,
+  dashPath, canDashTo, dashTargets, DASH_RANGE,
   spawnEnemy, endTurn, bfsDist, updateFov, hexDist,
   persist, savePersist, cam,
   ENEMY, BASE_TYPES, SLOTS, SLOT_LABEL, RARITY, STAT_KEYS,

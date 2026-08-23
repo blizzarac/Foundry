@@ -15,6 +15,7 @@
   `node tests/checkpoint-smoke.js` (mid-run save/resume across reloads),
   `node tests/events-smoke.js` (Foundry Anomalies node events),
   `node tests/debug-export-smoke.js` (debug state export/import round-trip),
+  `node tests/dash-smoke.js` (free-form thruster dash geometry),
   and `node tests/balance-smoke.js` (power-curve regression harness —
   prints a TTK/HTD table per tier, run it after any balance change).
   Set `CHROMIUM_PATH` if Playwright can't find a browser.
