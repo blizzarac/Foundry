@@ -833,6 +833,28 @@ function sellItem(id) {
   saveRun();
   return true;
 }
+/* key salvage: priced off what fabricating an equivalent key would cost,
+   so it never quite pays to fabricate-then-salvage — half the tier's fab
+   cost as a floor, plus a share of it per mod carried (each mod is real
+   crafting investment: an orb spent through transmute/aug/regal/exalt). */
+function keySalvageValue(k) {
+  const fab = keyFabCost(k.tier);
+  return Math.round(fab * 0.5) + Math.round(fab * 0.15) * k.affixes.length;
+}
+function sellKey(id) {
+  const ki = profile.atlas.keys.findIndex(k => k.id === id);
+  if (ki < 0) return false;
+  const k = profile.atlas.keys[ki];
+  const v = keySalvageValue(k);
+  profile.atlas.keys.splice(ki, 1);
+  run.player.souls += v;
+  log(keyDisplayName(k) + " salvaged for " + v + " cores.", "good");
+  sfx("core");
+  spendGearTurn();
+  if (run.mode !== "campaign") { syncProfileFromPlayer(); saveProfile(); }
+  saveRun();
+  return true;
+}
 function activeWeaponItem() { return equippedItem("weapon"); }
 function getActiveWeaponType() {
   const w = activeWeaponItem();
@@ -4140,6 +4162,22 @@ function refreshGearKeys() {
       (k.affixes.length ? ` · +${Math.round(keyQuant(k) * 100)}% loot` : "") + `</span>` + mods + `</div>`;
     const btns = document.createElement("div");
     btns.className = "item-btns";
+    const val = keySalvageValue(k);
+    const sell = document.createElement("button");
+    sell.className = "sell-btn";
+    sell.textContent = "Salvage +" + val;
+    sell.title = "Break this key down for " + val + " cores.";
+    // a rare key is real crafting investment — arm on the first tap
+    const arm = k.rarity === "rare";
+    sell.addEventListener("click", () => {
+      if (arm && !sell.classList.contains("armed")) {
+        sell.classList.add("armed");
+        sell.textContent = "Sure? +" + val;
+        return;
+      }
+      if (sellKey(k.id)) { refreshGear(); refreshHud(); }
+    });
+    btns.appendChild(sell);
     for (const kind of keyOrbChoices(k)) {
       const n = p.currency[kind] || 0;
       const b = document.createElement("button");
@@ -4712,7 +4750,8 @@ window.RL = {
   ENEMY, BASE_TYPES, SLOTS, SLOT_LABEL, RARITY, STAT_KEYS,
   PREFIXES, SUFFIXES, UNIQUES, CURRENCY,
   genItem, genUnique, genArmoryItem, genCorruptedItem, rollItemLoot, rollRarity,
-  equipItem, unequipItem, dropItem, sellItem, sellValue, itemById, equippedItem, isEquipped, itemEffect,
+  equipItem, unequipItem, dropItem, sellItem, sellValue, sellKey, keySalvageValue,
+  itemById, equippedItem, isEquipped, itemEffect,
   activeWeaponItem, getActiveWeaponType,
   canApplyOrb, applyOrb, grantOrbs, rollOrbKind,
   useConsumable, inCombat, recalc, canReach,

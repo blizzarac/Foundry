@@ -115,6 +115,25 @@ function check(name, cond) {
     out.wrongOrbKeyRefused = !RL.applyOrbToKey("transmute", kc.id);
     out.noDupKeyMods = new Set(kc.affixes.map(a => a.mod)).size === 4;
 
+    // key salvage: priced below fabrication (never profitable to
+    // fabricate-then-salvage a plain key) and scales with mods carried —
+    // kc stays in the pool (moddedKeysRestored needs it after reload), so
+    // spend a throwaway rare copy of it on the sell/remove/refuse checks
+    const t2Cost = RL.keyFabCost(2);
+    const plainT2 = RL.makeKey(2);
+    out.keySalvageBelowFabCost = RL.keySalvageValue(plainT2) < t2Cost;
+    out.keySalvageScalesWithMods = RL.keySalvageValue(kc) > RL.keySalvageValue(plainT2);
+    const throwaway = RL.makeKey(2, "rare");
+    throwaway.affixes = kc.affixes.map(a => ({ ...a }));
+    RL.profile.atlas.keys.push(throwaway);
+    const keysBeforeSalvage = RL.profile.atlas.keys.length;
+    const twVal = RL.keySalvageValue(throwaway);
+    const soulsBeforeKeySell = p.souls;
+    out.sellKeyPaysCores = RL.sellKey(throwaway.id) && p.souls === soulsBeforeKeySell + twVal;
+    out.sellKeyRemoves = RL.profile.atlas.keys.length === keysBeforeSalvage - 1 &&
+      !RL.profile.atlas.keys.some(k => k.id === throwaway.id);
+    out.sellKeyRefusesUnknown = !RL.sellKey(999999999);
+
     // key mods shape the sector: force a known rare key and check effects
     RL.fabricateKey(1);
     const km = RL.profile.atlas.keys.find(k => k.tier === 1 && k.rarity === "normal");
@@ -314,9 +333,38 @@ function check(name, cond) {
       shopBtn("Prototype weapon").textContent.includes("T8 depth");
     document.getElementById("shop").classList.add("hidden");
     try { localStorage.removeItem("ironhex-foundry"); } catch (e) {}
+    // the crafted T2 rare key from earlier (rarity/tier/name uniquely
+    // identify it) — grabbed here so the UI check below can find its card
+    window.__sellKeyRare = RL.profile.atlas.keys
+      .find(kk => kk.rarity === "rare" && kk.tier === 2 && kk.name);
     return out;
   });
   for (const [k, v] of Object.entries(r2)) check(k, !!v);
+
+  // UI: the Keys tab carries a Salvage button too, arming on a rare key
+  // exactly like the backpack does
+  await page.keyboard.press("b");
+  await page.waitForTimeout(150);
+  await page.click('#gear-tabs button[data-tab="keys"]');
+  await page.waitForTimeout(150);
+  check("keysTabSalvageShown", await page.evaluate(() =>
+    [...document.querySelectorAll("#gear-keys .sell-btn")].some(b => b.textContent.startsWith("Salvage +"))));
+  const rareKeySell = await page.evaluateHandle(() =>
+    [...document.querySelectorAll("#gear-keys .item-card")]
+      .find(c => c.textContent.includes(window.RL.keyDisplayName(window.__sellKeyRare)))
+      .querySelector(".sell-btn"));
+  await rareKeySell.click();
+  check("rareKeySalvageArms", await page.evaluate(() => {
+    const b = [...document.querySelectorAll("#gear-keys .item-card")]
+      .find(c => c.textContent.includes(window.RL.keyDisplayName(window.__sellKeyRare)))
+      .querySelector(".sell-btn");
+    return b.classList.contains("armed") && b.textContent.startsWith("Sure?") &&
+      window.RL.profile.atlas.keys.some(k => k.id === window.__sellKeyRare.id);
+  }));
+  await rareKeySell.click();
+  check("armedKeySalvageSells", await page.evaluate(() =>
+    !window.RL.profile.atlas.keys.some(k => k.id === window.__sellKeyRare.id)));
+  await page.keyboard.press("Escape");
 
   check("noPageErrors", errors.length === 0);
   if (errors.length) console.log("ERRORS:", errors.slice(0, 5));
