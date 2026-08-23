@@ -28,6 +28,11 @@ window.IRONHEX_CONFIG = {
       "ripper":   { "hp": 5,  "dmg": 4, "souls": 16 },
       "boss":     { "hp": 34, "dmg": 5, "souls": 0 },
       "sentinel": { "hp": 30, "dmg": 5, "souls": 150 },
+      // the deeper gate guardians and the apex boss — same tier scaling as
+      // everything else, so their bands do most of the heavy lifting
+      "warden":   { "hp": 34, "dmg": 5, "souls": 300 },
+      "crucible": { "hp": 38, "dmg": 6, "souls": 500 },
+      "prime":    { "hp": 46, "dmg": 6, "souls": 900 },
       "hauler":   { "hp": 3,  "dmg": 0, "souls": 6 }
     },
     "scaling": {
@@ -57,6 +62,17 @@ window.IRONHEX_CONFIG = {
     "tierCap": 15,
     "gateJumpAmount": 4,
     "gateClear": { "keysGranted": 2, "orbsGranted": 3 },
+    // which guardian each gate band wakes (band = the tier cap when the
+    // gate surfaced): the SENTINEL walls off the first climb, the WARDEN
+    // the second, the CRUCIBLE the last. Unlisted bands fall back to the
+    // SENTINEL. Boss *kits* (attack verbs, phases) are combat code in
+    // rl.js — this only assigns who guards where.
+    "gateBossByBand": { "4": "sentinel", "8": "warden", "12": "crucible" },
+    // the apex node: surfaces when the tier cap reaches tierCap, eats a
+    // top-tier key, holds the FORGE-PRIME. Repeatable — each kill pays
+    // lattice points, a guaranteed unique, and orbs, then a fresh apex
+    // surfaces elsewhere on the frontier.
+    "apex": { "arenaR": 10, "treePoints": 3, "orbsGranted": 4 },
     "sector": {
       "baseR": 8,
       "bigRAtTier": 3,

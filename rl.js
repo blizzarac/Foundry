@@ -37,7 +37,8 @@ function validateConfig(cfg) {
   req(!!cfg, "config.js did not set window.IRONHEX_CONFIG");
   if (!cfg) return errors;
 
-  const ENEMY_TYPES = ["scrapper", "railer", "bulwark", "mortar", "crusher", "ripper", "boss", "sentinel", "hauler"];
+  const ENEMY_TYPES = ["scrapper", "railer", "bulwark", "mortar", "crusher", "ripper",
+    "boss", "sentinel", "warden", "crucible", "prime", "hauler"];
   req(cfg.enemies && cfg.enemies.base, "enemies.base missing");
   if (cfg.enemies && cfg.enemies.base) {
     for (const t of ENEMY_TYPES) {
@@ -67,6 +68,17 @@ function validateConfig(cfg) {
       req(typeof lg[k] === "number", `levelGen.${k} missing or not a number`);
     req(lg.gateClear && typeof lg.gateClear.keysGranted === "number" && typeof lg.gateClear.orbsGranted === "number",
       "levelGen.gateClear missing keysGranted/orbsGranted");
+    // gate guardians: every mapped boss must be a type whose kit exists in
+    // combat code — an unknown name here would spawn nothing at the gate
+    const GATE_BOSSES = ["sentinel", "warden", "crucible"];
+    req(lg.gateBossByBand && Object.keys(lg.gateBossByBand).length > 0,
+      "levelGen.gateBossByBand missing or empty");
+    if (lg.gateBossByBand)
+      for (const band in lg.gateBossByBand)
+        req(GATE_BOSSES.includes(lg.gateBossByBand[band]),
+          `levelGen.gateBossByBand["${band}"] names unknown boss "${lg.gateBossByBand[band]}"`);
+    req(lg.apex && typeof lg.apex.arenaR === "number" && typeof lg.apex.treePoints === "number" &&
+      typeof lg.apex.orbsGranted === "number", "levelGen.apex missing arenaR/treePoints/orbsGranted");
     const sec = lg.sector;
     req(sec, "levelGen.sector missing");
     if (sec) {
@@ -346,10 +358,15 @@ const ENEMY_IDENTITY = {
   ripper:   { name: "Ripper",     windup: 1, color: "#8a4fa0" },
   boss:     { name: "the OVERSEER", windup: 1, color: "#d4c45c" },
   sentinel: { name: "the SENTINEL", windup: 2, color: "#e05a7a" },
+  warden:   { name: "the WARDEN",   windup: 2, color: "#5fa8e0", frontShield: true },
+  crucible: { name: "the CRUCIBLE", windup: 2, color: "#e08040" },
+  prime:    { name: "the FORGE-PRIME", windup: 2, color: "#c060e0" },
   hauler:   { name: "Salvage Hauler", windup: 1, color: "#c9a24b" },
 };
 const ENEMY = Object.fromEntries(Object.keys(ENEMY_IDENTITY).map(type =>
   [type, { ...ENEMY_IDENTITY[type], ...(CFG.enemies && CFG.enemies.base && CFG.enemies.base[type]) }]));
+// killing any of these clears the gate it guards (config assigns bands)
+const GATE_BOSS_TYPES = ["sentinel", "warden", "crucible"];
 const TRAITS = {
   scrapper: "Salvage bot running a broken loop. Closes and swings.",
   railer:   "Rail slug rakes an entire lane — it does not check for friendlies. Must recharge after each shot.",
@@ -359,6 +376,9 @@ const TRAITS = {
   ripper:   "Covers two hexes a turn. Blades sized for your spine.",
   boss:     "Overheats after every third attack. Below half integrity, it calls the fabricators.",
   sentinel: "Gate guardian. Its field slam covers everything around it EXCEPT its coolant vents — stand IN a gap. Its sweep alternates lanes: the amber lanes fire one turn after the red ones, so dodge into amber, then step back. Overheats after every third attack.",
+  warden:   "Gate guardian. Siege artillery: its barrage tracks where you STOOD — keep two hexes of motion between you and the mark. Crossfire lanes fire in rotating pairs. A frontal shield scatters head-on strikes: flank it, or wait for the overheat after every third attack.",
+  crucible: "Gate guardian. A rolling forge-wave: the near ring fires first and the far ring follows, so dash INSIDE it (adjacent is a cold spot) or sprint clear. Up close it vents six short spokes, and mid-fight it fabricates rippers. Overheats after every third attack.",
+  prime:    "The FORGE-PRIME. The Foundry's heart runs the whole curriculum: slam and charge, then shielded crossfire, then rolling waves — and below a third of its core it barely pauses to vent. Everything is telegraphed. Nothing is optional.",
   hauler:   "Salvage convoy hauler. Doesn't fight — just walks its route. Cut it off before it reaches the far side, or it and its cargo are gone.",
 };
 const FLOORS = CFG.campaign.floors;
@@ -1734,10 +1754,13 @@ function strikeOne(e, primary) {
   const toPlayer = axisDir(e.q, e.r, p.q, p.r);   // works adjacent or at reach
   const front = [e.dir, (e.dir + 1) % 6, (e.dir + 5) % 6].includes(toPlayer);
   const rear = [(e.dir + 3) % 6, (e.dir + 2) % 6, (e.dir + 4) % 6].includes(toPlayer);
-  // bulwark shield: frontal hits scatter unless the field is overloaded
-  if (e.type === "bulwark" && front && e.stagger === 0) {
+  // frontal shield: bulwarks always carry one, the WARDEN's is identity,
+  // the FORGE-PRIME raises e.frontShield only in its shielded phase.
+  // Either way: frontal hits scatter unless the field is overloaded.
+  const shielded = e.type === "bulwark" || ENEMY[e.type].frontShield || e.frontShield;
+  if (shielded && front && e.stagger === 0) {
     addFloat(e.q, e.r, "deflected", "#9ac8e0");
-    if (primary) log("Your strike scatters off the Bulwark's shield field.", "warn");
+    if (primary) log("Your strike scatters off the frontal shield field.", "warn");
     sfx("block");
     return;
   }
@@ -2090,7 +2113,8 @@ function hurtEnemy(e, dmg, label) {
       addFloat(e.q, e.r, `PRIME DOWN ${run.eliteKilled}/${run.eliteTotal}`, "#f0d060");
       if (run.eliteKilled >= run.eliteTotal) sectorComplete();
     }
-    if (e.type === "sentinel") gateCleared();
+    if (GATE_BOSS_TYPES.includes(e.type)) gateCleared();
+    else if (e.type === "prime") apexCleared();
     else if (e.type === "boss") winRun();
     else log(def.name + " scrapped.", "");
   }
@@ -2145,6 +2169,8 @@ function endTurn() {
     e.windupHexes = [];
     if (e.type === "boss") resolveBossStrike(e, hexes, struck);
     else if (e.type === "sentinel") resolveSentinelStrike(e, hexes, struck);
+    else if (e.type === "warden" || e.type === "crucible" || e.type === "prime")
+      resolveNewBossStrike(e, hexes, struck);
     else {
       if (struck) hurtPlayer(e, e.dmg);
       // rhythm units recover after striking: rail drones recharge, bulwarks
@@ -2322,6 +2348,9 @@ function aiAct(e, flow) {
     }
     case "boss": bossAct(e, flow, dist); break;
     case "sentinel": sentinelAct(e, flow, dist); break;
+    case "warden": wardenAct(e, flow, dist); break;
+    case "crucible": crucibleAct(e, flow, dist); break;
+    case "prime": primeAct(e, flow, dist); break;
     case "hauler": break;   // tickConvoy() drives its movement, not normal AI
   }
 }
@@ -2430,6 +2459,233 @@ function resolveSentinelStrike(e, hexes, struck) {
     return;
   }
   if (struck) hurtPlayer(e, e.dmg + (e.windupKind === "donut" ? 1 : 0));
+}
+
+/* Deeper gate guardians + the FORGE-PRIME. Same telegraph grammar as the
+   SENTINEL — windupHexes marks exactly what fires, windupNext previews
+   (in amber) the half that chains after — with each band teaching a new
+   verb: the WARDEN position-tracking artillery and flanking, the
+   CRUCIBLE rolling waves with a cold center, the FORGE-PRIME the whole
+   curriculum in phases. Which band wakes which guardian is config
+   (levelGen.gateBossByBand); the kits live here. */
+function ringHexes(e, rMin, rMax) {
+  const out = [];
+  for (const t of run.tiles.values()) {
+    if (t.rock) continue;
+    const d = hexDist(t.q, t.r, e.q, e.r);
+    if (d >= rMin && d <= rMax) out.push(key(t.q, t.r));
+  }
+  return out;
+}
+// artillery mark: the player's hex and its ring AT WINDUP TIME — the tell
+// is where you stood, so two hexes of motion always clears it
+function barrageHexes() {
+  const p = run.player;
+  const out = [key(p.q, p.r)];
+  for (const [dq, dr] of DIRS) {
+    const t = run.tiles.get(key(p.q + dq, p.r + dr));
+    if (t && !t.rock) out.push(key(p.q + dq, p.r + dr));
+  }
+  return out;
+}
+function laneHexesLen(e, dirs, len) {
+  const out = [];
+  for (const d of dirs) {
+    let q = e.q, r = e.r;
+    for (let i = 0; i < len; i++) {
+      q += DIRS[d][0]; r += DIRS[d][1];
+      const t = run.tiles.get(key(q, r));
+      if (!t || t.rock) break;
+      out.push(key(q, r));
+    }
+  }
+  return out;
+}
+function bossVent(e) {
+  e.bossCount = 0;
+  e.stagger = 2;
+  log(ENEMY[e.type].name.replace(/^the /, "The ") + "'s core overheats.", "good");
+  addFloat(e.q, e.r, "overheated", "#f0c060");
+}
+// the classic line charge, shared by the deeper bosses (the OVERSEER and
+// SENTINEL keep their own copies — their exact behavior is pinned by tests)
+function windupCharge(e, dist) {
+  const p = run.player;
+  const d = axisDir(e.q, e.r, p.q, p.r);
+  if (d < 0 || dist > 5 || !losClear(e.q, e.r, p.q, p.r)) return false;
+  e.dir = d;
+  const hexes = [];
+  let q = e.q, r = e.r;
+  for (let i = 0; i < 5; i++) {
+    q += DIRS[d][0]; r += DIRS[d][1];
+    const t = run.tiles.get(key(q, r));
+    if (!t || t.rock) break;
+    hexes.push(key(q, r));
+  }
+  e.state = "windup";
+  e.windupTimer = 1;
+  e.windupKind = "charge";
+  e.windupHexes = hexes;
+  return true;
+}
+function wardenAct(e, flow, dist) {
+  if (e.bossCount >= 3) { bossVent(e); return; }
+  const cyc = e.atkCycle || 0;
+  if (cyc % 3 === 0) {
+    if (dist > 7) { stepEnemyToward(e, flow); return; }
+    e.state = "windup";
+    e.windupTimer = 2;
+    e.windupKind = "barrage";
+    e.windupHexes = barrageHexes();
+    e.atkCycle = cyc + 1;
+    e.bossCount++;
+    log("The WARDEN locks artillery on your position — it fires on where you STOOD.", "warn");
+  } else if (cyc % 3 === 1) {
+    if (dist > 5) { stepEnemyToward(e, flow); return; }
+    e.state = "windup";
+    e.windupTimer = 1;
+    e.windupKind = "cross1";
+    e.windupHexes = laneHexesLen(e, [0, 3], 6);
+    e.windupNext = laneHexesLen(e, [1, 4], 6);
+    e.atkCycle = cyc + 1;
+    e.bossCount++;
+    log("Crossfire: the red axis fires first, the amber axis follows.", "warn");
+  } else if (dist <= 2) {
+    e.state = "windup";
+    e.windupTimer = 1;
+    e.windupKind = "repel";
+    e.windupHexes = ringHexes(e, 1, 1);
+    e.atkCycle = cyc + 1;
+    e.bossCount++;
+    log("The WARDEN's point-defense arms — back off.", "warn");
+  } else {
+    // nothing in reach for point-defense: keep the rotation moving so the
+    // artillery comes back around instead of stalling into pure pursuit
+    e.atkCycle = cyc + 1;
+    stepEnemyToward(e, flow);
+  }
+}
+function crucibleAct(e, flow, dist) {
+  if (e.bossCount >= 3) { bossVent(e); return; }
+  const cyc = e.atkCycle || 0;
+  if (cyc % 3 === 0) {
+    if (dist > 5) { stepEnemyToward(e, flow); return; }
+    e.state = "windup";
+    e.windupTimer = 1;
+    e.windupKind = "wave1";
+    e.windupHexes = ringHexes(e, 2, 2);
+    e.windupNext = ringHexes(e, 3, 4);   // amber preview of the rolling half
+    e.atkCycle = cyc + 1;
+    e.bossCount++;
+    log("A forge-wave rolls outward — the cold spot is INSIDE it, against the hull.", "warn");
+  } else if (cyc % 3 === 1) {
+    if (dist > 3) { stepEnemyToward(e, flow); return; }
+    e.state = "windup";
+    e.windupTimer = 1;
+    e.windupKind = "spokes";
+    e.windupHexes = laneHexesLen(e, [0, 1, 2, 3, 4, 5], 2);
+    e.atkCycle = cyc + 1;
+    e.bossCount++;
+    log("The CRUCIBLE vents six spokes of slag.", "warn");
+  } else {
+    // forge-call: fabricate rippers from the slag at ring 4
+    e.atkCycle = cyc + 1;
+    e.bossCount++;
+    const spots = ringHexes(e, 4, 4).map(unkey).filter(([q, r]) => !occupied(q, r));
+    const step = Math.max(1, (spots.length / 2) | 0);
+    let made = 0;
+    for (let i = 0; i < spots.length && made < 2; i += step) {
+      const [q, r] = spots[i];
+      spawnEnemy("ripper", q, r).summoned = true;
+      made++;
+    }
+    if (made) {
+      log("The CRUCIBLE fabricates rippers from raw slag.", "warn");
+      sfx("block");
+    }
+  }
+}
+function primeAct(e, flow, dist) {
+  const phase = e.hp > e.maxHp * 2 / 3 ? 1 : e.hp > e.maxHp / 3 ? 2 : 3;
+  // shielded only through its middle phase — the fight demands flanking
+  // exactly when the crossfire wants you off-axis
+  e.frontShield = phase === 2;
+  if (e.bossCount >= (phase === 3 ? 4 : 3)) { bossVent(e); return; }
+  const cyc = e.atkCycle || 0;
+  const verbs = phase === 1 ? ["donut", "charge"]
+    : phase === 2 ? ["donut", "cross", "charge"]
+      : ["wave", "cross", "donut", "charge"];
+  const verb = verbs[cyc % verbs.length];
+  if (verb === "donut") {
+    if (dist > 3) { stepEnemyToward(e, flow); return; }
+    e.state = "windup";
+    e.windupTimer = 2;
+    e.windupKind = "donut";
+    e.windupHexes = donutHexes(e);
+    e.atkCycle = cyc + 1;
+    e.bossCount++;
+    log("The FORGE-PRIME charges a field slam — its coolant gaps stay cold.", "warn");
+  } else if (verb === "cross") {
+    if (dist > 5) { stepEnemyToward(e, flow); return; }
+    e.state = "windup";
+    e.windupTimer = 1;
+    e.windupKind = "cross1";
+    e.windupHexes = laneHexesLen(e, [0, 3], 6);
+    e.windupNext = laneHexesLen(e, [1, 4], 6);
+    e.atkCycle = cyc + 1;
+    e.bossCount++;
+    log("Crossfire: the red axis fires first, the amber axis follows.", "warn");
+  } else if (verb === "wave") {
+    if (dist > 5) { stepEnemyToward(e, flow); return; }
+    e.state = "windup";
+    e.windupTimer = 1;
+    e.windupKind = "wave1";
+    e.windupHexes = ringHexes(e, 2, 2);
+    e.windupNext = ringHexes(e, 3, 4);
+    e.atkCycle = cyc + 1;
+    e.bossCount++;
+    log("A forge-wave rolls off the FORGE-PRIME's hull.", "warn");
+  } else if (windupCharge(e, dist)) {
+    e.atkCycle = cyc + 1;
+    e.bossCount++;
+  } else {
+    e.atkCycle = cyc + 1;
+    stepEnemyToward(e, flow);
+  }
+}
+function resolveNewBossStrike(e, hexes, struck) {
+  const p = run.player;
+  if (e.windupKind === "cross1") {
+    if (struck) hurtPlayer(e, e.dmg);
+    e.state = "windup";
+    e.windupTimer = 1;
+    e.windupKind = "cross2";
+    e.windupHexes = e.windupNext && e.windupNext.length ? e.windupNext : laneHexesLen(e, [1, 4], 6);
+    e.windupNext = null;
+    return;
+  }
+  if (e.windupKind === "wave1") {
+    if (struck) hurtPlayer(e, e.dmg - 1);
+    e.state = "windup";
+    e.windupTimer = 1;
+    e.windupKind = "wave2";
+    e.windupHexes = e.windupNext && e.windupNext.length ? e.windupNext : ringHexes(e, 3, 4);
+    e.windupNext = null;
+    return;
+  }
+  if (e.windupKind === "charge") {
+    let landing = null;
+    for (const k of hexes) {
+      const [q, r] = unkey(k);
+      if (!occupied(q, r)) landing = [q, r];
+      if (q === p.q && r === p.r) break;
+    }
+    if (struck) hurtPlayer(e, e.dmg - 1);
+    if (landing) { e.q = landing[0]; e.r = landing[1]; }
+    return;
+  }
+  // barrage lands heavy like the donut; repel/spokes/cross2/wave2 are flat
+  if (struck) hurtPlayer(e, e.dmg + (e.windupKind === "donut" || e.windupKind === "barrage" ? 1 : 0));
 }
 
 /* boss: scripted, learnable cycle. After every 3rd attack he rests. */
@@ -2954,6 +3210,7 @@ function enterOverworld() {
   for (const id of ["menu", "death", "win", "shop", "terminal", "inv", "node"])
     document.getElementById(id).classList.add("hidden");
   cam.x = 0; cam.y = 0; cam.tx = 0; cam.ty = 0; cam.zoom = 1;
+  ensureApexNode();   // saves that topped the cap before the apex existed
   log("The Bay. Socket a Sector Key into a frontier node.", "sys");
   renderLog();
   refreshHud();
@@ -2964,12 +3221,12 @@ function enterOverworld() {
 function enterNode(q, r, keyId) {
   const nk = key(q, r);
   const node = profile.atlas.nodes[nk];
-  if (!node || (node.state !== "frontier" && node.state !== "gate")) return false;
-  const isGate = node.state === "gate";
+  if (!node || (node.state !== "frontier" && node.state !== "gate" && node.state !== "apex")) return false;
+  const isGate = node.state === "gate" || node.state === "apex";
   const ki = profile.atlas.keys.findIndex(kk => kk.id === keyId);
   if (ki < 0) return false;
   if (isGate && profile.atlas.keys[ki].tier !== node.band) {
-    log(`The gate only accepts a T${node.band} key.`, "warn");
+    log(`The ${node.state === "apex" ? "apex" : "gate"} only accepts a T${node.band} key.`, "warn");
     return false;
   }
   const skey = profile.atlas.keys.splice(ki, 1)[0];
@@ -2986,11 +3243,18 @@ function enterNode(q, r, keyId) {
   run.over = false; run.won = false; run.turn = 0; run.kills = 0;
   const sg = CFG.levelGen.sector;
   if (isGate) {
-    // gate arena: open ground, a few pillars, one SENTINEL
+    // boss arena: open ground, a few pillars, one guardian. Which one is
+    // config: the band picks the gate boss, the apex always wakes the
+    // FORGE-PRIME in a wider ring.
+    const isApex = node.state === "apex";
+    const bossType = isApex ? "prime"
+      : CFG.levelGen.gateBossByBand[String(node.band)] || "sentinel";
     run.floorConf = {
-      R: sg.gateArenaR, boss: true, bossType: "sentinel", spawn: {},
+      R: isApex ? CFG.levelGen.apex.arenaR : sg.gateArenaR,
+      boss: true, bossType, spawn: {},
       eliteCount: 0, terminal: false,
-      tier, biomeName: "Sector Gate", biomeKey: "gate",
+      tier, biomeName: isApex ? "The Foundry Heart" : "Sector Gate",
+      biomeKey: "gate",
       hpMult: mod.hpMult, dmgAdd: mod.dmgAdd,
       fovPenalty: mod.fovPenalty, flaskPenalty: mod.flaskPenalty,
       volatile: mod.volatile, lootBonus: quant,
@@ -3030,7 +3294,8 @@ function enterNode(q, r, keyId) {
   invalidateFloorCaches();
   const modNames = skey.affixes.map(a => KEY_MOD_BY[a.mod].name).join(", ");
   if (isGate) {
-    log(`SECTOR GATE [T${tier}]${modNames ? " [" + modNames + "]" : ""}. The SENTINEL wakes.`, "sys");
+    const bn = ENEMY[run.floorConf.bossType].name.replace(/^the /, "The ");
+    log(`${node.state === "apex" ? "THE FOUNDRY HEART" : "SECTOR GATE"} [T${tier}]${modNames ? " [" + modNames + "]" : ""}. ${bn} wakes.`, "sys");
   } else {
     const ev = run.floorConf.eventType;
     log(`T${tier} ${run.floorConf.biomeName}${modNames ? " [" + modNames + "]" : ""}${ev ? " — " + EVENT_NAME[ev] : ""}. Purge ${run.eliteTotal} Prime unit${run.eliteTotal === 1 ? "" : "s"}.`, "sys");
@@ -3087,14 +3352,48 @@ function spawnGateNode(nearKey) {
       if (!profile.atlas.nodes[nk]) {
         const cell = worldCell(q + dq, r + dr);
         if (cell.kind !== "ridge" && cell.kind !== "channel") {
+          const guardian = ENEMY[CFG.levelGen.gateBossByBand[String(atlasCap())] || "sentinel"].name;
           profile.atlas.nodes[nk] = { state: "gate", band: atlasCap(), wreck: 0 };
-          log(`A SENTINEL gate surfaces on the frontier — arm it with a T${atlasCap()} key.`, "sys");
+          log(`A gate surfaces on the frontier — ${guardian} guards it. Arm it with a T${atlasCap()} key.`, "sys");
           return;
         }
       }
       queue.push([q + dq, r + dr]);
     }
   }
+}
+// the apex: the Foundry Heart itself, surfacing once the tier cap tops
+// out. Same frontier walk as a gate; band is the top tier, so only a
+// top-tier key arms it. Repeatable — apexCleared() surfaces a fresh one.
+function spawnApexNode(nearKey) {
+  const [q0, r0] = unkey(nearKey);
+  const seen = new Set([nearKey]);
+  const queue = [[q0, r0]];
+  while (queue.length) {
+    const [q, r] = queue.shift();
+    for (const [dq, dr] of DIRS) {
+      const nk = key(q + dq, r + dr);
+      if (seen.has(nk)) continue;
+      seen.add(nk);
+      if (!profile.atlas.nodes[nk]) {
+        const cell = worldCell(q + dq, r + dr);
+        if (cell.kind !== "ridge" && cell.kind !== "channel") {
+          profile.atlas.nodes[nk] = { state: "apex", band: TIER_CAP, wreck: 0 };
+          log(`THE FOUNDRY HEART surfaces — the FORGE-PRIME waits behind a T${TIER_CAP} key.`, "sys");
+          return;
+        }
+      }
+      queue.push([q + dq, r + dr]);
+    }
+  }
+}
+// safety net for saves that reached the cap before the apex existed (and
+// for any state where the apex went missing): called on entering the
+// overworld, it guarantees exactly one apex is live at the top of the climb
+function ensureApexNode() {
+  if (!profile || atlasCap() < TIER_CAP) return;
+  const hasApex = Object.values(profile.atlas.nodes).some(n => n.state === "apex");
+  if (!hasApex) spawnApexNode(run && run.sectorNode ? run.sectorNode : "0,0");
 }
 function gateCleared() {
   const node = profile.atlas.nodes[run.sectorNode];
@@ -3113,6 +3412,33 @@ function gateCleared() {
   log(`THE GATE FALLS. Sector Keys up to T${profile.atlas.tierCap} now drop. Extraction enabled.`, "sys");
   addFloat(run.player.q, run.player.r, "GATE FALLS", "#5fe0aa");
   sfx("win");
+  // the last gate opens the summit: the Foundry Heart surfaces
+  if (oldCap < TIER_CAP && profile.atlas.tierCap >= TIER_CAP) spawnApexNode(run.sectorNode);
+  syncProfileFromPlayer();
+  saveProfile();
+  refreshHud();
+}
+// FORGE-PRIME down: the pinnacle pays out and re-arms. Lattice points and
+// a guaranteed unique every kill — the one fight in the game that's
+// always worth the key it costs.
+function apexCleared() {
+  const node = profile.atlas.nodes[run.sectorNode];
+  if (!node || node.state === "cleared") return;
+  node.state = "cleared";
+  node.clearedTier = run.floorConf.tier;
+  const [q, r] = unkey(run.sectorNode);
+  revealArea(q, r);
+  const ax = CFG.levelGen.apex;
+  grantTreePoints(ax.treePoints);
+  const relic = genUnique(craftRng, run.floor);
+  run.player.items.push(relic);
+  log(`Core relic recovered: ${relic.name} (Unique).`, "good");
+  grantOrbs(craftRng, ax.orbsGranted + (craftRng() < (run.floorConf.lootBonus || 0) ? 1 : 0), run.floor);
+  profile.apexKills = (profile.apexKills || 0) + 1;
+  log(`THE FOUNDRY HEART FALLS${profile.apexKills > 1 ? " (×" + profile.apexKills + ")" : ""}. Extraction enabled.`, "sys");
+  addFloat(run.player.q, run.player.r, "HEART FALLS", "#5fe0aa");
+  sfx("win");
+  spawnApexNode(run.sectorNode);   // it always grows back
   syncProfileFromPlayer();
   saveProfile();
   refreshHud();
@@ -3746,18 +4072,19 @@ function renderOverworld(t) {
       ctx.fillStyle = "#7fe6f4";
       ctx.font = "bold 9px monospace";
       ctx.fillText("BAY", x, y + 3);
-    } else if (n.state === "gate") {
-      ctx.fillStyle = "#2a1218";
+    } else if (n.state === "gate" || n.state === "apex") {
+      const apex = n.state === "apex";
+      ctx.fillStyle = apex ? "#1c1226" : "#2a1218";
       ctx.fill();
       hexPath(ctx, x, y, 0.92);
       ctx.globalAlpha = pulse;
-      ctx.strokeStyle = "#ff5a5a";
+      ctx.strokeStyle = apex ? "#c060e0" : "#ff5a5a";
       ctx.lineWidth = 2.4;
       ctx.stroke();
       ctx.globalAlpha = 1;
-      ctx.fillStyle = "#ff8a8a";
+      ctx.fillStyle = apex ? "#d89af0" : "#ff8a8a";
       ctx.font = "bold 9px monospace";
-      ctx.fillText("GATE", x, y);
+      ctx.fillText(apex ? "HEART" : "GATE", x, y);
       ctx.font = "8px monospace";
       ctx.fillText("T" + n.band, x, y + 10);
       if (n.wreck > 0) {
@@ -4974,11 +5301,17 @@ function openNodePanel(q, r) {
       b.addEventListener("click", () => { if (fabricateKey(t)) { openNodePanel(q, r); refreshHud(); } });
       box.appendChild(b);
     }
-  } else if (node.state === "gate") {
-    title.textContent = `SECTOR GATE — the SENTINEL`;
-    desc.textContent = `A gate guardian seals the deeper Foundry.` +
-      (node.wreck > 0 ? ` Your wreck holds ${node.wreck} cores in its arena.` : "") +
-      ` Arm it with a T${node.band} key — victory unlocks Sector Keys to T${Math.min(TIER_CAP, node.band + 4)}.`;
+  } else if (node.state === "gate" || node.state === "apex") {
+    const isApex = node.state === "apex";
+    const guardian = isApex ? "prime" : CFG.levelGen.gateBossByBand[String(node.band)] || "sentinel";
+    title.textContent = isApex ? `THE FOUNDRY HEART — ${ENEMY.prime.name}`
+      : `SECTOR GATE — ${ENEMY[guardian].name}`;
+    desc.textContent = (isApex
+      ? `The Foundry's core chamber. ${ENEMY.prime.name} runs every gate guardian's curriculum in phases. ` +
+        `Each kill pays ${CFG.levelGen.apex.treePoints} lattice points and a guaranteed Unique — and the Heart always grows back.`
+      : `A gate guardian seals the deeper Foundry.` +
+        ` Arm it with a T${node.band} key — victory unlocks Sector Keys to T${Math.min(TIER_CAP, node.band + CFG.levelGen.gateJumpAmount)}.`) +
+      (node.wreck > 0 ? ` Your wreck holds ${node.wreck} cores in its arena.` : "");
     const fits = profile.atlas.keys.filter(kk => kk.tier === node.band);
     for (const kk of fits) {
       const mods = kk.affixes.map(a => KEY_MOD_BY[a.mod].desc).join(" · ");
@@ -5441,6 +5774,8 @@ window.RL = {
   sectorComplete, revealArea, worldCell, keyFabCost, BIOMES, TIER_CAP,
   makeKey, addKeyMod, keyQuant, keyDisplayName, canApplyOrbKey, applyOrbToKey, KEY_MODS,
   donutHexes, laneHexes, gateCleared, spawnGateNode, atlasCap, tierColor,
+  ringHexes, barrageHexes, laneHexesLen, wardenAct, crucibleAct, primeAct,
+  resolveNewBossStrike, spawnApexNode, apexCleared, ensureApexNode, GATE_BOSS_TYPES,
   hurtEnemy, hurtPlayer, strikeOne, winRun, dieRun,
   saveProfile, loadProfile, migrateProfile, syncProfileFromPlayer,
   saveRun, resumeRun, clearRunCheckpoint, loadRunCheckpoint,

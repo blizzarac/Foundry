@@ -11,7 +11,8 @@
   vanilla-JS hex roguelike, no build step, no dependencies.
 - **`config.js`**: enemy base stats/scaling, prologue floor tables, Foundry
   sector-generation coefficients (pack density, elite bump tiers, chest/
-  terminal odds, key-drop odds, gate jump size, key mods), the whole
+  terminal odds, key-drop odds, gate jump size, the band→gate-boss
+  mapping, apex-node tuning, key mods), the whole
   economy (restocks, orb prices, orb loot-drop weights, gamble cost, key
   fab curve, item/key salvage formulas, plus the retired shop upgrades
   kept only as migration-refund data), the frame lattice (points per
@@ -45,6 +46,9 @@
   `node tests/events-smoke.js` (Foundry Anomalies node events),
   `node tests/tree-smoke.js` (frame lattice: point grants, allocation
   graph, every mech notable's combat branch, v5 migration refunds),
+  `node tests/boss-smoke.js` (gate guardian ladder: band→boss config
+  mapping, every WARDEN/CRUCIBLE/FORGE-PRIME verb and phase, apex node
+  lifecycle and rewards),
   `node tests/debug-export-smoke.js` (debug state export/import round-trip),
   `node tests/dash-smoke.js` (free-form thruster dash geometry),
   `node tests/config-smoke.js` (proves config.js is the real source of the
