@@ -4232,20 +4232,29 @@ function orbChoices(item) {
 }
 function itemModsHTML(item) {
   const base = BASE_TYPES[item.base];
-  let html = "";
+  // implicit (fixed to the base type) and crafted affixes are visually
+  // grouped apart, with prefix/suffix colored differently from each
+  // other too — otherwise a stack of same-weight lines reads as one
+  // undifferentiated block, especially on a phone screen
+  let implicitHTML = "";
   if (base.slot === "weapon") {
-    html += `<span class="mod implicit">${base.dmg} dmg · ${base.atkCost} power/strike · +${base.bsBonus} rear-strike` +
+    implicitHTML += `<span class="mod implicit">${base.dmg} dmg · ${base.atkCost} power/strike · +${base.bsBonus} rear-strike` +
       `${base.cleave ? " · cleaves" : ""}${base.reach ? " · reach" : ""}</span>`;
   }
   if (Object.keys(base.implicit).length) {
     // this item's own rolled implicit, not the base type's generic range
     const imp = item.implicit || implicitMidpoint(item.base);
-    html += `<span class="mod implicit">${describeEffect(imp)}</span>`;
+    implicitHTML += `<span class="mod implicit">${describeEffect(imp)}</span>`;
   }
+  let affixHTML = "";
   for (const a of item.affixes) {
-    const cls = a.kind === "corrupt" ? "corrupt" : a.kind === "unique" ? "unique" : "affix";
-    html += `<span class="mod ${cls}">${describeEffect(a.effect)}${a.kind === "corrupt" ? " (corrupted)" : ""}</span>`;
+    const cls = a.kind === "corrupt" ? "corrupt" : a.kind === "unique" ? "unique"
+      : a.kind === "prefix" ? "prefix" : a.kind === "suffix" ? "suffix" : "affix";
+    affixHTML += `<span class="mod ${cls}">${describeEffect(a.effect)}${a.kind === "corrupt" ? " (corrupted)" : ""}</span>`;
   }
+  let html = implicitHTML;
+  if (implicitHTML && affixHTML) html += `<div class="mod-divider"></div>`;
+  html += affixHTML;
   if (item.lore) html += `<span class="mod lore">${item.lore}</span>`;
   return html;
 }

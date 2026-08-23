@@ -95,11 +95,16 @@ html, body {
 .currency-row b { color: #c9a24b; flex-shrink: 0; }
 .currency-row span { color: #6b7f8e; font-size: 10.5px; }
 .mod { display: block; font-size: 10.5px; line-height: 1.45; }
-.mod.implicit { color: #8fa3b2; }
+.mod.implicit { color: #8fa3b2; font-style: italic; }
+.mod.prefix { color: #f0a840; }
+.mod.suffix { color: #6fd6c0; }
 .mod.affix { color: #7fa8e8; }
 .mod.unique { color: #ff9040; }
 .mod.corrupt { color: #ff6a52; }
 .mod.lore { color: #6b7f8e; font-style: italic; }
+/* separates the base type's fixed implicit from what was crafted onto
+   it — without this a stack of same-weight lines reads as one block */
+.mod-divider { height: 1px; background: #2a3745; margin: 5px 0 4px; }
 .item-base { color: #6b7f8e !important; font-size: 10px !important; }
 .orb-btn { border-color: #6b5a2f !important; color: #c9a24b !important; }
 .sell-btn { border-color: #3f5a3a !important; color: #8fce7f !important; }

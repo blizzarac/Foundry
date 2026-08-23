@@ -288,7 +288,18 @@ function check(name, cond) {
     // seed the backpack for the UI checks below
     window.__sellNormal = RL.genItem(mk, "servo", "normal", 1);
     window.__sellRare = RL.genItem(mk, "cleaver", "rare", 5);
-    p2.items.push(window.__sellNormal, window.__sellRare);
+    // built directly (not rolled) so it's guaranteed to carry an
+    // implicit plus one prefix and one suffix, for the mod-display test
+    window.__modsTestItem = {
+      id: 999001, base: "bulkhead", rarity: "rare", name: "Test Directive",
+      implicit: { maxHpBonus: 5, rollCostDelta: 1 },
+      affixes: [
+        { id: 999002, kind: "prefix", stat: "dmg", tier: 1, label: "Honed", effect: { dmg: 1 } },
+        { id: 999003, kind: "suffix", stat: "fovBonus", tier: 1, label: "of Sight", effect: { fovBonus: 1 } },
+      ],
+      corrupted: false, lore: null,
+    };
+    p2.items.push(window.__sellNormal, window.__sellRare, window.__modsTestItem);
     return out;
   });
   for (const [k, v] of Object.entries(r)) check(k, !!v);
@@ -303,6 +314,20 @@ function check(name, cond) {
     document.getElementById("tab-pack").classList.contains("hidden")));
   check("fiveSlotCards", await page.locator("#gear-slots .item-card").count() === 5);
   await page.click('#gear-tabs button[data-tab="pack"]');
+  // implicit, prefix and suffix render as visually distinct groups: each
+  // gets its own class/color, and a divider separates the fixed implicit
+  // from what was crafted onto the item
+  check("modsSplitByPrefixSuffixImplicit", await page.evaluate(() => {
+    const card = [...document.querySelectorAll("#gear-pack .item-card")]
+      .find(c => c.textContent.includes("Test Directive"));
+    if (!card) return false;
+    const hasImplicit = card.querySelector(".mod.implicit");
+    const hasPrefix = card.querySelector(".mod.prefix");
+    const hasSuffix = card.querySelector(".mod.suffix");
+    const hasDivider = card.querySelector(".mod-divider");
+    return !!hasImplicit && !!hasPrefix && !!hasSuffix && !!hasDivider &&
+      hasPrefix.className !== hasSuffix.className;
+  }));
   check("packTabByClick", await page.evaluate(() =>
     !document.getElementById("tab-pack").classList.contains("hidden") &&
     document.getElementById("tab-equip").classList.contains("hidden")));
