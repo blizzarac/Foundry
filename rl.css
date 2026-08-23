@@ -186,6 +186,7 @@ html, body {
 .overlay.hidden { display: none; }
 .box {
   width: min(470px, 92vw);
+  max-height: 92vh; overflow-y: auto;
   background: #101a22; border: 1px solid #2f4152; border-radius: 6px;
   padding: 30px 28px; text-align: center;
 }
