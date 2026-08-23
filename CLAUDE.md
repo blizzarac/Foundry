@@ -9,6 +9,20 @@
 
 - **Ironhex** (main game): `index.html`, `rl.css`, `rl.js` — single-file
   vanilla-JS hex roguelike, no build step, no dependencies.
+- **`config.js`**: enemy base stats/scaling, prologue floor tables, Foundry
+  sector-generation coefficients (pack density, elite bump tiers, chest/
+  terminal odds, key-drop odds, gate jump size, key mods), and the whole
+  economy (shop upgrades, restocks, orb prices, gamble cost, key fab curve,
+  item/key salvage formulas) live here as one plain data object
+  (`window.IRONHEX_CONFIG`), loaded by `<script>` before `rl.js` — not a real
+  `.json` file, since `fetch()` can't read local disk over `file://` and this
+  game has no server or build step. `rl.js` validates the shape at boot and
+  fails loudly (console + an on-screen banner) if a section is missing —
+  there is no silent fallback to hardcoded defaults, so `config.js` is the
+  one place balance numbers live. Item/affix/rarity tables, node-event
+  timers, and combat constants (dash range, FOV, deflect cost) are still in
+  `rl.js`; terrain generators, boss attack patterns, and AI are behavior and
+  always will be.
 - **Hexfoundry** (legacy tower defense): `hexfoundry.html`, `style.css`, `game.js`.
 - Acceptance suites: `npm install playwright-core && node tests/item-smoke.js`
   (items), `node tests/atlas-smoke.js` (Foundry overworld/endgame),
@@ -16,6 +30,8 @@
   `node tests/events-smoke.js` (Foundry Anomalies node events),
   `node tests/debug-export-smoke.js` (debug state export/import round-trip),
   `node tests/dash-smoke.js` (free-form thruster dash geometry),
+  `node tests/config-smoke.js` (proves config.js is the real source of the
+  numbers it claims to hold, and that a broken config fails loudly),
   and `node tests/balance-smoke.js` (power-curve regression harness —
   prints a TTK/HTD table per tier, run it after any balance change).
   Set `CHROMIUM_PATH` if Playwright can't find a browser.

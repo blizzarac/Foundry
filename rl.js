@@ -20,6 +20,109 @@
    ========================================================================= */
 "use strict";
 
+/* ------------------------------------------------------------ config load
+   Balance and generation numbers live in config.js (loaded before this
+   file) as window.IRONHEX_CONFIG — see that file for the schema and the
+   rationale for keeping it a plain <script>-assigned object instead of a
+   real .json (fetch() can't read a local file over file://, which is how
+   this game and its whole test suite run). CFG is the one read alias used
+   everywhere below. A missing or malformed config fails loudly — console
+   errors plus an on-screen banner — rather than quietly producing NaN
+   damage mid-run; there is deliberately no silent fallback to hardcoded
+   defaults, so config.js stays the single source of truth. */
+const CFG = window.IRONHEX_CONFIG;
+function validateConfig(cfg) {
+  const errors = [];
+  const req = (cond, msg) => { if (!cond) errors.push(msg); };
+  req(!!cfg, "config.js did not set window.IRONHEX_CONFIG");
+  if (!cfg) return errors;
+
+  const ENEMY_TYPES = ["scrapper", "railer", "bulwark", "mortar", "crusher", "ripper", "boss", "sentinel", "hauler"];
+  req(cfg.enemies && cfg.enemies.base, "enemies.base missing");
+  if (cfg.enemies && cfg.enemies.base) {
+    for (const t of ENEMY_TYPES) {
+      const e = cfg.enemies.base[t];
+      req(e, `enemies.base.${t} missing`);
+      if (e) for (const k of ["hp", "dmg", "souls"]) req(typeof e[k] === "number", `enemies.base.${t}.${k} missing or not a number`);
+    }
+  }
+  req(cfg.enemies && cfg.enemies.scaling, "enemies.scaling missing");
+  if (cfg.enemies && cfg.enemies.scaling) {
+    const s = cfg.enemies.scaling;
+    for (const k of ["hpGrowthPerTier", "dmgFreeTiers", "dmgStepEveryNTiers"])
+      req(typeof s[k] === "number", `enemies.scaling.${k} missing or not a number`);
+    req(s.elitePromotion && typeof s.elitePromotion.hpMult === "number" && typeof s.elitePromotion.dmgAdd === "number",
+      "enemies.scaling.elitePromotion missing hpMult/dmgAdd");
+  }
+
+  req(cfg.campaign && Array.isArray(cfg.campaign.floors) && cfg.campaign.floors.length === 5,
+    "campaign.floors must be an array of exactly 5 floors");
+  if (cfg.campaign && Array.isArray(cfg.campaign.floors))
+    cfg.campaign.floors.forEach((f, i) => req(typeof f.R === "number", `campaign.floors[${i}].R missing`));
+
+  req(cfg.levelGen, "levelGen missing");
+  if (cfg.levelGen) {
+    const lg = cfg.levelGen;
+    for (const k of ["startingTierCap", "tierCap", "gateJumpAmount"])
+      req(typeof lg[k] === "number", `levelGen.${k} missing or not a number`);
+    req(lg.gateClear && typeof lg.gateClear.keysGranted === "number" && typeof lg.gateClear.orbsGranted === "number",
+      "levelGen.gateClear missing keysGranted/orbsGranted");
+    const sec = lg.sector;
+    req(sec, "levelGen.sector missing");
+    if (sec) {
+      for (const k of ["baseR", "bigRAtTier", "gateArenaR", "packGrowthEveryNTiers", "packGrowthPct",
+        "chestBonusAtTier", "chestPerLootBonus", "terminalChance", "keyDropSecondChanceEliteWeight",
+        "keyDropBumpTierChance", "keyDropMagicChanceAtTier2Plus"])
+        req(typeof sec[k] === "number", `levelGen.sector.${k} missing or not a number`);
+      req(Array.isArray(sec.eliteBumpTiers) && sec.eliteBumpTiers.length > 0,
+        "levelGen.sector.eliteBumpTiers must be a non-empty array");
+    }
+    req(Array.isArray(lg.keyMods) && lg.keyMods.length > 0, "levelGen.keyMods must be a non-empty array");
+    if (Array.isArray(lg.keyMods)) {
+      lg.keyMods.forEach((m, i) => {
+        req(m.key && m.name && m.desc, `levelGen.keyMods[${i}] missing key/name/desc`);
+        req(typeof m.quant === "number", `levelGen.keyMods[${i}].quant missing or not a number`);
+      });
+    }
+  }
+
+  req(cfg.economy, "economy missing");
+  if (cfg.economy) {
+    const ec = cfg.economy;
+    req(Array.isArray(ec.upgrades) && ec.upgrades.length > 0, "economy.upgrades must be a non-empty array");
+    if (Array.isArray(ec.upgrades))
+      ec.upgrades.forEach((u, i) => req(u.id && typeof u.base === "number" && typeof u.cap === "number" && u.delta,
+        `economy.upgrades[${i}] missing id/base/cap/delta`));
+    req(Array.isArray(ec.restocks) && ec.restocks.length > 0, "economy.restocks must be a non-empty array");
+    req(Array.isArray(ec.orbs) && ec.orbs.length > 0, "economy.orbs must be a non-empty array");
+    req(typeof ec.gambleCost === "number", "economy.gambleCost missing or not a number");
+    req(ec.keyFab && typeof ec.keyFab.base === "number" && typeof ec.keyFab.exponent === "number",
+      "economy.keyFab missing base/exponent");
+    req(ec.salvage, "economy.salvage missing");
+    if (ec.salvage) {
+      const sv = ec.salvage;
+      req(sv.rarityFloor && ["normal", "magic", "rare", "unique"].every(r => typeof sv.rarityFloor[r] === "number"),
+        "economy.salvage.rarityFloor missing a rarity");
+      for (const k of ["perAffixTier", "keyBaseFrac", "keyPerModFrac"])
+        req(typeof sv[k] === "number", `economy.salvage.${k} missing or not a number`);
+    }
+  }
+  return errors;
+}
+function reportConfigErrors(errors) {
+  for (const e of errors) console.error("[IRONHEX_CONFIG] " + e);
+  if (typeof document === "undefined" || !document.body) return;
+  const bar = document.createElement("div");
+  bar.id = "config-error-banner";
+  bar.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;" +
+    "background:#4a1414;color:#ffb0a0;font:600 13px/1.5 monospace;padding:10px 14px;white-space:pre-wrap;";
+  bar.textContent = "config.js is invalid — " + errors.length + " problem" + (errors.length === 1 ? "" : "s") +
+    ". See console for details; expect broken numbers until fixed.\n" + errors.slice(0, 6).join("\n");
+  document.body.appendChild(bar);
+}
+const CFG_ERRORS = validateConfig(CFG);
+if (CFG_ERRORS.length) reportConfigErrors(CFG_ERRORS);
+
 /* ---------------------------------------------------------------- utils */
 const SQ3 = Math.sqrt(3);
 const TAU = Math.PI * 2;
@@ -101,17 +204,21 @@ function hexPath(c, x, y, s = 1) {
 }
 
 /* -------------------------------------------------------------- content */
-const ENEMY = {
-  scrapper: { name: "Scrapper",   hp: 4,  dmg: 3, windup: 1, souls: 10, color: "#a95a3c" },
-  railer:   { name: "Rail Drone", hp: 3,  dmg: 2, windup: 1, souls: 12, color: "#b09340", range: 6 },
-  bulwark:  { name: "Bulwark",    hp: 6,  dmg: 4, windup: 1, souls: 18, color: "#5f7f9c" },
-  mortar:   { name: "Mortar",     hp: 4,  dmg: 4, windup: 2, souls: 20, color: "#a8703c" },
-  crusher:  { name: "Crusher",    hp: 9,  dmg: 5, windup: 2, souls: 25, color: "#56505e" },
-  ripper:   { name: "Ripper",     hp: 5,  dmg: 4, windup: 1, souls: 16, color: "#8a4fa0" },
-  boss:     { name: "the OVERSEER", hp: 34, dmg: 5, windup: 1, souls: 0, color: "#d4c45c" },
-  sentinel: { name: "the SENTINEL", hp: 30, dmg: 5, windup: 2, souls: 150, color: "#e05a7a" },
-  hauler:   { name: "Salvage Hauler", hp: 3, dmg: 0, windup: 1, souls: 6, color: "#c9a24b" },
+// identity/behavior stays in code; hp/dmg/souls come from config.js so
+// balance passes are a data edit, not a code edit
+const ENEMY_IDENTITY = {
+  scrapper: { name: "Scrapper",   windup: 1, color: "#a95a3c" },
+  railer:   { name: "Rail Drone", windup: 1, color: "#b09340", range: 6 },
+  bulwark:  { name: "Bulwark",    windup: 1, color: "#5f7f9c" },
+  mortar:   { name: "Mortar",     windup: 2, color: "#a8703c" },
+  crusher:  { name: "Crusher",    windup: 2, color: "#56505e" },
+  ripper:   { name: "Ripper",     windup: 1, color: "#8a4fa0" },
+  boss:     { name: "the OVERSEER", windup: 1, color: "#d4c45c" },
+  sentinel: { name: "the SENTINEL", windup: 2, color: "#e05a7a" },
+  hauler:   { name: "Salvage Hauler", windup: 1, color: "#c9a24b" },
 };
+const ENEMY = Object.fromEntries(Object.keys(ENEMY_IDENTITY).map(type =>
+  [type, { ...ENEMY_IDENTITY[type], ...(CFG.enemies && CFG.enemies.base && CFG.enemies.base[type]) }]));
 const TRAITS = {
   scrapper: "Salvage bot running a broken loop. Closes and swings.",
   railer:   "Rail slug rakes an entire lane — it does not check for friendlies. Must recharge after each shot.",
@@ -123,13 +230,7 @@ const TRAITS = {
   sentinel: "Gate guardian. Its field slam covers everything around it EXCEPT its coolant vents — stand IN a gap. Its sweep alternates lanes: the amber lanes fire one turn after the red ones, so dodge into amber, then step back. Overheats after every third attack.",
   hauler:   "Salvage convoy hauler. Doesn't fight — just walks its route. Cut it off before it reaches the far side, or it and its cargo are gone.",
 };
-const FLOORS = [
-  { R: 8, spawn: { scrapper: 4, railer: 1 } },
-  { R: 8, spawn: { scrapper: 3, railer: 2, bulwark: 1, crusher: 1 }, elite: true, terminal: true },
-  { R: 9, spawn: { scrapper: 4, railer: 2, bulwark: 1, crusher: 1, ripper: 1, mortar: 1 }, elite: true, terminal: true },
-  { R: 9, spawn: { scrapper: 4, railer: 2, bulwark: 2, crusher: 2, ripper: 2, mortar: 1 }, elite: true, terminal: true },
-  { R: 7, boss: true },
-];
+const FLOORS = CFG.campaign.floors;
 const FLASK_HEAL = 8;
 const ELITE_TYPES = ["crusher", "ripper", "bulwark"];
 
@@ -402,10 +503,12 @@ const CONSUMABLE_DESC = {
    neighbors. Dying consumes the key and leaves your cores as a wreck in
    the node. Character, gear, currency and map all persist.
    ========================================================================= */
-const TIER_CAP = 15;   // absolute ceiling; SENTINEL gates raise the live cap
+const TIER_CAP = CFG.levelGen.tierCap;   // absolute ceiling; SENTINEL gates raise the live cap
 const TIER_COLOR = ["#c8d4de", "#6fa8ff", "#ffd45c", "#ff9040"];
 function tierColor(t) { return TIER_COLOR[(t - 1) % 4]; }
-function atlasCap() { return (profile && profile.atlas && profile.atlas.tierCap) || 4; }
+function atlasCap() {
+  return (profile && profile.atlas && profile.atlas.tierCap) || CFG.levelGen.startingTierCap;
+}
 const BIOMES = {
   scrapyard: { name: "Scrapyard", abbr: "SCRP", color: "#e8875a", rock: 0.30, terrain: "clumps",
     desc: "Hull heaps and fast salvage packs.",
@@ -456,7 +559,10 @@ function paletteFor(biomeKey, tier) {
     line: base.line,
   };
 }
-function keyFabCost(tier) { return Math.round(30 * Math.pow(tier, 1.7)); }
+function keyFabCost(tier) {
+  const c = CFG.economy.keyFab;
+  return Math.round(c.base * Math.pow(tier, c.exponent));
+}
 
 /* Overworld terrain: the Foundry is a continuous landscape, not a node
    grid. Derived deterministically from the atlas seed (never stored):
@@ -495,16 +601,20 @@ function worldCell(q, r) {
 
 /* Sector Key modifiers: every danger mod also raises loot quantity.
    Normal keys carry 0 mods, Magic up to 2, Rare up to 4 — crafted with
-   the same currency orbs as gear. All mods stay deterministic. */
-const KEY_MODS = [
-  { key: "swarming",    name: "Swarming",    desc: "+50% enemy packs",                quant: 0.20, apply: m => { m.spawnMult *= 1.5; } },
-  { key: "overcharged", name: "Overcharged", desc: "machines hit for +1",             quant: 0.15, apply: m => { m.dmgAdd += 1; } },
-  { key: "armored",     name: "Armored",     desc: "machines +30% integrity",         quant: 0.15, apply: m => { m.hpMult *= 1.3; } },
-  { key: "primed",      name: "Primed",      desc: "+1 Prime unit",                   quant: 0.20, apply: m => { m.extraElites += 1; } },
-  { key: "dark",        name: "Darkened",    desc: "sensor range -2",                 quant: 0.15, apply: m => { m.fovPenalty += 2; } },
-  { key: "volatile",    name: "Volatile",    desc: "machines detonate on death: 1 dmg adjacent", quant: 0.20, apply: m => { m.volatile = true; } },
-  { key: "rusted",      name: "Rusted",      desc: "repair cells heal -3",            quant: 0.10, apply: m => { m.flaskPenalty += 3; } },
-];
+   the same currency orbs as gear. All mods stay deterministic. Table and
+   magnitudes come from config.js (levelGen.keyMods); this generic
+   combinator covers every operation the mods actually use (multiply,
+   add, or flip a flag), so the whole thing is data, not code. */
+function applyKeyModEffect(mod, cfg) {
+  if (cfg.spawnMult) mod.spawnMult *= cfg.spawnMult;
+  if (cfg.dmgAdd) mod.dmgAdd += cfg.dmgAdd;
+  if (cfg.hpMult) mod.hpMult *= cfg.hpMult;
+  if (cfg.extraElites) mod.extraElites += cfg.extraElites;
+  if (cfg.fovPenalty) mod.fovPenalty += cfg.fovPenalty;
+  if (cfg.flaskPenalty) mod.flaskPenalty += cfg.flaskPenalty;
+  if (cfg.volatile) mod.volatile = true;
+}
+const KEY_MODS = CFG.levelGen.keyMods.map(m => ({ ...m, apply: mod => applyKeyModEffect(mod, m) }));
 const KEY_MOD_BY = Object.fromEntries(KEY_MODS.map(m => [m.key, m]));
 const KEY_MOD_CAP = { normal: 0, magic: 2, rare: 4 };
 function makeKey(tier, rarity) {
@@ -535,30 +645,20 @@ function keyDisplayName(k) {
 // Capped and steep on purpose: the shop is meant to carry the prologue,
 // not the endgame — flat, permanent power stacked against enemies that
 // scale by tier would break the curve at either end. Past the cap, power
-// comes from gear, where an ARPG's chase belongs.
-const UPGRADES = [
-  { id: "hp",    name: "Chassis reinforcement", desc: "+4 max integrity", base: 30, cap: 5, apply: p => { p.baseMaxHp += 4; p.hp += 4; } },
-  { id: "st",    name: "Capacitor bank",        desc: "+1 max power",     base: 50, cap: 2, apply: p => { p.baseMaxSt += 1; p.st += 1; } },
-  { id: "dmg",   name: "Weapon calibration",    desc: "+1 weapon damage", base: 60, cap: 3, apply: p => { p.bonusDmg += 1; } },
-  { id: "flask", name: "Nanite reservoir",      desc: "+1 repair cell",   base: 40, cap: 2, apply: p => { p.maxFlask += 1; p.flask += 1; } },
-];
+// comes from gear, where an ARPG's chase belongs. Costs/caps/deltas come
+// from config.js (economy.upgrades); apply is a generic additive combinator
+// since every upgrade is just "add flat deltas to named player fields."
+const UPGRADES = CFG.economy.upgrades.map(u => ({
+  ...u,
+  apply: p => { for (const k in u.delta) p[k] = (p[k] || 0) + u.delta[k]; },
+}));
 // consumable restocks: repeatable, so the bay stays worth a visit forever
-const SHOP_RESTOCKS = [
-  { kind: "dart", name: "Shock Dart", desc: "+1 shock dart", cost: 40 },
-  { kind: "cell", name: "Power Cell", desc: "+1 power cell", cost: 60 },
-];
+const SHOP_RESTOCKS = CFG.economy.restocks;
 // currency orbs at a premium over drop rates: cores flow into crafting
-const SHOP_ORBS = [
-  { kind: "transmute", cost: 30 },
-  { kind: "aug",       cost: 50 },
-  { kind: "alch",      cost: 90 },
-  { kind: "regal",     cost: 140 },
-  { kind: "chaos",     cost: 250 },
-  { kind: "exalt",     cost: 400 },
-];
+const SHOP_ORBS = CFG.economy.orbs;
 // prototype gamble: a blind-rolled Rare in a chosen slot. Depth tracks the
 // atlas tier cap, so the fabricator chases the same affix bands sectors do.
-const GAMBLE_COST = 350;
+const GAMBLE_COST = CFG.economy.gambleCost;
 
 /* ------------------------------------------------------------ game state */
 let run = null;
@@ -591,7 +691,7 @@ function migrateProfile(pr) {
   }
   // v2 -> v3: tier bands gated by SENTINEL bosses
   if (pr.v < 3) {
-    if (!pr.atlas.tierCap) pr.atlas.tierCap = 4;
+    if (!pr.atlas.tierCap) pr.atlas.tierCap = CFG.levelGen.startingTierCap;
     pr.v = 3;
   }
   // v3 -> v4: Foundry Anomalies — backfill node events deterministically,
@@ -663,7 +763,7 @@ function resumeRun() {
 // Everything needed to reproduce a bug report: campaign meta, the Foundry
 // profile, and a fresh mid-run checkpoint if one applies. Pure data in,
 // pure data out — no DOM — so it's directly testable.
-const GAME_VERSION = "2026-08-23-bazaar";
+const GAME_VERSION = "2026-08-23-config";
 function buildDebugBundle() {
   if (run && !run.over && run.mode !== "overworld" && ui.screen === "game") saveRun();
   if (profile) saveProfile();
@@ -671,6 +771,7 @@ function buildDebugBundle() {
     exportVersion: 1,
     game: "ironhex",
     gameVersion: GAME_VERSION,
+    configVersion: (CFG && CFG.configVersion) || null,
     exportedAt: new Date().toISOString(),
     campaignMeta: persist(),
     profile: JSON.parse(localStorage.getItem(PROFILE_KEY) || "null"),
@@ -810,12 +911,12 @@ function dropItem(id) {
 /* salvage: strip an unwanted part for cores. Value follows the same axes
    the loot chase does — rarity floor plus a bonus per affix tier — so a
    deep-tier rare is worth carrying home. Corrupted parts fetch half. */
-const SALVAGE_BASE = { normal: 5, magic: 15, rare: 40, unique: 120 };
+const SALVAGE_BASE = CFG.economy.salvage.rarityFloor;
 function sellValue(item) {
-  let v = SALVAGE_BASE[item.rarity] || 5;
+  let v = SALVAGE_BASE[item.rarity] || SALVAGE_BASE.normal;
   for (const a of item.affixes) {
     if (a.kind === "corrupt") continue;
-    v += (a.tier || 1) * 5;
+    v += (a.tier || 1) * CFG.economy.salvage.perAffixTier;
   }
   if (item.corrupted) v = Math.ceil(v / 2);
   return v;
@@ -839,7 +940,8 @@ function sellItem(id) {
    crafting investment: an orb spent through transmute/aug/regal/exalt). */
 function keySalvageValue(k) {
   const fab = keyFabCost(k.tier);
-  return Math.round(fab * 0.5) + Math.round(fab * 0.15) * k.affixes.length;
+  const sv = CFG.economy.salvage;
+  return Math.round(fab * sv.keyBaseFrac) + Math.round(fab * sv.keyPerModFrac) * k.affixes.length;
 }
 function sellKey(id) {
   const ki = profile.atlas.keys.findIndex(k => k.id === id);
@@ -1166,11 +1268,12 @@ function genFloor() {
   // sectors promote anyone — every sector needs its Primes to purge
   let eliteN = f.eliteCount || 0;
   const elig = run.enemies.filter(e => run.mode === "sector" || ELITE_TYPES.includes(e.type));
+  const promo = CFG.enemies.scaling.elitePromotion;
   while (eliteN-- > 0 && elig.length) {
     const e = elig.splice((rng() * elig.length) | 0, 1)[0];
     e.elite = true;
-    e.hp = e.maxHp = Math.round(e.maxHp * 1.5);
-    e.dmg += 1;
+    e.hp = e.maxHp = Math.round(e.maxHp * promo.hpMult);
+    e.dmg += promo.dmgAdd;
   }
   run.eliteTotal = run.enemies.filter(e => e.elite).length;
   run.eliteKilled = 0;
@@ -1259,15 +1362,17 @@ function spawnEnemy(type, q, r) {
     stagger: 0, moveToggle: false, elite: false,
     bossCount: 0, bossPhase2: false,
   };
-  // keyed sectors scale machines by key tier and key mods.
+  // keyed sectors scale machines by key tier and key mods — coefficients
+  // live in config.js (enemies.scaling) so a balance pass is a data edit.
   // Enemy power has to outpace player power over 15 tiers of gear/shop
-  // growth: hp grows ~5.9x by T15 (was ~4.5x), damage adds +1 every 2
-  // tiers past T3 (was every 3) — deep tiers are earned, not assumed.
+  // growth: hp grows ~5.9x by T15, damage steps up every couple tiers
+  // past the free-tiers threshold — deep tiers are earned, not assumed.
   if (run.mode === "sector" && run.floorConf) {
     const f = run.floorConf;
     const t = f.tier || 1;
-    e.hp = e.maxHp = Math.round(d.hp * (1 + 0.35 * (t - 1)) * (f.hpMult || 1));
-    e.dmg = d.dmg + (t >= 3 ? 1 + Math.floor((t - 3) / 2) : 0) + (f.dmgAdd || 0);
+    const sc = CFG.enemies.scaling;
+    e.hp = e.maxHp = Math.round(d.hp * (1 + sc.hpGrowthPerTier * (t - 1)) * (f.hpMult || 1));
+    e.dmg = d.dmg + (t >= sc.dmgFreeTiers ? 1 + Math.floor((t - sc.dmgFreeTiers) / sc.dmgStepEveryNTiers) : 0) + (f.dmgAdd || 0);
   }
   run.enemies.push(e);
   return e;
@@ -2195,7 +2300,7 @@ function winRun() {
     const first = !profile || !profile.atlas.unlocked;
     if (!profile) {
       profile = { v: 3, character: snapshotCharacter(p),
-        atlas: { seed: (Math.random() * 1e9) | 0, unlocked: false, nodes: {}, keys: [], tierCap: 4 } };
+        atlas: { seed: (Math.random() * 1e9) | 0, unlocked: false, nodes: {}, keys: [], tierCap: CFG.levelGen.startingTierCap } };
     } else {
       profile.character = snapshotCharacter(p);
     }
@@ -2598,10 +2703,11 @@ function enterNode(q, r, keyId) {
   run.seed = (profile.atlas.seed ^ (q * 73856093) ^ (r * 19349663) ^ (tier * 2654435761)) >>> 0;
   run.floor = tier + 1;   // drives loot depth (affix tiers, rarity weights)
   run.over = false; run.won = false; run.turn = 0; run.kills = 0;
+  const sg = CFG.levelGen.sector;
   if (isGate) {
     // gate arena: open ground, a few pillars, one SENTINEL
     run.floorConf = {
-      R: 9, boss: true, bossType: "sentinel", spawn: {},
+      R: sg.gateArenaR, boss: true, bossType: "sentinel", spawn: {},
       eliteCount: 0, terminal: false,
       tier, biomeName: "Sector Gate", biomeKey: "gate",
       hpMult: mod.hpMult, dmgAdd: mod.dmgAdd,
@@ -2612,18 +2718,18 @@ function enterNode(q, r, keyId) {
   } else {
     const biome = BIOMES[node.biome];
     // pack density grows slightly with tier on top of each biome's own
-    // curve — +5% per 3 tiers, ~25% more machines by T15
-    const packGrowth = 1 + 0.05 * Math.floor(tier / 3);
+    // curve; coefficients live in config.js (levelGen.sector)
+    const packGrowth = 1 + sg.packGrowthPct * Math.floor(tier / sg.packGrowthEveryNTiers);
     const spawn = {};
     for (const [type, n] of Object.entries(biome.spawn(tier))) spawn[type] = Math.round(n * mod.spawnMult * packGrowth);
     run.floorConf = {
-      R: 8 + (tier >= 3 ? 1 : 0),
+      R: sg.baseR + (tier >= sg.bigRAtTier ? 1 : 0),
       spawn,
       rock: biome.rock,
-      chests: (biome.chests || 1) + (tier >= 3 ? 1 : 0) + Math.floor(quant / 0.25),
-      terminal: mulberry32((run.seed ^ 0x7777) >>> 0)() < 0.4,
-      // an extra Prime at T7 and T11, on top of the T3 bump and key mods
-      eliteCount: 1 + (tier >= 3 ? 1 : 0) + (tier >= 7 ? 1 : 0) + (tier >= 11 ? 1 : 0) + mod.extraElites,
+      chests: (biome.chests || 1) + (tier >= sg.chestBonusAtTier ? 1 : 0) + Math.floor(quant / sg.chestPerLootBonus),
+      terminal: mulberry32((run.seed ^ 0x7777) >>> 0)() < sg.terminalChance,
+      // an extra Prime at each configured bump tier, on top of key mods
+      eliteCount: 1 + sg.eliteBumpTiers.filter(bt => tier >= bt).length + mod.extraElites,
       tier, biomeName: biome.name, biomeKey: node.biome, terrain: biome.terrain,
       hpMult: mod.hpMult, dmgAdd: mod.dmgAdd,
       fovPenalty: mod.fovPenalty, flaskPenalty: mod.flaskPenalty,
@@ -2662,13 +2768,15 @@ function sectorComplete() {
   const [q, r] = unkey(run.sectorNode);
   revealArea(q, r);
   // key sustain: always at least one key back, at tier or tier+1; juiced
-  // keys raise the chance of a second, and drops can come pre-modified
+  // keys raise the chance of a second, and drops can come pre-modified.
+  // Odds live in config.js (levelGen.sector).
   const t = run.floorConf.tier;
-  const drops = 1 + (craftRng() < 0.3 * run.eliteTotal + (run.floorConf.lootBonus || 0) ? 1 : 0);
+  const sg = CFG.levelGen.sector;
+  const drops = 1 + (craftRng() < sg.keyDropSecondChanceEliteWeight * run.eliteTotal + (run.floorConf.lootBonus || 0) ? 1 : 0);
   for (let i = 0; i < drops; i++) {
-    const kt = clamp(t + (craftRng() < 0.35 ? 1 : 0), 1, atlasCap());
+    const kt = clamp(t + (craftRng() < sg.keyDropBumpTierChance ? 1 : 0), 1, atlasCap());
     const drop = makeKey(kt);
-    if (kt >= 2 && craftRng() < 0.2) { drop.rarity = "magic"; addKeyMod(craftRng, drop); }
+    if (kt >= 2 && craftRng() < sg.keyDropMagicChanceAtTier2Plus) { drop.rarity = "magic"; addKeyMod(craftRng, drop); }
     profile.atlas.keys.push(drop);
     log(`${keyDisplayName(drop)} recovered.`, "good");
   }
@@ -2714,10 +2822,11 @@ function gateCleared() {
   const [q, r] = unkey(run.sectorNode);
   revealArea(q, r);
   const oldCap = profile.atlas.tierCap;
-  profile.atlas.tierCap = Math.min(TIER_CAP, oldCap + 4);
-  for (let i = 0; i < 2; i++)
+  const gc = CFG.levelGen.gateClear;
+  profile.atlas.tierCap = Math.min(TIER_CAP, oldCap + CFG.levelGen.gateJumpAmount);
+  for (let i = 0; i < gc.keysGranted; i++)
     profile.atlas.keys.push(makeKey(Math.min(oldCap + 1, profile.atlas.tierCap)));
-  grantOrbs(craftRng, 3 + (craftRng() < (run.floorConf.lootBonus || 0) ? 1 : 0), run.floor);
+  grantOrbs(craftRng, gc.orbsGranted + (craftRng() < (run.floorConf.lootBonus || 0) ? 1 : 0), run.floor);
   log(`THE GATE FALLS. Sector Keys up to T${profile.atlas.tierCap} now drop. Extraction enabled.`, "sys");
   addFloat(run.player.q, run.player.r, "GATE FALLS", "#5fe0aa");
   sfx("win");
@@ -4770,6 +4879,7 @@ window.RL = {
   ui,
   buildDebugBundle, exportDebugState, importDebugState, downloadJSON, GAME_VERSION,
   UPGRADES, AFFIX_TIER_BANDS, SHOP_RESTOCKS, SHOP_ORBS, GAMBLE_COST, showShop,
+  CFG, CFG_ERRORS, validateConfig,
   paletteFor, mixColor, BIOME_PALETTES, CAMPAIGN_THEMES,
   resize, resetZoom, syncBarHeight,
   setRun(r) { run = r; },
