@@ -140,6 +140,109 @@ function check(name, cond) {
   });
   for (const [k, v] of Object.entries(r6)) check(k, !!v);
 
+  // ============================ last-run outcome tracking ============================
+  // a compact snapshot of the last level died or won — tier, boss, cause,
+  // turn/kill counts, loadout — lives in campaignMeta so it rides along
+  // in every debug export without any separate storage or export button
+  await page.evaluate(() => { try { localStorage.clear(); } catch (e) {} });
+  await page.reload();
+  await page.waitForTimeout(300);
+  const r7 = await page.evaluate(() => {
+    const RL = window.RL;
+    const out = {};
+
+    out.noLastOutcomeInitially = RL.persist().lastOutcome === undefined;
+
+    // prologue death: a real attacker deals the killing blow
+    RL.startRun(9001);
+    const p = RL.run.player;
+    const killer = RL.spawnEnemy("crusher", p.q + 1, p.r);
+    p.hp = 1;
+    RL.hurtPlayer(killer, 5);
+    let lo = RL.persist().lastOutcome;
+    out.deathRecordsKindSubCause = lo.kind === "died" && lo.sub === "prologue" && lo.cause === "crusher";
+    out.deathRecordsTierAndBiome = lo.tier === 1 && lo.biome === "Scrapyard";
+    out.deathRecordsCombatCounts = typeof lo.turn === "number" && typeof lo.kills === "number";
+    out.deathRecordsEquip = !!lo.equip && !!lo.equip.weapon && lo.equip.weapon.base === "blade";
+    out.deathHasNoKeyInfo = lo.keyRarity === null && lo.keyMods === null;   // prologue carries no key
+
+    // prologue win
+    RL.startRun(9003);
+    RL.winRun();
+    lo = RL.persist().lastOutcome;
+    out.prologueWinRecorded = lo.kind === "won" && lo.sub === "prologue" && lo.cause === null;
+
+    // endgame: sector purge records "won"/"sector" with the key's own info
+    RL.enterOverworld();
+    RL.profile.atlas.seed = 55501;
+    RL.profile.atlas.nodes = { "0,0": { state: "hub" } };
+    RL.revealArea(0, 0);
+    RL.run.player.souls = 999999;
+    RL.fabricateKey(1);
+    const fk = Object.keys(RL.profile.atlas.nodes).find(k => RL.profile.atlas.nodes[k].state === "frontier");
+    const [q, r] = fk.split(",").map(Number);
+    const kk = RL.profile.atlas.keys.filter(k => k.tier === 1 && k.rarity === "normal").pop();
+    RL.enterNode(q, r, kk.id);
+    for (const el of [...RL.run.enemies].filter(x => x.elite)) RL.hurtEnemy(el, 99999);
+    lo = RL.persist().lastOutcome;
+    out.sectorWinRecorded = lo.kind === "won" && lo.sub === "sector" && lo.tier === 1;
+    out.sectorWinHasKeyInfo = lo.keyRarity === "normal" && Array.isArray(lo.keyMods);
+
+    // detonation death, still inside this purged-but-not-extracted sector
+    // (the volatile check only fires in mode "sector"): force the flag
+    // and kill a machine adjacent to the player — the cause should be
+    // the detonating machine, not null
+    const pp = RL.run.player;
+    const bomb = RL.spawnEnemy("scrapper", pp.q + 1, pp.r);
+    bomb.hp = 1;
+    pp.hp = 1;
+    RL.run.floorConf.volatile = true;
+    RL.hurtEnemy(bomb, 1);
+    lo = RL.persist().lastOutcome;
+    out.detonationRecordsCause = lo.kind === "died" && lo.cause === "scrapper";
+    RL.extractToOverworld();
+    RL.run.player.souls = 999999;   // the death above wiped cores; restock for the next fabrication
+
+    // gate clear: sub "gate", bossType names the actual guardian for the band
+    RL.profile.atlas.nodes["1,0"] = { state: "gate", band: 4, wreck: 0 };
+    RL.profile.atlas.tierCap = 4;
+    RL.fabricateKey(4);
+    const gk = RL.profile.atlas.keys.filter(k => k.tier === 4 && k.rarity === "normal").pop();
+    RL.enterNode(1, 0, gk.id);
+    const guardian = RL.run.enemies.find(x => x.type === RL.run.floorConf.bossType);
+    RL.hurtEnemy(guardian, 99999);
+    lo = RL.persist().lastOutcome;
+    out.gateWinRecorded = lo.kind === "won" && lo.sub === "gate" && lo.bossType === "sentinel";
+    RL.extractToOverworld();
+
+    // a death right after a win overwrites lastOutcome — it always holds
+    // whichever terminal event happened most recently
+    RL.profile.atlas.nodes["2,0"] = { state: "frontier", biome: "scrapyard", wreck: 0 };
+    RL.fabricateKey(1);
+    const kk2 = RL.profile.atlas.keys.filter(k => k.tier === 1 && k.rarity === "normal").pop();
+    RL.enterNode(2, 0, kk2.id);
+    for (const el of [...RL.run.enemies].filter(x => x.elite)) RL.hurtEnemy(el, 99999);   // records a "won"
+    const grunt = RL.spawnEnemy("scrapper", RL.run.player.q + 1, RL.run.player.r);
+    RL.run.player.hp = 1;
+    RL.hurtPlayer(grunt, 5);   // records a "died" — must overwrite the win above
+    lo = RL.persist().lastOutcome;
+    out.deathAfterWinOverwrites = lo.kind === "died" && lo.cause === "scrapper";
+
+    // the debug bundle surfaces it at the top level too, not just buried
+    // inside campaignMeta — same object, read from the same source
+    const bundle = RL.buildDebugBundle();
+    out.bundleSurfacesLastOutcome = !!bundle.lastOutcome &&
+      JSON.stringify(bundle.lastOutcome) === JSON.stringify(bundle.campaignMeta.lastOutcome);
+
+    try {
+      localStorage.removeItem("ironhex-foundry");
+      localStorage.removeItem("ironhex-run");
+      localStorage.removeItem("ironhex");
+    } catch (e) {}
+    return out;
+  });
+  for (const [k, v] of Object.entries(r7)) check(k, !!v);
+
   // ============================ UI wiring ============================
   await page.evaluate(() => { try { localStorage.clear(); } catch (e) {} });
   await page.reload();

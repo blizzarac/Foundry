@@ -1024,13 +1024,18 @@ const GAME_VERSION = "2026-08-23-config";
 function buildDebugBundle() {
   if (run && !run.over && run.mode !== "overworld" && ui.screen === "game") saveRun();
   if (profile) saveProfile();
+  const campaignMeta = persist();
   return {
     exportVersion: 1,
     game: "ironhex",
     gameVersion: GAME_VERSION,
     configVersion: (CFG && CFG.configVersion) || null,
     exportedAt: new Date().toISOString(),
-    campaignMeta: persist(),
+    // the last level died or won — tier, boss, cause, loadout at the
+    // time — surfaced at the top for visibility; it's also the source
+    // it's read from, campaignMeta.lastOutcome, so the two always agree
+    lastOutcome: campaignMeta.lastOutcome || null,
+    campaignMeta,
     profile: JSON.parse(localStorage.getItem(PROFILE_KEY) || "null"),
     runCheckpoint: JSON.parse(localStorage.getItem(RUN_KEY) || "null"),
     context: {
@@ -2106,7 +2111,7 @@ function hurtEnemy(e, dmg, label) {
       hitFlash = 0.3;
       addFloat(pl.q, pl.r, "-" + dmg, "#e06060");
       log("The " + def.name + " detonates!", "warn");
-      if (pl.hp <= 0) { dieRun(); return; }
+      if (pl.hp <= 0) { dieRun(e); return; }
     }
     if (e.elite && run.mode === "sector") {
       run.eliteKilled++;
@@ -2150,7 +2155,7 @@ function hurtPlayer(e, dmg) {
   if (dmg >= 5) shake = 7;
   sfx(dmg >= 5 ? "slam" : "hit");
   log(ENEMY[e.type].name + " hits you for " + dmg + ".", "warn");
-  if (p.hp <= 0) dieRun();
+  if (p.hp <= 0) dieRun(e);
 }
 
 /* enemy phase */
@@ -2776,12 +2781,49 @@ function resolveBossStrike(e, hexes, struck) {
 }
 
 /* ------------------------------------------------------------ end states */
-function dieRun() {
+// a compact snapshot of the run that just ended (died or won) — tier,
+// boss, cause, turn/kill counts, loadout at the time. Lives in
+// campaignMeta (not the atlas profile) so it survives even a prologue
+// death before the Foundry unlocks, overwrites on every terminal event
+// (so it's always the single most recent one, whichever kind), and rides
+// along in every debug export via campaignMeta — no separate storage or
+// export plumbing needed for it to show up there.
+function recordOutcome(kind, cause) {
+  const p = run.player;
+  const f = run.floorConf;
+  const equip = {};
+  for (const slot of SLOTS) {
+    const it = equippedItem(slot);
+    equip[slot] = it ? { name: it.name, rarity: it.rarity, base: it.base } : null;
+  }
+  const sub = run.mode === "campaign" ? "prologue"
+    : f && f.bossType === "prime" ? "apex"
+    : f && GATE_BOSS_TYPES.includes(f.bossType) ? "gate"
+    : "sector";
+  const theme = run.mode === "campaign" ? CAMPAIGN_THEMES[run.floor - 1] : null;
+  const per = persist();
+  per.lastOutcome = {
+    kind, sub, at: new Date().toISOString(),
+    tier: (f && f.tier) || run.floor,
+    biome: run.mode === "campaign" ? ((BIOMES[theme] && BIOMES[theme].name) || theme || null)
+      : (f ? f.biomeName : null),
+    bossType: (f && f.bossType) || null,
+    cause: cause || null,   // enemy type that dealt the killing blow, or null on a win
+    turn: run.turn, kills: run.kills, souls: p.souls,
+    hp: p.hp, maxHp: p.maxHp,
+    keyRarity: (f && f.keyRarity) || null,
+    keyMods: (f && f.keyMods) || null,
+    equip,
+  };
+  savePersist(per);
+}
+function dieRun(killer) {
   const p = run.player;
   p.dead = true;
   run.over = true;
   clearRunCheckpoint();
   sfx("shutdown");
+  recordOutcome("died", killer ? killer.type : null);
   const per = persist();
   per.deaths = (per.deaths || 0) + 1;
   if (run.mode === "sector") {
@@ -2828,6 +2870,7 @@ function winRun() {
   run.won = true;
   clearRunCheckpoint();
   sfx("win");
+  recordOutcome("won", null);
   const per = persist();
   per.wins = (per.wins || 0) + 1;
   per.best = 5;
@@ -3283,6 +3326,10 @@ function enterNode(q, r, keyId) {
       eventType: node.event || null,
     };
   }
+  // carried by recordOutcome() so a died/won snapshot can show whether the
+  // fight was juiced by key mods, not just the sector's biome/tier
+  run.floorConf.keyRarity = skey.rarity;
+  run.floorConf.keyMods = skey.affixes.map(a => a.mod);
   genFloor();
   ui.screen = "game";
   ui.rollMode = false; ui.throwDart = false; ui.walking = null;
@@ -3332,6 +3379,7 @@ function sectorComplete() {
     spawnGateNode(run.sectorNode);
   }
   grantTreePoints(CFG.frameTree.pointsPerPurge);
+  recordOutcome("won", null);
   log("SECTOR PURGED — extraction enabled.", "sys");
   addFloat(run.player.q, run.player.r, "SECTOR PURGED", "#5fe0aa");
   sfx("stairs");
@@ -3409,6 +3457,7 @@ function gateCleared() {
     profile.atlas.keys.push(makeKey(Math.min(oldCap + 1, profile.atlas.tierCap)));
   grantOrbs(craftRng, gc.orbsGranted + (craftRng() < (run.floorConf.lootBonus || 0) ? 1 : 0), run.floor);
   grantTreePoints(CFG.frameTree.pointsPerGate);
+  recordOutcome("won", null);
   log(`THE GATE FALLS. Sector Keys up to T${profile.atlas.tierCap} now drop. Extraction enabled.`, "sys");
   addFloat(run.player.q, run.player.r, "GATE FALLS", "#5fe0aa");
   sfx("win");
@@ -3435,6 +3484,7 @@ function apexCleared() {
   log(`Core relic recovered: ${relic.name} (Unique).`, "good");
   grantOrbs(craftRng, ax.orbsGranted + (craftRng() < (run.floorConf.lootBonus || 0) ? 1 : 0), run.floor);
   profile.apexKills = (profile.apexKills || 0) + 1;
+  recordOutcome("won", null);
   log(`THE FOUNDRY HEART FALLS${profile.apexKills > 1 ? " (×" + profile.apexKills + ")" : ""}. Extraction enabled.`, "sys");
   addFloat(run.player.q, run.player.r, "HEART FALLS", "#5fe0aa");
   sfx("win");
@@ -5776,7 +5826,7 @@ window.RL = {
   donutHexes, laneHexes, gateCleared, spawnGateNode, atlasCap, tierColor,
   ringHexes, barrageHexes, laneHexesLen, wardenAct, crucibleAct, primeAct,
   resolveNewBossStrike, spawnApexNode, apexCleared, ensureApexNode, GATE_BOSS_TYPES,
-  hurtEnemy, hurtPlayer, strikeOne, winRun, dieRun,
+  hurtEnemy, hurtPlayer, strikeOne, winRun, dieRun, recordOutcome,
   saveProfile, loadProfile, migrateProfile, syncProfileFromPlayer,
   saveRun, resumeRun, clearRunCheckpoint, loadRunCheckpoint,
   NODE_EVENTS, EVENT_GLYPH, EVENT_NAME, EVENT_DESC, EVENT_WEIGHTS, EVENT_DENSITY,

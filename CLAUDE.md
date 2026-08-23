@@ -60,4 +60,11 @@
   on the menu/death screen) to reproduce a reported bug exactly: import it
   via `RL.importDebugState(jsonText)` + `location.reload()` in a fresh
   session, or just read the JSON directly — `profile`/`runCheckpoint` mirror
-  the shapes documented in rl.js's persistence section.
+  the shapes documented in rl.js's persistence section. The same export
+  also carries `lastOutcome` (top-level, and its source of truth at
+  `campaignMeta.lastOutcome`): a snapshot of the single most recent death
+  or win — kind/sub, tier, biome/boss, killing-blow cause, turn/kill
+  counts, cores, hp, key rarity/mods, equipped loadout — written by
+  `recordOutcome()` from `dieRun`/`winRun`/`sectorComplete`/`gateCleared`/
+  `apexCleared`. It's one snapshot, not a history: a balance question
+  about a specific past run still needs that run's own export.
