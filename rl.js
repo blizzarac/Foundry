@@ -2852,6 +2852,56 @@ function resize() {
 window.addEventListener("resize", resize);
 resize();
 
+/* ---- viewport guard ----
+   The whole HUD is position:fixed and the body is fixed with no scroll,
+   so anything that shrinks the *visual* viewport below the layout one —
+   a pinch-zoom, Safari's dynamic toolbars — strands the topbar and the
+   action bar outside the visible area with no way to pan back to them.
+   Publish the visible slice as CSS vars so the HUD tracks it, and refuse
+   the pinch outright: zoom buys nothing here and only breaks the frame. */
+const VIEWPORT_META = document.querySelector('meta[name="viewport"]');
+const VIEWPORT_BASE =
+  "width=device-width, initial-scale=1.0, maximum-scale=1.0, " +
+  "user-scalable=no, viewport-fit=cover";
+function resetZoom() {
+  if (!VIEWPORT_META) return false;
+  // rewriting the tag makes Safari re-clamp the scale to maximum-scale
+  VIEWPORT_META.setAttribute("content", VIEWPORT_BASE + ", minimum-scale=1.0");
+  VIEWPORT_META.setAttribute("content", VIEWPORT_BASE);
+  return true;
+}
+for (const ev of ["gesturestart", "gesturechange", "gestureend"]) {
+  document.addEventListener(ev, e => { e.preventDefault(); resetZoom(); },
+    { passive: false });
+}
+// the action bar wraps to two rows on a narrow screen — publish its real
+// height so the log always sits clear of it
+function syncBarHeight() {
+  const bar = document.getElementById("actions");
+  if (!bar) return;
+  document.documentElement.style.setProperty("--bar-h", bar.offsetHeight + "px");
+}
+function syncViewportVars() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  const s = document.documentElement.style;
+  s.setProperty("--vv-w", vv.width + "px");
+  s.setProperty("--vv-h", vv.height + "px");
+  s.setProperty("--vv-x", Math.max(0, vv.offsetLeft) + "px");
+  s.setProperty("--vv-y", Math.max(0, vv.offsetTop) + "px");
+  // gap between the layout bottom and the bottom actually on screen
+  s.setProperty("--vv-bottom",
+    Math.max(0, window.innerHeight - vv.height - vv.offsetTop) + "px");
+  if (vv.scale > 1.02) resetZoom();
+  syncBarHeight();
+  resize();
+}
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", syncViewportVars);
+  window.visualViewport.addEventListener("scroll", syncViewportVars);
+  syncViewportVars();
+}
+
 function centerCam() {
   cam.tx = hexX(run.player.q, run.player.r);
   cam.ty = hexY(run.player.q, run.player.r);
@@ -3668,6 +3718,7 @@ function refreshHud() {
   // nothing else on screen says so once the one log line scrolls away
   purgeBanner.classList.toggle("hidden", !(inSector && purged && !run.over));
   refreshEventUI();
+  syncBarHeight();
 }
 
 function refreshEventUI() {
@@ -4616,5 +4667,6 @@ window.RL = {
   buildDebugBundle, exportDebugState, importDebugState, downloadJSON, GAME_VERSION,
   UPGRADES, AFFIX_TIER_BANDS, SHOP_RESTOCKS, SHOP_ORBS, GAMBLE_COST, showShop,
   paletteFor, mixColor, BIOME_PALETTES, CAMPAIGN_THEMES,
+  resize, resetZoom, syncViewportVars,
   setRun(r) { run = r; },
 };

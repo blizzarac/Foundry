@@ -236,6 +236,38 @@ function check(name, cond) {
   await page.keyboard.press("Escape");
   check("gearPanelCloses", await page.evaluate(() => document.getElementById("inv").classList.contains("hidden")));
 
+  // phone viewport: the fixed HUD must stay inside the visible area, and
+  // the shop must fit and scroll rather than stranding its top off screen
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(250);
+  const vp = await page.evaluate(() => {
+    const RL = window.RL;
+    RL.run.player.souls = 5000;
+    RL.showShop();
+    const r = id => document.getElementById(id).getBoundingClientRect();
+    const bar = r("actions"), top = r("topbar");
+    const box = document.querySelector("#shop .box");
+    const bb = box.getBoundingClientRect();
+    return {
+      barInside: bar.bottom <= window.innerHeight + 0.5 && bar.top >= 0 &&
+        bar.left >= -0.5 && bar.right <= window.innerWidth + 0.5,
+      topInside: top.top >= -0.5 && top.right <= window.innerWidth + 0.5,
+      boxFits: bb.top >= -0.5 && bb.height <= window.innerHeight + 0.5,
+      boxScrolls: box.scrollHeight > box.clientHeight,
+      varsPublished: !!document.documentElement.style.getPropertyValue("--vv-h"),
+      resetZoomOk: RL.resetZoom() === true,
+      // the bar spans the screen to wrap cleanly, so taps beside the
+      // buttons must still reach the board underneath
+      barLetsTapsThrough: (() => {
+        document.getElementById("shop").classList.add("hidden");
+        const hit = document.elementFromPoint(6, Math.round(bar.top + bar.height / 2));
+        return !!hit && hit.id !== "actions";
+      })(),
+    };
+  });
+  for (const [k, v] of Object.entries(vp)) check(k, !!v);
+  await page.evaluate(() => document.getElementById("shop").classList.add("hidden"));
+
   check("noPageErrors", errors.length === 0);
   if (errors.length) console.log("ERRORS:", errors.slice(0, 5));
   await browser.close();
