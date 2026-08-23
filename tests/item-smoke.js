@@ -289,13 +289,17 @@ function check(name, cond) {
     window.__sellNormal = RL.genItem(mk, "servo", "normal", 1);
     window.__sellRare = RL.genItem(mk, "cleaver", "rare", 5);
     // built directly (not rolled) so it's guaranteed to carry an
-    // implicit plus one prefix and one suffix, for the mod-display test
+    // implicit plus two of each affix kind, deliberately interleaved in
+    // array order (suffix, prefix, suffix, prefix) to prove display
+    // grouping actually reorders them rather than coincidentally matching
     window.__modsTestItem = {
       id: 999001, base: "bulkhead", rarity: "rare", name: "Test Directive",
       implicit: { maxHpBonus: 5, rollCostDelta: 1 },
       affixes: [
-        { id: 999002, kind: "prefix", stat: "dmg", tier: 1, label: "Honed", effect: { dmg: 1 } },
         { id: 999003, kind: "suffix", stat: "fovBonus", tier: 1, label: "of Sight", effect: { fovBonus: 1 } },
+        { id: 999002, kind: "prefix", stat: "dmg", tier: 1, label: "Honed", effect: { dmg: 1 } },
+        { id: 999005, kind: "suffix", stat: "maxStBonus", tier: 1, label: "of Capacity", effect: { maxStBonus: 1 } },
+        { id: 999004, kind: "prefix", stat: "bsBonus", tier: 1, label: "Piercing", effect: { bsBonus: 1 } },
       ],
       corrupted: false, lore: null,
     };
@@ -327,6 +331,21 @@ function check(name, cond) {
     const hasDivider = card.querySelector(".mod-divider");
     return !!hasImplicit && !!hasPrefix && !!hasSuffix && !!hasDivider &&
       hasPrefix.className !== hasSuffix.className;
+  }));
+  // __modsTestItem's affixes are deliberately interleaved (suffix, prefix,
+  // suffix, prefix) in source order — this only passes if itemModsHTML
+  // actually groups by kind rather than rendering insertion order
+  check("modsGroupedPrefixesBeforeSuffixes", await page.evaluate(() => {
+    const card = [...document.querySelectorAll("#gear-pack .item-card")]
+      .find(c => c.textContent.includes("Test Directive"));
+    if (!card) return false;
+    const kinds = [...card.querySelectorAll(".mod.prefix, .mod.suffix")]
+      .map(el => el.classList.contains("prefix") ? "prefix" : "suffix");
+    const lastPrefixIdx = kinds.lastIndexOf("prefix");
+    const firstSuffixIdx = kinds.indexOf("suffix");
+    return kinds.filter(k => k === "prefix").length === 2 &&
+      kinds.filter(k => k === "suffix").length === 2 &&
+      lastPrefixIdx < firstSuffixIdx;
   }));
   check("packTabByClick", await page.evaluate(() =>
     !document.getElementById("tab-pack").classList.contains("hidden") &&

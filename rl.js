@@ -4246,8 +4246,13 @@ function itemModsHTML(item) {
     const imp = item.implicit || implicitMidpoint(item.base);
     implicitHTML += `<span class="mod implicit">${describeEffect(imp)}</span>`;
   }
+  // grouped by kind — every prefix together, then every suffix — rather
+  // than whatever order they happened to be rolled or crafted in, so the
+  // two never interleave
+  const KIND_ORDER = { prefix: 0, suffix: 1, unique: 2, corrupt: 3 };
+  const ordered = [...item.affixes].sort((a, b) => (KIND_ORDER[a.kind] ?? 4) - (KIND_ORDER[b.kind] ?? 4));
   let affixHTML = "";
-  for (const a of item.affixes) {
+  for (const a of ordered) {
     const cls = a.kind === "corrupt" ? "corrupt" : a.kind === "unique" ? "unique"
       : a.kind === "prefix" ? "prefix" : a.kind === "suffix" ? "suffix" : "affix";
     affixHTML += `<span class="mod ${cls}">${describeEffect(a.effect)}${a.kind === "corrupt" ? " (corrupted)" : ""}</span>`;
