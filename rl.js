@@ -2122,14 +2122,23 @@ function dieRun() {
     // cores stay in the node as a wreck until you re-key it
     savePersist(per);
     const node = profile.atlas.nodes[run.sectorNode];
-    if (node && node.state !== "cleared") node.wreck = (node.wreck || 0) + p.souls;
+    // a sector flips to "cleared" the instant the last Prime dies, while
+    // you're still standing in it — die after that (stragglers, a live
+    // Corrupted Zone, the walk back to Extract) and there is no wreck to
+    // store: a cleared node can never be re-entered, so there'd be nowhere
+    // to reclaim it from. Say so plainly instead of pointing at a wreck
+    // that was never created.
+    const wreckStored = !!(node && node.state !== "cleared");
+    if (wreckStored) node.wreck = (node.wreck || 0) + p.souls;
     const lost = p.souls;
     p.souls = 0;
     syncProfileFromPlayer();
     saveProfile();
-    document.getElementById("death-souls").textContent = lost > 0
+    document.getElementById("death-souls").textContent = lost <= 0
+      ? "The key burns out with the frame. The sector stays sealed."
+      : wreckStored
       ? lost + " cores went down with the frame — socket another key into that node to reclaim the wreck."
-      : "The key burns out with the frame. The sector stays sealed.";
+      : lost + " cores went down with the frame — the sector was already purged, so they're gone for good.";
     document.getElementById("death-stats").textContent =
       `T${run.floorConf.tier} ${run.floorConf.biomeName} · ${run.kills} scrapped · cycle ${run.turn}`;
     document.getElementById("death-retry").textContent = "Return to the Bay";

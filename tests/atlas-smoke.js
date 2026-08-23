@@ -148,6 +148,27 @@ function check(name, cond) {
     RL.extractToOverworld();
     out.purgeBannerHidesOnExtract = document.getElementById("purge-banner").classList.contains("hidden");
 
+    // death AFTER purge: a sector flips "cleared" the instant the last
+    // Prime dies, while you're still standing in it — die before reaching
+    // Extract and there is no wreck to store (a cleared node can never be
+    // re-entered), so the death screen must say the cores are gone rather
+    // than point at a wreck that was never created
+    RL.fabricateKey(1);
+    const kDead = RL.profile.atlas.keys.find(k => k.tier === 1 && k.rarity === "normal");
+    const [qD, rD] = frontierKeys()[0].split(",").map(Number);
+    RL.enterNode(qD, rD, kDead.id);
+    for (const e of [...RL.run.enemies]) if (e.elite) RL.hurtEnemy(e, 99999);
+    const purgedNode = RL.profile.atlas.nodes[qD + "," + rD];
+    out.deathAfterPurgeSectorCleared = purgedNode.state === "cleared";
+    RL.run.player.souls = 321;
+    RL.dieRun();
+    out.deathAfterPurgeNoWreck = !purgedNode.wreck;
+    const deathText = document.getElementById("death-souls").textContent;
+    out.deathAfterPurgeHonestText = deathText.includes("already purged") &&
+      !deathText.includes("socket another key");
+    RL.enterOverworld();   // mirrors the real "Return to the Bay" flow
+    RL.run.player.souls = 99999;
+
     // volatile: a machine dying next to you costs 1 integrity
     RL.fabricateKey(1);
     const kv = RL.profile.atlas.keys.find(k => k.tier === 1 && k.rarity === "normal");
@@ -265,7 +286,7 @@ function check(name, cond) {
     const out = {};
     out.profileRestored = RL.profile && RL.profile.atlas.unlocked;
     out.mapRestored = Object.values(RL.profile.atlas.nodes)
-      .filter(n => n.state === "cleared").length === 3; // T1 sector + T4 sector + gate
+      .filter(n => n.state === "cleared").length === 4; // T1 sector + death-after-purge sector + T4 sector + gate
     out.tierCapRestored = RL.profile.atlas.tierCap === 8;
     out.moddedKeysRestored = RL.profile.atlas.keys
       .some(k => k.rarity !== "normal" && k.affixes.length > 0);
