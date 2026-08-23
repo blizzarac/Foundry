@@ -196,30 +196,40 @@ const STAT_LABEL = {
   rollCostDelta: "dash cost", parryCostDelta: "deflect cost", fovBonus: "sensor range",
 };
 
-/* affix pools: prefixes carry raw power, suffixes carry utility. Each has
-   three tiers; deeper sectors roll higher tiers. One modifier per stat
-   per item, like one mod per group. */
+/* affix pools: prefixes carry raw power, suffixes carry utility. Five
+   tiers each; deeper sectors roll higher tiers. Tiers 4-5 only start
+   appearing at T8+/T12+ (see AFFIX_TIER_BANDS below) — the chase that
+   makes climbing past T4 worth it, since loot depth used to cap out
+   there. One modifier per stat per item, like one mod per group. */
 const PREFIXES = [
-  { stat: "dmg",            names: ["Honed", "Brutal", "Merciless"],           tiers: [1, 2, 3] },
-  { stat: "maxHpBonus",     names: ["Plated", "Reinforced", "Fortified"],      tiers: [2, 4, 6] },
-  { stat: "bsBonus",        names: ["Piercing", "Incisive", "Eviscerating"],   tiers: [1, 2, 3] },
-  { stat: "flaskHealBonus", names: ["Self-Sealing", "Regenerative", "Undying"], tiers: [2, 4, 6] },
-  { stat: "salvageMult",    names: ["Scavenger's", "Harvester's", "Magnate's"], tiers: [0.15, 0.25, 0.4] },
+  { stat: "dmg",            names: ["Honed", "Brutal", "Merciless", "Ravaging", "Annihilating"],      tiers: [1, 2, 3, 4, 6] },
+  { stat: "maxHpBonus",     names: ["Plated", "Reinforced", "Fortified", "Bulwarked", "Adamant"],      tiers: [2, 4, 6, 9, 13] },
+  { stat: "bsBonus",        names: ["Piercing", "Incisive", "Eviscerating", "Impaling", "Rending"],    tiers: [1, 2, 3, 4, 6] },
+  { stat: "flaskHealBonus", names: ["Self-Sealing", "Regenerative", "Undying", "Restorative", "Immortal"], tiers: [2, 4, 6, 9, 13] },
+  { stat: "salvageMult",    names: ["Scavenger's", "Harvester's", "Magnate's", "Baron's", "Tycoon's"], tiers: [0.15, 0.25, 0.4, 0.55, 0.75] },
 ];
 const SUFFIXES = [
-  { stat: "maxStBonus",     names: ["of Capacity", "of the Dynamo", "of the Reactor"],   tiers: [1, 1, 2] },
-  { stat: "rollCostDelta",  names: ["of Thrust", "of Burn", "of Flight"],                tiers: [-1, -1, -1] },
-  { stat: "parryCostDelta", names: ["of Deflection", "of the Aegis", "of the Bulwark"],  tiers: [-1, -1, -1] },
-  { stat: "fovBonus",       names: ["of Sight", "of the Beacon", "of the Watchtower"],   tiers: [1, 2, 3] },
-  { stat: "siphonOnKill",   names: ["of Leeching", "of Siphoning", "of Reclamation"],    tiers: [1, 1, 1] },
+  { stat: "maxStBonus",     names: ["of Capacity", "of the Dynamo", "of the Reactor", "of the Generator", "of the Singularity"], tiers: [1, 1, 2, 2, 3] },
+  { stat: "rollCostDelta",  names: ["of Thrust", "of Burn", "of Flight", "of the Comet", "of the Void"],       tiers: [-1, -1, -1, -2, -2] },
+  { stat: "parryCostDelta", names: ["of Deflection", "of the Aegis", "of the Bulwark", "of the Sentinel", "of the Absolute"], tiers: [-1, -1, -1, -2, -2] },
+  { stat: "fovBonus",       names: ["of Sight", "of the Beacon", "of the Watchtower", "of the Overseer", "of Omniscience"],   tiers: [1, 2, 3, 4, 5] },
+  { stat: "siphonOnKill",   names: ["of Leeching", "of Siphoning", "of Reclamation", "of the Vampire", "of the Harvest"],     tiers: [1, 1, 1, 1, 1] },
 ];
 // corrupted-terminal downside mods (corruption also locks the item to orbs)
 const CORRUPT_MODS = [
   { stat: "maxHpBonus", val: -3 }, { stat: "maxStBonus", val: -1 },
   { stat: "rollCostDelta", val: 1 }, { stat: "parryCostDelta", val: 1 },
 ];
-// tier weights [t1,t2,t3] by sector depth
-const TIER_WEIGHTS = { 1: [4, 1, 0], 2: [3, 2, 0], 3: [2, 2, 1], 4: [1, 2, 2], 5: [0, 2, 3] };
+// affix tier weights [t1..t5] by sector depth (depth = key tier + 1);
+// tier 4 unlocks at depth 9 (T8), tier 5 at depth 13 (T12)
+const AFFIX_TIER_BANDS = [
+  { minDepth: 1,  w: [4, 1, 0, 0, 0] },
+  { minDepth: 2,  w: [3, 2, 0, 0, 0] },
+  { minDepth: 4,  w: [2, 2, 1, 0, 0] },
+  { minDepth: 6,  w: [1, 2, 2, 0, 0] },
+  { minDepth: 9,  w: [0, 2, 3, 2, 0] },
+  { minDepth: 13, w: [0, 1, 3, 3, 2] },
+];
 
 const RARE_NAME_A = ["Doom", "Storm", "Iron", "Ghost", "Ash", "Grim", "Vesta", "Null", "Ruin", "Ember"];
 const RARE_NAME_B = ["Whisper", "Bane", "Coil", "Ward", "Cry", "Spike", "Pulse", "Vault", "Brand", "Fang"];
@@ -238,10 +248,12 @@ const UNIQUES = [
 
 let itemSeq = 0;
 function rollTier(rng, depth) {
-  const w = TIER_WEIGHTS[clamp(depth, 1, 5)];
-  const total = w[0] + w[1] + w[2];
+  let band = AFFIX_TIER_BANDS[0];
+  for (const b of AFFIX_TIER_BANDS) if (depth >= b.minDepth) band = b;
+  const w = band.w;
+  const total = w[0] + w[1] + w[2] + w[3] + w[4];
   let r = rng() * total;
-  for (let t = 0; t < 3; t++) { if (r < w[t]) return t + 1; r -= w[t]; }
+  for (let t = 0; t < 5; t++) { if (r < w[t]) return t + 1; r -= w[t]; }
   return 1;
 }
 function itemAffixCount(item, kind) { return item.affixes.filter(a => a.kind === kind).length; }
@@ -519,11 +531,15 @@ function keyDisplayName(k) {
   return "T" + k.tier + " Sector Key";
 }
 
+// Capped and steep on purpose: the shop is meant to carry the prologue,
+// not the endgame — flat, permanent power stacked against enemies that
+// scale by tier would break the curve at either end. Past the cap, power
+// comes from gear, where an ARPG's chase belongs.
 const UPGRADES = [
-  { id: "hp",    name: "Chassis reinforcement", desc: "+4 max integrity", base: 30, apply: p => { p.baseMaxHp += 4; p.hp += 4; } },
-  { id: "st",    name: "Capacitor bank",        desc: "+1 max power",     base: 50, apply: p => { p.baseMaxSt += 1; p.st += 1; } },
-  { id: "dmg",   name: "Weapon calibration",    desc: "+1 weapon damage", base: 60, apply: p => { p.bonusDmg += 1; } },
-  { id: "flask", name: "Nanite reservoir",      desc: "+1 repair cell",   base: 40, apply: p => { p.maxFlask += 1; p.flask += 1; } },
+  { id: "hp",    name: "Chassis reinforcement", desc: "+4 max integrity", base: 30, cap: 5, apply: p => { p.baseMaxHp += 4; p.hp += 4; } },
+  { id: "st",    name: "Capacitor bank",        desc: "+1 max power",     base: 50, cap: 2, apply: p => { p.baseMaxSt += 1; p.st += 1; } },
+  { id: "dmg",   name: "Weapon calibration",    desc: "+1 weapon damage", base: 60, cap: 3, apply: p => { p.bonusDmg += 1; } },
+  { id: "flask", name: "Nanite reservoir",      desc: "+1 repair cell",   base: 40, cap: 2, apply: p => { p.maxFlask += 1; p.flask += 1; } },
 ];
 
 /* ------------------------------------------------------------ game state */
@@ -1170,12 +1186,15 @@ function spawnEnemy(type, q, r) {
     stagger: 0, moveToggle: false, elite: false,
     bossCount: 0, bossPhase2: false,
   };
-  // keyed sectors scale machines by key tier and key mods (bay respawns too)
+  // keyed sectors scale machines by key tier and key mods (bay respawns too).
+  // Enemy power has to outpace player power over 15 tiers of gear/shop
+  // growth: hp grows ~5.9x by T15 (was ~4.5x), damage adds +1 every 2
+  // tiers past T3 (was every 3) — deep tiers are earned, not assumed.
   if (run.mode === "sector" && run.floorConf) {
     const f = run.floorConf;
     const t = f.tier || 1;
-    e.hp = e.maxHp = Math.round(d.hp * (1 + 0.25 * (t - 1)) * (f.hpMult || 1));
-    e.dmg = d.dmg + (t >= 3 ? 1 + Math.floor((t - 3) / 3) : 0) + (f.dmgAdd || 0);
+    e.hp = e.maxHp = Math.round(d.hp * (1 + 0.35 * (t - 1)) * (f.hpMult || 1));
+    e.dmg = d.dmg + (t >= 3 ? 1 + Math.floor((t - 3) / 2) : 0) + (f.dmgAdd || 0);
   }
   run.enemies.push(e);
   return e;
@@ -2469,15 +2488,19 @@ function enterNode(q, r, keyId) {
     };
   } else {
     const biome = BIOMES[node.biome];
+    // pack density grows slightly with tier on top of each biome's own
+    // curve — +5% per 3 tiers, ~25% more machines by T15
+    const packGrowth = 1 + 0.05 * Math.floor(tier / 3);
     const spawn = {};
-    for (const [type, n] of Object.entries(biome.spawn(tier))) spawn[type] = Math.round(n * mod.spawnMult);
+    for (const [type, n] of Object.entries(biome.spawn(tier))) spawn[type] = Math.round(n * mod.spawnMult * packGrowth);
     run.floorConf = {
       R: 8 + (tier >= 3 ? 1 : 0),
       spawn,
       rock: biome.rock,
       chests: (biome.chests || 1) + (tier >= 3 ? 1 : 0) + Math.floor(quant / 0.25),
       terminal: mulberry32((run.seed ^ 0x7777) >>> 0)() < 0.4,
-      eliteCount: 1 + (tier >= 3 ? 1 : 0) + mod.extraElites,
+      // an extra Prime at T7 and T11, on top of the T3 bump and key mods
+      eliteCount: 1 + (tier >= 3 ? 1 : 0) + (tier >= 7 ? 1 : 0) + (tier >= 11 ? 1 : 0) + mod.extraElites,
       tier, biomeName: biome.name, biomeKey: node.biome, terrain: biome.terrain,
       hpMult: mod.hpMult, dmgAdd: mod.dmgAdd,
       fovPenalty: mod.fovPenalty, flaskPenalty: mod.flaskPenalty,
@@ -3651,13 +3674,14 @@ function showShop() {
   box.innerHTML = "";
   for (const u of UPGRADES) {
     const n = bought[u.id] || 0;
-    const cost = Math.round(u.base * Math.pow(1.5, n));
+    const maxed = n >= u.cap;   // saves from before the cap keep any extra ranks already bought
+    const cost = Math.round(u.base * Math.pow(2, n));
     const el = document.createElement("button");
     el.className = "shop-item";
-    el.disabled = p.souls < cost;
-    el.innerHTML = `<b>${u.name}</b><span>${u.desc}</span><em>${cost} cores</em>`;
+    el.disabled = maxed || p.souls < cost;
+    el.innerHTML = `<b>${u.name}</b><span>${u.desc}</span><em>${maxed ? "MAX" : cost + " cores"}</em>`;
     el.addEventListener("click", () => {
-      if (p.souls < cost) return;
+      if (maxed || p.souls < cost) return;
       p.souls -= cost;
       bought[u.id] = n + 1;
       u.apply(p);
@@ -4415,6 +4439,7 @@ window.RL = {
   placeSurge, placeVault, placeConvoy, placeCorruptZone,
   ui,
   buildDebugBundle, exportDebugState, importDebugState, downloadJSON, GAME_VERSION,
+  UPGRADES, AFFIX_TIER_BANDS,
   paletteFor, mixColor, BIOME_PALETTES, CAMPAIGN_THEMES,
   setRun(r) { run = r; },
 };

@@ -57,7 +57,7 @@ function check(name, cond) {
     out.anyKeyAnyNode = RL.enterNode(q0, r0, k3.id);
     out.keySetsTier = RL.run.floorConf.tier === 3;
     const grunt = RL.run.enemies.find(e => e.type === "scrapper" && !e.elite);
-    out.tierScalesEnemies = grunt && grunt.maxHp === 6 && grunt.dmg === 4; // 4hp*1.5, 3dmg+1
+    out.tierScalesEnemies = grunt && grunt.maxHp === 7 && grunt.dmg === 4; // round(4*1.7), 3dmg+1
     out.tierScalesElites = RL.run.eliteTotal === 2; // 1 + (tier>=3)
     RL.extractToOverworld(); // abandon: key spent, node stays frontier
     out.abandonKeepsFrontier = RL.profile.atlas.nodes[q0 + "," + r0].state === "frontier";

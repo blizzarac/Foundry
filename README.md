@@ -56,6 +56,14 @@ Kill the OVERSEER once and the game changes shape: the five-sector descent becom
 
 Planned next: distinct bosses per band, atlas passives (a currency sink that directs your farm).
 
+## The power curve
+
+Power is meant to live in gear, not in the repair bay. The **shop is capped and steep** — Chassis reinforcement (5 ranks), Capacitor bank (2), Weapon calibration (3), Nanite reservoir (2), cost ×2 per rank — a solid boost through the prologue that then *ends*; existing saves keep any ranks bought before the cap, the button just reads **MAX**. From there, power comes from Sector Keys and the loot they generate.
+
+**Enemies scale to match a 15-tier climb**: integrity grows ~5.9× from T1 to T15 (up from the old ~4.5×), damage adds +1 every 2 tiers past T3 instead of every 3, an extra Prime unit joins at T7 and T11 on top of the T3 bump, and pack density grows slightly with tier. **Gear has a reason to keep chasing past T4**: prefix and suffix modifiers now roll five tiers instead of three — tier 4 only starts appearing at T8+, tier 5 at T12+ — so there are affix rolls that flatly cannot exist on early gear.
+
+A dedicated harness (`tests/balance-smoke.js`) measures this instead of eyeballing it: it drops reference characters into real keyed sectors at T1/T4/T8/T12/T15 and reads the actual scaled combat stats the game computes, then asserts a shop-only character falls behind the curve while a tier-appropriately-geared one stays in a playable time-to-kill / hits-to-die band at every tier tested. Run it any time a balance change lands.
+
 ## Debug export
 
 Every screen has a way to export the exact game state as JSON, for bug reports: the 🐞 icon in the topbar during play, **Export debug state** on the main menu and the death screen. It bundles campaign meta (deaths, wins, best floor), the full Foundry profile (character, atlas, keys) if unlocked, and a fresh mid-run checkpoint if one applies — everything needed to reproduce what you were seeing. **Import debug state** on the main menu loads one of these files back in (overwriting local storage) and reloads the page, so a state exported from your browser reproduces exactly in mine.

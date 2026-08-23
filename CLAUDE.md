@@ -13,8 +13,10 @@
 - Acceptance suites: `npm install playwright-core && node tests/item-smoke.js`
   (items), `node tests/atlas-smoke.js` (Foundry overworld/endgame),
   `node tests/checkpoint-smoke.js` (mid-run save/resume across reloads),
-  `node tests/events-smoke.js` (Foundry Anomalies node events), and
-  `node tests/debug-export-smoke.js` (debug state export/import round-trip).
+  `node tests/events-smoke.js` (Foundry Anomalies node events),
+  `node tests/debug-export-smoke.js` (debug state export/import round-trip),
+  and `node tests/balance-smoke.js` (power-curve regression harness —
+  prints a TTK/HTD table per tier, run it after any balance change).
   Set `CHROMIUM_PATH` if Playwright can't find a browser.
 - Ask a player for a debug export (🐞 icon in-game, or "Export debug state"
   on the menu/death screen) to reproduce a reported bug exactly: import it
