@@ -121,5 +121,102 @@ window.IRONHEX_CONFIG = {
       "keyBaseFrac": 0.5,
       "keyPerModFrac": 0.15
     }
+  },
+
+  "items": {
+    // rarity crafting caps: how many prefixes/suffixes each grade can hold
+    "rarityCaps": {
+      "normal": { "maxPrefix": 0, "maxSuffix": 0 },
+      "magic":  { "maxPrefix": 1, "maxSuffix": 1 },
+      "rare":   { "maxPrefix": 2, "maxSuffix": 2 },
+      "unique": { "maxPrefix": 0, "maxSuffix": 0 }
+    },
+    // Sector Key crafting caps (mirrors rarityCaps' shape but for keys —
+    // a key only ever needs one number, its total mod slots)
+    "keyModCap": { "normal": 0, "magic": 2, "rare": 4 },
+    // base type numbers; slot/name/desc/cleave/reach (weapon-archetype
+    // behavior flags read by the attack code) stay in rl.js as identity
+    "baseTypes": {
+      "blade":     { "implicit": {}, "dmg": 2, "atkCost": 1, "rollCost": 2, "bsBonus": 2 },
+      "shiv":      { "implicit": {}, "dmg": 1, "atkCost": 1, "rollCost": 1, "bsBonus": 4 },
+      "cleaver":   { "implicit": {}, "dmg": 4, "atkCost": 2, "rollCost": 2, "bsBonus": 2 },
+      "lance":     { "implicit": {}, "dmg": 2, "atkCost": 1, "rollCost": 2, "bsBonus": 2 },
+      "plating":   { "implicit": { "maxHpBonus": 3 } },
+      "bulkhead":  { "implicit": { "maxHpBonus": 5, "rollCostDelta": 1 } },
+      "optics":    { "implicit": { "bsBonus": 2 } },
+      "array":     { "implicit": { "fovBonus": 1 } },
+      "servo":     { "implicit": { "rollCostDelta": -1 } },
+      "regulator": { "implicit": { "flaskHealBonus": 3 } },
+      "capacitor": { "implicit": { "maxStBonus": 1 } },
+      "recycler":  { "implicit": { "salvageMult": 0.3333333333333333 } },
+      "reclaimer": { "implicit": { "siphonOnKill": 1 } },
+      "dampener":  { "implicit": { "parryCostDelta": -1 } }
+    },
+    "bareFists": { "dmg": 1, "atkCost": 1, "rollCost": 2, "bsBonus": 0 },
+    // affix pools: prefixes carry raw power, suffixes carry utility. Five
+    // tiers each; deeper sectors roll higher tiers per affixTierBands.
+    // names travel with their tier magnitudes since they're the same
+    // logical row (tier 3 dmg IS "Merciless"); one mod per stat per item.
+    "prefixes": [
+      { "stat": "dmg",            "names": ["Honed", "Brutal", "Merciless", "Ravaging", "Annihilating"],           "tiers": [1, 2, 3, 4, 6] },
+      { "stat": "maxHpBonus",     "names": ["Plated", "Reinforced", "Fortified", "Bulwarked", "Adamant"],          "tiers": [2, 4, 6, 9, 13] },
+      { "stat": "bsBonus",        "names": ["Piercing", "Incisive", "Eviscerating", "Impaling", "Rending"],        "tiers": [1, 2, 3, 4, 6] },
+      { "stat": "flaskHealBonus", "names": ["Self-Sealing", "Regenerative", "Undying", "Restorative", "Immortal"], "tiers": [2, 4, 6, 9, 13] },
+      { "stat": "salvageMult",    "names": ["Scavenger's", "Harvester's", "Magnate's", "Baron's", "Tycoon's"],     "tiers": [0.15, 0.25, 0.4, 0.55, 0.75] }
+    ],
+    "suffixes": [
+      { "stat": "maxStBonus",     "names": ["of Capacity", "of the Dynamo", "of the Reactor", "of the Generator", "of the Singularity"], "tiers": [1, 1, 2, 2, 3] },
+      { "stat": "rollCostDelta",  "names": ["of Thrust", "of Burn", "of Flight", "of the Comet", "of the Void"],                         "tiers": [-1, -1, -1, -2, -2] },
+      { "stat": "parryCostDelta", "names": ["of Deflection", "of the Aegis", "of the Bulwark", "of the Sentinel", "of the Absolute"],     "tiers": [-1, -1, -1, -2, -2] },
+      { "stat": "fovBonus",       "names": ["of Sight", "of the Beacon", "of the Watchtower", "of the Overseer", "of Omniscience"],       "tiers": [1, 2, 3, 4, 5] },
+      { "stat": "siphonOnKill",   "names": ["of Leeching", "of Siphoning", "of Reclamation", "of the Vampire", "of the Harvest"],         "tiers": [1, 1, 1, 1, 1] }
+    ],
+    // corrupted-terminal downside mods (corruption also locks the item to orbs)
+    "corruptMods": [
+      { "stat": "maxHpBonus", "val": -3 }, { "stat": "maxStBonus", "val": -1 },
+      { "stat": "rollCostDelta", "val": 1 }, { "stat": "parryCostDelta", "val": 1 }
+    ],
+    // affix tier weights [t1..t5] by sector depth (depth = key tier + 1);
+    // tier 4 unlocks at depth 9 (T8), tier 5 at depth 13 (T12)
+    "affixTierBands": [
+      { "minDepth": 1,  "w": [4, 1, 0, 0, 0] },
+      { "minDepth": 2,  "w": [3, 2, 0, 0, 0] },
+      { "minDepth": 4,  "w": [2, 2, 1, 0, 0] },
+      { "minDepth": 6,  "w": [1, 2, 2, 0, 0] },
+      { "minDepth": 9,  "w": [0, 2, 3, 2, 0] },
+      { "minDepth": 13, "w": [0, 1, 3, 3, 2] }
+    ],
+    "uniques": [
+      { "name": "Overseer's Eye", "base": "optics",
+        "effects": { "bsBonus": 3, "fovBonus": 2, "dmg": 1 },
+        "lore": "It watched everything down here die. Now it watches for you." },
+      { "name": "Vesta's Heart", "base": "regulator",
+        "effects": { "flaskHealBonus": 6, "maxHpBonus": 4 },
+        "lore": "The foundry's first reactor never stopped beating." },
+      { "name": "Last Argument", "base": "cleaver",
+        "effects": { "dmg": 3, "maxStBonus": 1 },
+        "lore": "There is no counter-proposal." }
+    ]
+  },
+
+  "combat": {
+    "dashRange": 2,
+    "fov": { "base": 7, "min": 3 },
+    "rollCost": { "min": 1, "max": 4 },
+    "parryCost": { "base": 2, "min": 1, "max": 3 },
+    "flaskHealBase": 8,
+    // shared by the Volatile key mod and a Corrupted Zone kill: the dying
+    // machine detonates for this much if you're standing adjacent
+    "volatileDetonationDmg": 1
+  },
+
+  "events": {
+    // odds a frontier node carries an Anomaly at all, and which kind
+    "density": 0.28,
+    "weights": { "surge": 0.40, "vault": 0.25, "convoy": 0.20, "corrupted": 0.15 },
+    "surge": { "waveCount": 4, "waveInterval": 3, "killSoulMult": 1.5 },
+    "vault": { "lockdownCycles": 9 },
+    "convoy": { "totalHaulers": 3, "entryInCycles": 3 },
+    "corrupted": { "radius": 3, "dmgAdd": 1 }
   }
 };

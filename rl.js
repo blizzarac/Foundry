@@ -107,6 +107,67 @@ function validateConfig(cfg) {
         req(typeof sv[k] === "number", `economy.salvage.${k} missing or not a number`);
     }
   }
+
+  const BASE_TYPE_KEYS = ["blade", "shiv", "cleaver", "lance", "plating", "bulkhead",
+    "optics", "array", "servo", "regulator", "capacitor", "recycler", "reclaimer", "dampener"];
+  req(cfg.items, "items missing");
+  if (cfg.items) {
+    const it = cfg.items;
+    req(it.rarityCaps && ["normal", "magic", "rare", "unique"].every(r =>
+      it.rarityCaps[r] && typeof it.rarityCaps[r].maxPrefix === "number" && typeof it.rarityCaps[r].maxSuffix === "number"),
+      "items.rarityCaps missing a rarity or its maxPrefix/maxSuffix");
+    req(it.keyModCap && ["normal", "magic", "rare"].every(r => typeof it.keyModCap[r] === "number"),
+      "items.keyModCap missing a rarity");
+    req(it.baseTypes, "items.baseTypes missing");
+    if (it.baseTypes) {
+      for (const t of BASE_TYPE_KEYS) req(it.baseTypes[t], `items.baseTypes.${t} missing`);
+    }
+    req(it.bareFists && typeof it.bareFists.dmg === "number", "items.bareFists missing or malformed");
+    for (const key of ["prefixes", "suffixes"]) {
+      req(Array.isArray(it[key]) && it[key].length > 0, `items.${key} must be a non-empty array`);
+      if (Array.isArray(it[key])) {
+        it[key].forEach((a, i) => req(a.stat && Array.isArray(a.names) && Array.isArray(a.tiers) &&
+          a.names.length === a.tiers.length, `items.${key}[${i}] malformed (stat/names/tiers must line up)`));
+      }
+    }
+    req(Array.isArray(it.corruptMods) && it.corruptMods.length > 0, "items.corruptMods must be a non-empty array");
+    req(Array.isArray(it.affixTierBands) && it.affixTierBands.length > 0,
+      "items.affixTierBands must be a non-empty array");
+    if (Array.isArray(it.affixTierBands))
+      it.affixTierBands.forEach((b, i) => req(typeof b.minDepth === "number" && Array.isArray(b.w) && b.w.length === 5,
+        `items.affixTierBands[${i}] malformed (needs minDepth and a 5-entry w)`));
+    req(Array.isArray(it.uniques) && it.uniques.length > 0, "items.uniques must be a non-empty array");
+    if (Array.isArray(it.uniques))
+      it.uniques.forEach((u, i) => req(u.name && u.base && u.effects, `items.uniques[${i}] missing name/base/effects`));
+  }
+
+  req(cfg.combat, "combat missing");
+  if (cfg.combat) {
+    const cb = cfg.combat;
+    req(typeof cb.dashRange === "number", "combat.dashRange missing or not a number");
+    req(cb.fov && typeof cb.fov.base === "number" && typeof cb.fov.min === "number", "combat.fov missing base/min");
+    req(cb.rollCost && typeof cb.rollCost.min === "number" && typeof cb.rollCost.max === "number",
+      "combat.rollCost missing min/max");
+    req(cb.parryCost && typeof cb.parryCost.base === "number" && typeof cb.parryCost.min === "number" &&
+      typeof cb.parryCost.max === "number", "combat.parryCost missing base/min/max");
+    req(typeof cb.flaskHealBase === "number", "combat.flaskHealBase missing or not a number");
+    req(typeof cb.volatileDetonationDmg === "number", "combat.volatileDetonationDmg missing or not a number");
+  }
+
+  req(cfg.events, "events missing");
+  if (cfg.events) {
+    const ev = cfg.events;
+    req(typeof ev.density === "number", "events.density missing or not a number");
+    req(ev.weights && ["surge", "vault", "convoy", "corrupted"].every(k => typeof ev.weights[k] === "number"),
+      "events.weights missing a kind");
+    req(ev.surge && typeof ev.surge.waveCount === "number" && typeof ev.surge.waveInterval === "number" &&
+      typeof ev.surge.killSoulMult === "number", "events.surge missing waveCount/waveInterval/killSoulMult");
+    req(ev.vault && typeof ev.vault.lockdownCycles === "number", "events.vault missing lockdownCycles");
+    req(ev.convoy && typeof ev.convoy.totalHaulers === "number" && typeof ev.convoy.entryInCycles === "number",
+      "events.convoy missing totalHaulers/entryInCycles");
+    req(ev.corrupted && typeof ev.corrupted.radius === "number" && typeof ev.corrupted.dmgAdd === "number",
+      "events.corrupted missing radius/dmgAdd");
+  }
   return errors;
 }
 function reportConfigErrors(errors) {
@@ -142,7 +203,7 @@ function mulberry32(seed) {
 /* ------------------------------------------------------------- hex math */
 const HEX = 30;
 const DIRS = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
-const DASH_RANGE = 2;
+const DASH_RANGE = CFG.combat.dashRange;
 const key = (q, r) => q + "," + r;
 const unkey = k => k.split(",").map(Number);
 const hexX = (q, r) => HEX * (SQ3 * q + SQ3 / 2 * r);
@@ -231,7 +292,7 @@ const TRAITS = {
   hauler:   "Salvage convoy hauler. Doesn't fight — just walks its route. Cut it off before it reaches the far side, or it and its cargo are gone.",
 };
 const FLOORS = CFG.campaign.floors;
-const FLASK_HEAL = 8;
+const FLASK_HEAL = CFG.combat.flaskHealBase;
 const ELITE_TYPES = ["crusher", "ripper", "bulwark"];
 
 /* ================================ ARSENAL ===============================
@@ -246,47 +307,53 @@ const SLOT_LABEL = {
   weapon: "Weapon", plating: "Plating", sensor: "Sensor",
   drive: "Drive", utility: "Utility",
 };
-const RARITY = {
-  normal: { name: "Normal", color: "#c8d4de", maxPrefix: 0, maxSuffix: 0 },
-  magic:  { name: "Magic",  color: "#6fa8ff", maxPrefix: 1, maxSuffix: 1 },
-  rare:   { name: "Rare",   color: "#ffd45c", maxPrefix: 2, maxSuffix: 2 },
-  unique: { name: "Unique", color: "#ff9040", maxPrefix: 0, maxSuffix: 0 },
+// crafting caps stay per-rarity data (CFG.items.rarityCaps); name/color
+// are presentation identity
+const RARITY_IDENTITY = {
+  normal: { name: "Normal", color: "#c8d4de" },
+  magic:  { name: "Magic",  color: "#6fa8ff" },
+  rare:   { name: "Rare",   color: "#ffd45c" },
+  unique: { name: "Unique", color: "#ff9040" },
 };
-const BASE_TYPES = {
-  blade:     { name: "Arc Blade", slot: "weapon", implicit: {},
-               dmg: 2, atkCost: 1, rollCost: 2, bsBonus: 2,
+const RARITY = Object.fromEntries(Object.keys(RARITY_IDENTITY).map(r =>
+  [r, { ...RARITY_IDENTITY[r], ...CFG.items.rarityCaps[r] }]));
+// slot/name/desc/cleave/reach are identity — cleave and reach in particular
+// gate real attack-code branches (a 3-hex cleave arc, a 2-hex reach line),
+// not tunable magnitudes, so they stay put alongside what a base type IS.
+// dmg/atkCost/rollCost/bsBonus/implicit come from config.js (items.baseTypes).
+const BASE_TYPE_IDENTITY = {
+  blade:     { name: "Arc Blade", slot: "weapon",
                desc: "Balanced servo-driven arc blade. Answers most things." },
-  shiv:      { name: "Needle Shiv", slot: "weapon", implicit: {},
-               dmg: 1, atkCost: 1, rollCost: 1, bsBonus: 4,
+  shiv:      { name: "Needle Shiv", slot: "weapon",
                desc: "Light frame: dashes cost 1 power. Weak swings, devastating into an exposed core." },
-  cleaver:   { name: "Plasma Cleaver", slot: "weapon", implicit: {},
-               dmg: 4, atkCost: 2, rollCost: 2, bsBonus: 2, cleave: true,
+  cleaver:   { name: "Plasma Cleaver", slot: "weapon", cleave: true,
                desc: "Discharge (2 power) cleaves a three-hex arc." },
-  lance:     { name: "Rail Lance", slot: "weapon", implicit: {},
-               dmg: 2, atkCost: 1, rollCost: 2, bsBonus: 2, reach: true,
+  lance:     { name: "Rail Lance", slot: "weapon", reach: true,
                desc: "Reach: strike two hexes down a line." },
-  plating:   { name: "Ablative Plate", slot: "plating", implicit: { maxHpBonus: 3 },
+  plating:   { name: "Ablative Plate", slot: "plating",
                desc: "Standard structural armor." },
-  bulkhead:  { name: "Bulkhead Segment", slot: "plating", implicit: { maxHpBonus: 5, rollCostDelta: 1 },
+  bulkhead:  { name: "Bulkhead Segment", slot: "plating",
                desc: "Heavy salvage plate. Serious protection that weighs on the thrusters." },
-  optics:    { name: "Targeting Optics", slot: "sensor", implicit: { bsBonus: 2 },
+  optics:    { name: "Targeting Optics", slot: "sensor",
                desc: "Sharper strikes into an exposed core." },
-  array:     { name: "Sensor Array", slot: "sensor", implicit: { fovBonus: 1 },
+  array:     { name: "Sensor Array", slot: "sensor",
                desc: "Extends your sensor range." },
-  servo:     { name: "Servo Drive", slot: "drive", implicit: { rollCostDelta: -1 },
+  servo:     { name: "Servo Drive", slot: "drive",
                desc: "Cheapens the thruster dash." },
-  regulator: { name: "Nanite Regulator", slot: "drive", implicit: { flaskHealBonus: 3 },
+  regulator: { name: "Nanite Regulator", slot: "drive",
                desc: "Boosts repair-cell output." },
-  capacitor: { name: "Capacitor Cell", slot: "utility", implicit: { maxStBonus: 1 },
+  capacitor: { name: "Capacitor Cell", slot: "utility",
                desc: "Widens your power reserve." },
-  recycler:  { name: "Recycler Loop", slot: "utility", implicit: { salvageMult: 1 / 3 },
+  recycler:  { name: "Recycler Loop", slot: "utility",
                desc: "Extracts more cores from kills." },
-  reclaimer: { name: "Reclamation Coil", slot: "utility", implicit: { siphonOnKill: 1 },
+  reclaimer: { name: "Reclamation Coil", slot: "utility",
                desc: "Feeds a sliver of integrity back on every kill." },
-  dampener:  { name: "Dampener Coil", slot: "utility", implicit: { parryCostDelta: -1 },
+  dampener:  { name: "Dampener Coil", slot: "utility",
                desc: "Cheapens the deflector field." },
 };
-const BARE_FISTS = { name: "Bare Fists", dmg: 1, atkCost: 1, rollCost: 2, bsBonus: 0, cleave: false, reach: false };
+const BASE_TYPES = Object.fromEntries(Object.keys(BASE_TYPE_IDENTITY).map(t =>
+  [t, { ...BASE_TYPE_IDENTITY[t], ...CFG.items.baseTypes[t] }]));
+const BARE_FISTS = { name: "Bare Fists", ...CFG.items.bareFists, cleave: false, reach: false };
 
 // stat vocabulary every modifier draws from — a closed, uniform set so
 // recalc() is a simple sum.
@@ -302,51 +369,22 @@ const STAT_LABEL = {
    tiers each; deeper sectors roll higher tiers. Tiers 4-5 only start
    appearing at T8+/T12+ (see AFFIX_TIER_BANDS below) — the chase that
    makes climbing past T4 worth it, since loot depth used to cap out
-   there. One modifier per stat per item, like one mod per group. */
-const PREFIXES = [
-  { stat: "dmg",            names: ["Honed", "Brutal", "Merciless", "Ravaging", "Annihilating"],      tiers: [1, 2, 3, 4, 6] },
-  { stat: "maxHpBonus",     names: ["Plated", "Reinforced", "Fortified", "Bulwarked", "Adamant"],      tiers: [2, 4, 6, 9, 13] },
-  { stat: "bsBonus",        names: ["Piercing", "Incisive", "Eviscerating", "Impaling", "Rending"],    tiers: [1, 2, 3, 4, 6] },
-  { stat: "flaskHealBonus", names: ["Self-Sealing", "Regenerative", "Undying", "Restorative", "Immortal"], tiers: [2, 4, 6, 9, 13] },
-  { stat: "salvageMult",    names: ["Scavenger's", "Harvester's", "Magnate's", "Baron's", "Tycoon's"], tiers: [0.15, 0.25, 0.4, 0.55, 0.75] },
-];
-const SUFFIXES = [
-  { stat: "maxStBonus",     names: ["of Capacity", "of the Dynamo", "of the Reactor", "of the Generator", "of the Singularity"], tiers: [1, 1, 2, 2, 3] },
-  { stat: "rollCostDelta",  names: ["of Thrust", "of Burn", "of Flight", "of the Comet", "of the Void"],       tiers: [-1, -1, -1, -2, -2] },
-  { stat: "parryCostDelta", names: ["of Deflection", "of the Aegis", "of the Bulwark", "of the Sentinel", "of the Absolute"], tiers: [-1, -1, -1, -2, -2] },
-  { stat: "fovBonus",       names: ["of Sight", "of the Beacon", "of the Watchtower", "of the Overseer", "of Omniscience"],   tiers: [1, 2, 3, 4, 5] },
-  { stat: "siphonOnKill",   names: ["of Leeching", "of Siphoning", "of Reclamation", "of the Vampire", "of the Harvest"],     tiers: [1, 1, 1, 1, 1] },
-];
+   there. One modifier per stat per item, like one mod per group. Tables
+   (including uniques and corrupted downsides) live in config.js
+   (items.*) — the tier magnitude and its flavor name are one logical
+   row, so they travel together rather than splitting across two files. */
+const PREFIXES = CFG.items.prefixes;
+const SUFFIXES = CFG.items.suffixes;
 // corrupted-terminal downside mods (corruption also locks the item to orbs)
-const CORRUPT_MODS = [
-  { stat: "maxHpBonus", val: -3 }, { stat: "maxStBonus", val: -1 },
-  { stat: "rollCostDelta", val: 1 }, { stat: "parryCostDelta", val: 1 },
-];
+const CORRUPT_MODS = CFG.items.corruptMods;
 // affix tier weights [t1..t5] by sector depth (depth = key tier + 1);
 // tier 4 unlocks at depth 9 (T8), tier 5 at depth 13 (T12)
-const AFFIX_TIER_BANDS = [
-  { minDepth: 1,  w: [4, 1, 0, 0, 0] },
-  { minDepth: 2,  w: [3, 2, 0, 0, 0] },
-  { minDepth: 4,  w: [2, 2, 1, 0, 0] },
-  { minDepth: 6,  w: [1, 2, 2, 0, 0] },
-  { minDepth: 9,  w: [0, 2, 3, 2, 0] },
-  { minDepth: 13, w: [0, 1, 3, 3, 2] },
-];
+const AFFIX_TIER_BANDS = CFG.items.affixTierBands;
 
 const RARE_NAME_A = ["Doom", "Storm", "Iron", "Ghost", "Ash", "Grim", "Vesta", "Null", "Ruin", "Ember"];
 const RARE_NAME_B = ["Whisper", "Bane", "Coil", "Ward", "Cry", "Spike", "Pulse", "Vault", "Brand", "Fang"];
 
-const UNIQUES = [
-  { name: "Overseer's Eye", base: "optics",
-    effects: { bsBonus: 3, fovBonus: 2, dmg: 1 },
-    lore: "It watched everything down here die. Now it watches for you." },
-  { name: "Vesta's Heart", base: "regulator",
-    effects: { flaskHealBonus: 6, maxHpBonus: 4 },
-    lore: "The foundry's first reactor never stopped beating." },
-  { name: "Last Argument", base: "cleaver",
-    effects: { dmg: 3, maxStBonus: 1 },
-    lore: "There is no counter-proposal." },
-];
+const UNIQUES = CFG.items.uniques;
 
 let itemSeq = 0;
 function rollTier(rng, depth) {
@@ -616,7 +654,7 @@ function applyKeyModEffect(mod, cfg) {
 }
 const KEY_MODS = CFG.levelGen.keyMods.map(m => ({ ...m, apply: mod => applyKeyModEffect(mod, m) }));
 const KEY_MOD_BY = Object.fromEntries(KEY_MODS.map(m => [m.key, m]));
-const KEY_MOD_CAP = { normal: 0, magic: 2, rare: 4 };
+const KEY_MOD_CAP = CFG.items.keyModCap;
 function makeKey(tier, rarity) {
   return { id: ++itemSeq, tier, rarity: rarity || "normal", name: null, affixes: [] };
 }
@@ -1071,9 +1109,9 @@ function recalc() {
   p.bsBonus = weaponType.bsBonus + totals.bsBonus;
   p.cleave = !!weaponType.cleave;
   p.reach = !!weaponType.reach;
-  p.rollCost = clamp(weaponType.rollCost + totals.rollCostDelta, 1, 4);
+  p.rollCost = clamp(weaponType.rollCost + totals.rollCostDelta, CFG.combat.rollCost.min, CFG.combat.rollCost.max);
   p.dashRange = DASH_RANGE;   // furthest a dash can reach; any shorter hop is legal
-  p.parryCost = clamp(2 + totals.parryCostDelta, 1, 3);
+  p.parryCost = clamp(CFG.combat.parryCost.base + totals.parryCostDelta, CFG.combat.parryCost.min, CFG.combat.parryCost.max);
   p.maxHp = Math.max(1, p.baseMaxHp + totals.maxHpBonus);
   p.hp = Math.min(p.hp, p.maxHp);
   p.maxSt = Math.max(1, p.baseMaxSt + totals.maxStBonus);
@@ -1261,7 +1299,7 @@ function genFloor() {
       const k = pick(cand);
       const [q, r] = unkey(k);
       const e = spawnEnemy(type, q, r);
-      if (inCorruptZone(q, r)) { e.dmg += 1; e.zoneVolatile = true; }
+      if (inCorruptZone(q, r)) { e.dmg += CFG.events.corrupted.dmgAdd; e.zoneVolatile = true; }
     }
   }
   // Prime promotion: campaign floors promote a classic elite type; keyed
@@ -1418,10 +1456,10 @@ const walkable = (q, r) => {
 };
 
 /* ------------------------------------------------------------------ FOV */
-const FOV_R = 7;
+const FOV_R = CFG.combat.fov.base;
 function playerFovR() {
   const penalty = (run.mode === "sector" && run.floorConf && run.floorConf.fovPenalty) || 0;
-  return Math.max(3, FOV_R + (run.player.fovBonus || 0) - penalty);
+  return Math.max(CFG.combat.fov.min, FOV_R + (run.player.fovBonus || 0) - penalty);
 }
 function losClear(aq, ar, bq, br) {
   const line = hexLine(aq, ar, bq, br);
@@ -1763,7 +1801,7 @@ function hurtEnemy(e, dmg, label) {
   if (e.hp <= 0) {
     const def = ENEMY[e.type];
     let souls = e.elite ? def.souls * 3 : def.souls;
-    if (e.surge) souls = Math.round(souls * 1.5);   // fresh off the Surge press
+    if (e.surge) souls = Math.round(souls * CFG.events.surge.killSoulMult);   // fresh off the Surge press
     souls = Math.round(souls * (1 + (run.player.salvageMult || 0)) *
       (run.mode === "sector" ? 1 + 0.15 * ((run.floorConf.tier || 1) - 1) : 1));
     run.player.souls += souls;
@@ -1803,9 +1841,10 @@ function hurtEnemy(e, dmg, label) {
     if (run.mode === "sector" && (run.floorConf.volatile || e.zoneVolatile) &&
         hexDist(run.player.q, run.player.r, e.q, e.r) === 1) {
       const pl = run.player;
-      pl.hp -= 1;
+      const dmg = CFG.combat.volatileDetonationDmg;
+      pl.hp -= dmg;
       hitFlash = 0.3;
-      addFloat(pl.q, pl.r, "-1", "#e06060");
+      addFloat(pl.q, pl.r, "-" + dmg, "#e06060");
       log("The " + def.name + " detonates!", "warn");
       if (pl.hp <= 0) { dieRun(); return; }
     }
@@ -2354,8 +2393,8 @@ function syncProfileFromPlayer() {
    stays inside the game's one rule: deterministic, fully telegraphed.
    ========================================================================= */
 const NODE_EVENTS = ["surge", "vault", "convoy", "corrupted"];
-const EVENT_WEIGHTS = [0.40, 0.25, 0.20, 0.15];
-const EVENT_DENSITY = 0.28;
+const EVENT_WEIGHTS = NODE_EVENTS.map(k => CFG.events.weights[k]);
+const EVENT_DENSITY = CFG.events.density;
 const EVENT_GLYPH = { surge: "⚒", vault: "◫", convoy: "▸", corrupted: "☣" };
 const EVENT_NAME = { surge: "Fabricator Surge", vault: "Timed Vault", convoy: "Salvage Convoy", corrupted: "Corrupted Zone" };
 const EVENT_DESC = {
@@ -2377,8 +2416,8 @@ function rollNodeEventForSeed(seed, q, r) {
 }
 function rollNodeEvent(q, r) { return rollNodeEventForSeed(profile.atlas.seed, q, r); }
 
-const WAVE_INTERVAL = 3, WAVE_COUNT = 4;
-const VAULT_LOCKDOWN_CYCLES = 9;
+const WAVE_INTERVAL = CFG.events.surge.waveInterval, WAVE_COUNT = CFG.events.surge.waveCount;
+const VAULT_LOCKDOWN_CYCLES = CFG.events.vault.lockdownCycles;
 
 function inCorruptZone(q, r) {
   const z = run.event && run.event.zone;
@@ -2549,8 +2588,8 @@ function placeConvoy(rng, floorKeys, rim) {
   }
   const path = bfsPathBetween(bestA, bestB);
   if (!path || path.length < 6) return;   // too short/degenerate — skip silently
-  run.event.convoy = { path, entryIn: 3, spawned: false, done: false,
-    haulerIds: [], totalHaulers: 3, exitedCount: 0 };
+  run.event.convoy = { path, entryIn: CFG.events.convoy.entryInCycles, spawned: false, done: false,
+    haulerIds: [], totalHaulers: CFG.events.convoy.totalHaulers, exitedCount: 0 };
 }
 function spawnConvoyWave(cv) {
   cv.spawned = true;
@@ -2612,7 +2651,7 @@ function placeCorruptZone(rng, floorKeys) {
   const base = cand.length ? cand : floorKeys;
   if (!base.length) return;
   const [q, r] = unkey(base[(rng() * base.length) | 0]);
-  run.event.zone = { q, r, radius: 3 };
+  run.event.zone = { q, r, radius: CFG.events.corrupted.radius };
 }
 
 function tickEvents() {
@@ -4856,8 +4895,8 @@ window.RL = {
   dashPath, canDashTo, dashTargets, DASH_RANGE,
   spawnEnemy, endTurn, bfsDist, updateFov, hexDist,
   persist, savePersist, cam,
-  ENEMY, BASE_TYPES, SLOTS, SLOT_LABEL, RARITY, STAT_KEYS,
-  PREFIXES, SUFFIXES, UNIQUES, CURRENCY,
+  ENEMY, BASE_TYPES, BARE_FISTS, SLOTS, SLOT_LABEL, RARITY, STAT_KEYS,
+  PREFIXES, SUFFIXES, UNIQUES, CURRENCY, CORRUPT_MODS, KEY_MOD_CAP, FOV_R, playerFovR, FLASK_HEAL,
   genItem, genUnique, genArmoryItem, genCorruptedItem, rollItemLoot, rollRarity,
   equipItem, unequipItem, dropItem, sellItem, sellValue, sellKey, keySalvageValue,
   itemById, equippedItem, isEquipped, itemEffect,
@@ -4872,7 +4911,8 @@ window.RL = {
   hurtEnemy, hurtPlayer, winRun, dieRun,
   saveProfile, loadProfile, syncProfileFromPlayer,
   saveRun, resumeRun, clearRunCheckpoint, loadRunCheckpoint,
-  NODE_EVENTS, EVENT_GLYPH, EVENT_NAME, EVENT_DESC,
+  NODE_EVENTS, EVENT_GLYPH, EVENT_NAME, EVENT_DESC, EVENT_WEIGHTS, EVENT_DENSITY,
+  WAVE_INTERVAL, WAVE_COUNT, VAULT_LOCKDOWN_CYCLES,
   rollNodeEvent, rollNodeEventForSeed, inCorruptZone, bfsPathBetween,
   tickEvents, tickFabricator, tickVault, tickConvoy, actActivateFabricator,
   placeSurge, placeVault, placeConvoy, placeCorruptZone,

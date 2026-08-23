@@ -96,14 +96,65 @@ function check(name, cond) {
     RL.KEY_MODS.find(m => m.key === "swarming").apply(modState);
     out.keyModApplyUsesConfigMagnitude = modState.spawnMult === swarmingCfg.spawnMult;
 
+    // --- items (phase 2): rarity caps, base-type numbers, and the fully
+    // data-shaped tables (prefixes/suffixes/corrupt mods/tier bands/
+    // uniques/key mod caps) all trace back to config.js
+    out.rarityCapsFromConfig = RL.RARITY.rare.maxPrefix === CFG.items.rarityCaps.rare.maxPrefix &&
+      RL.RARITY.rare.maxSuffix === CFG.items.rarityCaps.rare.maxSuffix &&
+      RL.RARITY.rare.name === "Rare";   // identity still comes from code
+    out.baseTypeStatsFromConfig = RL.BASE_TYPES.cleaver.dmg === CFG.items.baseTypes.cleaver.dmg &&
+      RL.BASE_TYPES.cleaver.rollCost === CFG.items.baseTypes.cleaver.rollCost &&
+      RL.BASE_TYPES.cleaver.cleave === true &&              // behavior flag still comes from code
+      RL.BASE_TYPES.cleaver.name === "Plasma Cleaver";
+    out.bareFistsFromConfig = RL.BARE_FISTS.dmg === CFG.items.bareFists.dmg;
+    // these three are built as direct references to the config arrays —
+    // strict equality proves rl.js reads the table, not a copy of it
+    out.prefixesAreConfigTable = RL.PREFIXES === CFG.items.prefixes;
+    out.suffixesAreConfigTable = RL.SUFFIXES === CFG.items.suffixes;
+    out.corruptModsAreConfigTable = RL.CORRUPT_MODS === CFG.items.corruptMods;
+    out.affixTierBandsAreConfigTable = RL.AFFIX_TIER_BANDS === CFG.items.affixTierBands;
+    out.uniquesAreConfigTable = RL.UNIQUES === CFG.items.uniques;
+    out.keyModCapFromConfig = RL.KEY_MOD_CAP.rare === CFG.items.keyModCap.rare;
+
+    // --- combat (phase 3)
+    out.dashRangeFromConfig = RL.DASH_RANGE === CFG.combat.dashRange;
+    out.fovBaseFromConfig = RL.FOV_R === CFG.combat.fov.base;
+    out.flaskHealFromConfig = RL.FLASK_HEAL === CFG.combat.flaskHealBase;
+    // fov floor: a huge penalty must still clamp at combat.fov.min, not go negative
+    RL.startRun(555);
+    RL.run.mode = "sector";
+    RL.run.floorConf = { R: RL.run.floorConf.R, fovPenalty: 999 };
+    out.fovMinClampFromConfig = RL.playerFovR() === CFG.combat.fov.min;
+    // rollCost/parryCost clamp bounds
+    RL.startRun(556);
+    const p3 = RL.run.player;
+    RL.recalc();
+    out.rollCostWithinConfigBounds = p3.rollCost >= CFG.combat.rollCost.min && p3.rollCost <= CFG.combat.rollCost.max;
+    out.parryCostWithinConfigBounds = p3.parryCost >= CFG.combat.parryCost.min && p3.parryCost <= CFG.combat.parryCost.max &&
+      p3.parryCost === CFG.combat.parryCost.base;   // no gear equipped yet: base value exactly
+
+    // --- events (phase 3)
+    out.eventDensityFromConfig = RL.EVENT_DENSITY === CFG.events.density;
+    out.eventWeightsFromConfig = RL.NODE_EVENTS.every((k, i) => RL.EVENT_WEIGHTS[i] === CFG.events.weights[k]);
+    out.surgeWaveConfigFromConfig = RL.WAVE_COUNT === CFG.events.surge.waveCount &&
+      RL.WAVE_INTERVAL === CFG.events.surge.waveInterval;
+    out.vaultLockdownFromConfig = RL.VAULT_LOCKDOWN_CYCLES === CFG.events.vault.lockdownCycles;
+
     // the validator itself: an empty config must fail with real errors,
-    // and a deliberately broken one must name the specific missing field
+    // and a deliberately broken one must name the specific missing field —
+    // spot-check one field from each of the three new sections too
     const emptyErrors = RL.validateConfig({});
     out.validatorRejectsEmptyConfig = emptyErrors.length > 0;
     const partial = JSON.parse(JSON.stringify(CFG));
     delete partial.economy.gambleCost;
+    delete partial.items.uniques;
+    delete partial.combat.dashRange;
+    delete partial.events.vault;
     const partialErrors = RL.validateConfig(partial);
     out.validatorNamesMissingField = partialErrors.some(e => e.includes("gambleCost"));
+    out.validatorCatchesMissingItemsField = partialErrors.some(e => e.includes("items.uniques"));
+    out.validatorCatchesMissingCombatField = partialErrors.some(e => e.includes("combat.dashRange"));
+    out.validatorCatchesMissingEventsField = partialErrors.some(e => e.includes("events.vault"));
     out.validatorAcceptsRealConfig = RL.validateConfig(CFG).length === 0;
 
     return out;

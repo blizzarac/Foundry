@@ -11,18 +11,25 @@
   vanilla-JS hex roguelike, no build step, no dependencies.
 - **`config.js`**: enemy base stats/scaling, prologue floor tables, Foundry
   sector-generation coefficients (pack density, elite bump tiers, chest/
-  terminal odds, key-drop odds, gate jump size, key mods), and the whole
+  terminal odds, key-drop odds, gate jump size, key mods), the whole
   economy (shop upgrades, restocks, orb prices, gamble cost, key fab curve,
-  item/key salvage formulas) live here as one plain data object
-  (`window.IRONHEX_CONFIG`), loaded by `<script>` before `rl.js` — not a real
-  `.json` file, since `fetch()` can't read local disk over `file://` and this
-  game has no server or build step. `rl.js` validates the shape at boot and
-  fails loudly (console + an on-screen banner) if a section is missing —
-  there is no silent fallback to hardcoded defaults, so `config.js` is the
-  one place balance numbers live. Item/affix/rarity tables, node-event
-  timers, and combat constants (dash range, FOV, deflect cost) are still in
-  `rl.js`; terrain generators, boss attack patterns, and AI are behavior and
-  always will be.
+  item/key salvage formulas), item/affix/rarity tables (base type stats,
+  prefix/suffix pools and their tier magnitudes, corrupted-downside mods,
+  affix-tier depth bands, uniques, crafting caps), small combat constants
+  (dash range, FOV, dash/deflect cost bounds, repair-cell heal, the shared
+  detonation-on-death damage), and node-event tuning (density/weights,
+  Fabricator Surge wave count/interval/soul bonus, Timed Vault lockdown
+  cycles, Salvage Convoy hauler count/entry delay, Corrupted Zone radius/
+  damage) live here as one plain data object (`window.IRONHEX_CONFIG`),
+  loaded by `<script>` before `rl.js` — not a real `.json` file, since
+  `fetch()` can't read local disk over `file://` and this game has no
+  server or build step. `rl.js` validates the shape at boot and fails
+  loudly (console + an on-screen banner) if a section is missing — there
+  is no silent fallback to hardcoded defaults, so `config.js` is the one
+  place balance numbers live. Item/affix *identity* (slot assignment,
+  names, descriptions, and the cleave/reach flags that gate real
+  attack-code branches) stays in `rl.js` alongside terrain generators,
+  boss attack patterns, and AI, which are behavior and always will be.
 - **Hexfoundry** (legacy tower defense): `hexfoundry.html`, `style.css`, `game.js`.
 - Acceptance suites: `npm install playwright-core && node tests/item-smoke.js`
   (items), `node tests/atlas-smoke.js` (Foundry overworld/endgame),
