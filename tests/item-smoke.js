@@ -157,8 +157,17 @@ function check(name, cond) {
     // prototype gamble: a blind-rolled Rare in the chosen slot, souls deducted
     p.souls = 1000;
     RL.showShop();
+    // buying while scrolled deep into the list (the prototype section is
+    // the last one) must not snap the shop back to the top — the feedback
+    // flash used to force a reflow while the list was momentarily empty
+    // and the browser would clamp scrollTop to 0 right then
+    const scrollEl = document.querySelector("#shop .box");
+    scrollEl.scrollTop = scrollEl.scrollHeight;
+    const scrollBefore = scrollEl.scrollTop;
     const nItems = p.items.length;
     findBtn("Prototype weapon").click();
+    out.buyKeepsScrollPosition = scrollBefore > 200 &&
+      document.querySelector("#shop .box").scrollTop > scrollBefore - 100;
     const proto = p.items[p.items.length - 1];
     out.shopGamble = p.items.length === nItems + 1 && proto.rarity === "rare" &&
       RL.BASE_TYPES[proto.base].slot === "weapon" &&

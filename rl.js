@@ -3796,6 +3796,13 @@ let bought = {};
 // null on a plain open; a string re-render (after a purchase) flashes it
 function showShop(feedback) {
   const p = run.player;
+  // rebuilding the item list empties #shop-items for a moment; if the
+  // scroll container gets measured while it's empty (a forced reflow,
+  // or the browser's own layout pass) it clamps scrollTop to fit that
+  // near-zero height and never recovers it — so save/restore explicitly
+  // around the rebuild instead of relying on the DOM to preserve it
+  const scrollBox = document.querySelector("#shop .box");
+  const savedScroll = scrollBox ? scrollBox.scrollTop : 0;
   const box = document.getElementById("shop-items");
   box.innerHTML = "";
   const head = t => {
@@ -3825,15 +3832,6 @@ function showShop(feedback) {
   // the shop overlay sits above the topbar, so the souls counter up there
   // is hidden while shopping — show it again in here
   document.getElementById("shop-souls").textContent = p.souls;
-  const fb = document.getElementById("shop-feedback");
-  fb.classList.toggle("hidden", !feedback);
-  if (feedback) {
-    fb.textContent = feedback;
-    // retrigger the flash animation even if the same message repeats
-    fb.classList.remove("flash");
-    void fb.offsetWidth;
-    fb.classList.add("flash");
-  }
 
   head("Frame upgrades");
   for (const u of UPGRADES) {
@@ -3892,6 +3890,20 @@ function showShop(feedback) {
         log("Prototype fabricated: " + item.name + " (Rare).", "good");
         paid(GAMBLE_COST, "Fabricated " + item.name + " — " + GAMBLE_COST + " cores");
       });
+  }
+
+  // restore scroll position now that the list is whole again, then handle
+  // the feedback flash — its forced reflow must land after the rebuild,
+  // not while #shop-items was still empty, or it clamps scroll right back
+  if (scrollBox) scrollBox.scrollTop = savedScroll;
+  const fb = document.getElementById("shop-feedback");
+  fb.classList.toggle("hidden", !feedback);
+  if (feedback) {
+    fb.textContent = feedback;
+    // retrigger the flash animation even if the same message repeats
+    fb.classList.remove("flash");
+    void fb.offsetWidth;
+    fb.classList.add("flash");
   }
   document.getElementById("shop").classList.remove("hidden");
 }
