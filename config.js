@@ -157,19 +157,24 @@ window.IRONHEX_CONFIG = {
     // tiers each; deeper sectors roll higher tiers per affixTierBands.
     // names travel with their tier magnitudes since they're the same
     // logical row (tier 3 dmg IS "Merciless"); one mod per stat per item.
+    // "slots" restricts which base-type slots (weapon/plating/sensor/
+    // drive/utility) can roll this affix — null means unrestricted, which
+    // is every entry below today: any item can roll any modifier. That's
+    // deliberate for now; set an array like ["weapon","sensor"] on an
+    // entry to gate it, no code change needed.
     "prefixes": [
-      { "stat": "dmg",            "names": ["Honed", "Brutal", "Merciless", "Ravaging", "Annihilating"],           "tiers": [1, 2, 3, 4, 6] },
-      { "stat": "maxHpBonus",     "names": ["Plated", "Reinforced", "Fortified", "Bulwarked", "Adamant"],          "tiers": [2, 4, 6, 9, 13] },
-      { "stat": "bsBonus",        "names": ["Piercing", "Incisive", "Eviscerating", "Impaling", "Rending"],        "tiers": [1, 2, 3, 4, 6] },
-      { "stat": "flaskHealBonus", "names": ["Self-Sealing", "Regenerative", "Undying", "Restorative", "Immortal"], "tiers": [2, 4, 6, 9, 13] },
-      { "stat": "salvageMult",    "names": ["Scavenger's", "Harvester's", "Magnate's", "Baron's", "Tycoon's"],     "tiers": [0.15, 0.25, 0.4, 0.55, 0.75] }
+      { "stat": "dmg",            "names": ["Honed", "Brutal", "Merciless", "Ravaging", "Annihilating"],           "tiers": [1, 2, 3, 4, 6],             "slots": null },
+      { "stat": "maxHpBonus",     "names": ["Plated", "Reinforced", "Fortified", "Bulwarked", "Adamant"],          "tiers": [2, 4, 6, 9, 13],            "slots": null },
+      { "stat": "bsBonus",        "names": ["Piercing", "Incisive", "Eviscerating", "Impaling", "Rending"],        "tiers": [1, 2, 3, 4, 6],             "slots": null },
+      { "stat": "flaskHealBonus", "names": ["Self-Sealing", "Regenerative", "Undying", "Restorative", "Immortal"], "tiers": [2, 4, 6, 9, 13],            "slots": null },
+      { "stat": "salvageMult",    "names": ["Scavenger's", "Harvester's", "Magnate's", "Baron's", "Tycoon's"],     "tiers": [0.15, 0.25, 0.4, 0.55, 0.75], "slots": null }
     ],
     "suffixes": [
-      { "stat": "maxStBonus",     "names": ["of Capacity", "of the Dynamo", "of the Reactor", "of the Generator", "of the Singularity"], "tiers": [1, 1, 2, 2, 3] },
-      { "stat": "rollCostDelta",  "names": ["of Thrust", "of Burn", "of Flight", "of the Comet", "of the Void"],                         "tiers": [-1, -1, -1, -2, -2] },
-      { "stat": "parryCostDelta", "names": ["of Deflection", "of the Aegis", "of the Bulwark", "of the Sentinel", "of the Absolute"],     "tiers": [-1, -1, -1, -2, -2] },
-      { "stat": "fovBonus",       "names": ["of Sight", "of the Beacon", "of the Watchtower", "of the Overseer", "of Omniscience"],       "tiers": [1, 2, 3, 4, 5] },
-      { "stat": "siphonOnKill",   "names": ["of Leeching", "of Siphoning", "of Reclamation", "of the Vampire", "of the Harvest"],         "tiers": [1, 1, 1, 1, 1] }
+      { "stat": "maxStBonus",     "names": ["of Capacity", "of the Dynamo", "of the Reactor", "of the Generator", "of the Singularity"], "tiers": [1, 1, 2, 2, 3],     "slots": null },
+      { "stat": "rollCostDelta",  "names": ["of Thrust", "of Burn", "of Flight", "of the Comet", "of the Void"],                         "tiers": [-1, -1, -1, -2, -2], "slots": null },
+      { "stat": "parryCostDelta", "names": ["of Deflection", "of the Aegis", "of the Bulwark", "of the Sentinel", "of the Absolute"],     "tiers": [-1, -1, -1, -2, -2], "slots": null },
+      { "stat": "fovBonus",       "names": ["of Sight", "of the Beacon", "of the Watchtower", "of the Overseer", "of Omniscience"],       "tiers": [1, 2, 3, 4, 5],      "slots": null },
+      { "stat": "siphonOnKill",   "names": ["of Leeching", "of Siphoning", "of Reclamation", "of the Vampire", "of the Harvest"],         "tiers": [1, 1, 1, 1, 1],      "slots": null }
     ],
     // corrupted-terminal downside mods (corruption also locks the item to orbs)
     "corruptMods": [

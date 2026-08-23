@@ -88,6 +88,8 @@ It's a `<script>`-assigned object rather than a real `.json` file on purpose: th
 
 What's *not* in there: item/affix *identity* — slot assignment, names, flavor text, and the cleave/reach flags that gate real attack-code branches (a three-hex cleave arc, a two-hex reach line) rather than tune a magnitude. Those stay in `rl.js` as the "what this thing IS" half of the split, alongside terrain generators, boss attack patterns, and AI, which are behavior rather than balance dials and always will be.
 
+Every affix in `config.js` also carries a `slots` field, currently `null` on every entry — meaning any base type can roll any prefix or suffix, which is the real behavior today. The read path already respects it (`rollAffix` filters the pool by the item's slot whenever `slots` isn't null), so gating an affix to specific slots later is a config edit, not a code change.
+
 ## Debug export
 
 Every screen has a way to export the exact game state as JSON, for bug reports: the 🐞 icon in the topbar during play, **Export debug state** on the main menu and the death screen. It bundles campaign meta (deaths, wins, best floor), the full Foundry profile (character, atlas, keys) if unlocked, and a fresh mid-run checkpoint if one applies — everything needed to reproduce what you were seeing. **Import debug state** on the main menu loads one of these files back in (overwriting local storage) and reloads the page, so a state exported from your browser reproduces exactly in mine.

@@ -116,6 +116,43 @@ function check(name, cond) {
     out.uniquesAreConfigTable = RL.UNIQUES === CFG.items.uniques;
     out.keyModCapFromConfig = RL.KEY_MOD_CAP.rare === CFG.items.keyModCap.rare;
 
+    // --- affix slot restrictions: scaffolded but not yet used. Every
+    // entry ships with slots:null (unrestricted, today's real behavior);
+    // wiring is live in rollAffix so a later config edit is all it takes
+    // to gate an affix to specific slots, no code change needed.
+    out.affixSlotsDefaultUnrestricted = RL.PREFIXES.every(a => a.slots === null) &&
+      RL.SUFFIXES.every(a => a.slots === null);
+    {
+      // temporarily restrict "maxHpBonus" (normally rolls on anything) to
+      // weapons only, and prove genItem actually respects it live
+      const hpPrefix = RL.PREFIXES.find(a => a.stat === "maxHpBonus");
+      const savedSlots = hpPrefix.slots;
+      hpPrefix.slots = ["weapon"];
+      const rng2 = (() => { let a = 99; return () => { a = (a * 1664525 + 1013904223) >>> 0; return a / 4294967296; }; })();
+      let onWeapon = false, onNonWeapon = false;
+      for (let i = 0; i < 300; i++) {
+        const w = RL.genItem(rng2, "blade", "rare", 5);
+        const s = RL.genItem(rng2, "servo", "rare", 5);
+        if (w.affixes.some(a => a.stat === "maxHpBonus")) onWeapon = true;
+        if (s.affixes.some(a => a.stat === "maxHpBonus")) onNonWeapon = true;
+      }
+      out.affixSlotRestrictionAppliesToMatchingSlot = onWeapon;
+      out.affixSlotRestrictionExcludesOtherSlots = !onNonWeapon;
+      hpPrefix.slots = savedSlots;   // restore — other checks assume the shipped config
+    }
+    // validator: null passes, a valid array passes, a malformed value fails
+    const slotsOk1 = JSON.parse(JSON.stringify(CFG));
+    slotsOk1.items.prefixes[0].slots = ["weapon", "sensor"];
+    out.validatorAcceptsValidSlotsArray = RL.validateConfig(slotsOk1).length === 0;
+    const slotsBad1 = JSON.parse(JSON.stringify(CFG));
+    slotsBad1.items.prefixes[0].slots = "weapon";   // string, not an array
+    out.validatorRejectsNonArraySlots = RL.validateConfig(slotsBad1)
+      .some(e => e.includes("items.prefixes[0].slots"));
+    const slotsBad2 = JSON.parse(JSON.stringify(CFG));
+    slotsBad2.items.suffixes[0].slots = ["hat"];   // not a real slot
+    out.validatorRejectsUnknownSlotName = RL.validateConfig(slotsBad2)
+      .some(e => e.includes("items.suffixes[0].slots"));
+
     // --- combat (phase 3)
     out.dashRangeFromConfig = RL.DASH_RANGE === CFG.combat.dashRange;
     out.fovBaseFromConfig = RL.FOV_R === CFG.combat.fov.base;

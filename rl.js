@@ -123,11 +123,19 @@ function validateConfig(cfg) {
       for (const t of BASE_TYPE_KEYS) req(it.baseTypes[t], `items.baseTypes.${t} missing`);
     }
     req(it.bareFists && typeof it.bareFists.dmg === "number", "items.bareFists missing or malformed");
+    const VALID_SLOTS = ["weapon", "plating", "sensor", "drive", "utility"];
     for (const key of ["prefixes", "suffixes"]) {
       req(Array.isArray(it[key]) && it[key].length > 0, `items.${key} must be a non-empty array`);
       if (Array.isArray(it[key])) {
-        it[key].forEach((a, i) => req(a.stat && Array.isArray(a.names) && Array.isArray(a.tiers) &&
-          a.names.length === a.tiers.length, `items.${key}[${i}] malformed (stat/names/tiers must line up)`));
+        it[key].forEach((a, i) => {
+          req(a.stat && Array.isArray(a.names) && Array.isArray(a.tiers) &&
+            a.names.length === a.tiers.length, `items.${key}[${i}] malformed (stat/names/tiers must line up)`);
+          // slots restricts which item slots can roll this affix; null/absent
+          // means unrestricted — every entry today, until restrictions land
+          req(a.slots === null || a.slots === undefined ||
+            (Array.isArray(a.slots) && a.slots.every(s => VALID_SLOTS.includes(s))),
+            `items.${key}[${i}].slots must be null or an array of valid slot names`);
+        });
       }
     }
     req(Array.isArray(it.corruptMods) && it.corruptMods.length > 0, "items.corruptMods must be a non-empty array");
@@ -402,8 +410,13 @@ function affixRoom(item, kind) {
   return itemAffixCount(item, kind) < (kind === "prefix" ? cap.maxPrefix : cap.maxSuffix);
 }
 function rollAffix(rng, item, kind, depth) {
+  // slots restricts which item slots can roll a given affix — null means
+  // unrestricted (every entry today), so this is a no-op until config.js
+  // starts populating slots arrays
+  const slot = itemSlot(item);
   const pool = (kind === "prefix" ? PREFIXES : SUFFIXES).filter(def =>
-    !item.affixes.some(a => a.stat === def.stat));
+    !item.affixes.some(a => a.stat === def.stat) &&
+    (!def.slots || def.slots.includes(slot)));
   if (!pool.length) return null;
   const def = pool[(rng() * pool.length) | 0];
   const tier = rollTier(rng, depth);
