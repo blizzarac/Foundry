@@ -243,6 +243,20 @@ html, body {
 #btn-debug-export:hover { opacity: 1; }
 
 /* ---------------- fabrication list ---------------- */
+/* the shop overlay sits above the topbar, hiding the souls counter up
+   there — repeat it inside so spending power is visible while shopping */
+.shop-souls { justify-content: center; margin: 2px 0 6px; color: #cfdae2; }
+.shop-feedback {
+  color: #6fe0b0 !important; font-size: 12.5px !important;
+  font-weight: 600; margin: -4px 0 10px !important;
+}
+.shop-feedback.hidden { display: none; }
+.shop-feedback.flash { animation: shop-flash 1.4s ease-out; }
+@keyframes shop-flash {
+  0% { opacity: 0; transform: translateY(-3px); }
+  15% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 1; }
+}
 #shop-items { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
 .shop-head {
   margin: 8px 0 0; text-align: left;

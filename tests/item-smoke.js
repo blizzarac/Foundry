@@ -120,13 +120,26 @@ function check(name, cond) {
     p.souls = 500;
     const dartsBefore = p.consumables.dart || 0;
     RL.showShop();
+    // the overlay sits above the topbar's souls counter, so the shop
+    // repeats it — and starts with no stale purchase feedback showing
+    out.shopShowsSouls = document.getElementById("shop-souls").textContent === "500";
+    out.shopFeedbackHiddenOnOpen =
+      document.getElementById("shop-feedback").classList.contains("hidden");
     const shopBtns = [...document.querySelectorAll("#shop-items .shop-item")];
     const dartBtn = shopBtns.find(b => b.textContent.includes("Shock Dart"));
     const cellBtn = shopBtns.find(b => b.textContent.includes("Power Cell"));
     out.shopSellsTools = !!dartBtn && !!cellBtn && !dartBtn.disabled && !cellBtn.disabled;
+    const dartCost = RL.SHOP_RESTOCKS.find(s => s.kind === "dart").cost;
     if (dartBtn) dartBtn.click();
     out.shopRestockWorks = (p.consumables.dart || 0) === dartsBefore + 1 &&
-      p.souls === 500 - RL.SHOP_RESTOCKS.find(s => s.kind === "dart").cost;
+      p.souls === 500 - dartCost;
+    // buying updates the souls readout and flashes a feedback message —
+    // both were invisible before, hidden behind the overlay or missing
+    out.shopSoulsUpdateOnBuy =
+      document.getElementById("shop-souls").textContent === String(500 - dartCost);
+    const fb = document.getElementById("shop-feedback");
+    out.shopFeedbackShownOnBuy = !fb.classList.contains("hidden") &&
+      fb.textContent.includes("Shock Dart") && fb.textContent.includes(String(dartCost));
     const again = [...document.querySelectorAll("#shop-items .shop-item")]
       .find(b => b.textContent.includes("Shock Dart"));
     out.shopRestockRepeats = !!again && !again.disabled;

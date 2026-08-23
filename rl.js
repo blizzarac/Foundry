@@ -3793,7 +3793,8 @@ function renderLog() {
 
 /* ------- repair bay fabrication ------- */
 let bought = {};
-function showShop() {
+// null on a plain open; a string re-render (after a purchase) flashes it
+function showShop(feedback) {
   const p = run.player;
   const box = document.getElementById("shop-items");
   box.innerHTML = "";
@@ -3811,16 +3812,28 @@ function showShop() {
     el.addEventListener("click", fn);
     box.appendChild(el);
   };
-  const paid = cost => {
+  const paid = (cost, msg) => {
     p.souls -= cost;
     sfx("core");
     if (run.mode !== "campaign") { syncProfileFromPlayer(); saveProfile(); }
     saveRun();
-    showShop();
+    showShop(msg);
     refreshHud();
   };
   document.getElementById("shop-sub").textContent =
     run.mode === "overworld" ? "Remote uplink to the Bay fabricator." : "";
+  // the shop overlay sits above the topbar, so the souls counter up there
+  // is hidden while shopping — show it again in here
+  document.getElementById("shop-souls").textContent = p.souls;
+  const fb = document.getElementById("shop-feedback");
+  fb.classList.toggle("hidden", !feedback);
+  if (feedback) {
+    fb.textContent = feedback;
+    // retrigger the flash animation even if the same message repeats
+    fb.classList.remove("flash");
+    void fb.offsetWidth;
+    fb.classList.add("flash");
+  }
 
   head("Frame upgrades");
   for (const u of UPGRADES) {
@@ -3834,7 +3847,7 @@ function showShop() {
         u.apply(p);
         recalc();
         log(u.name + " installed.", "good");
-        paid(cost);
+        paid(cost, u.name + " installed — " + cost + " cores");
       });
   }
 
@@ -3847,7 +3860,7 @@ function showShop() {
         if (p.souls < s.cost) return;
         p.consumables[s.kind] = (p.consumables[s.kind] || 0) + 1;
         log(s.name + " fabricated.", "good");
-        paid(s.cost);
+        paid(s.cost, "+1 " + s.name + " — " + s.cost + " cores");
       });
   }
 
@@ -3859,7 +3872,7 @@ function showShop() {
         if (p.souls < o.cost) return;
         p.currency[o.kind] = (p.currency[o.kind] || 0) + 1;
         log(c.name + " fabricated.", "good");
-        paid(o.cost);
+        paid(o.cost, "+1 " + c.name + " — " + o.cost + " cores");
       });
   }
 
@@ -3877,7 +3890,7 @@ function showShop() {
         const item = genItem(craftRng, bases[(craftRng() * bases.length) | 0], "rare", depth);
         p.items.push(item);
         log("Prototype fabricated: " + item.name + " (Rare).", "good");
-        paid(GAMBLE_COST);
+        paid(GAMBLE_COST, "Fabricated " + item.name + " — " + GAMBLE_COST + " cores");
       });
   }
   document.getElementById("shop").classList.remove("hidden");
