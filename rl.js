@@ -1059,9 +1059,9 @@ function resumeRun() {
 const GAME_VERSION = "2026-08-23-config";
 // stamped by hand on every push — there's no build step or CI on this
 // static site to bake in a real deploy timestamp, so this is it. Shown
-// persistently in a corner so it's always clear which build a given
-// browser tab is actually running.
-const DEPLOY_TIME = "2026-08-23T14:58:27Z";
+// as a footer note on the intro/menu page, so it's always clear which
+// build a given browser tab is actually running before you dive in.
+const DEPLOY_TIME = "2026-08-23T15:03:52Z";
 function showDeployBadge() {
   const el = document.getElementById("deploy-badge");
   if (!el) return;

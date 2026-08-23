@@ -98,7 +98,7 @@ Every affix in `config.js` also carries a `slots` field, currently `null` on eve
 
 ## Deploy badge
 
-A small, non-interactive corner watermark — `deployed <date/time>` — sits above the action bar at all times: menu, gameplay, overworld, every screen. There's no build step or CI on this static site to bake in a real deploy timestamp, so `DEPLOY_TIME` in `rl.js` (right next to `GAME_VERSION`) is stamped by hand on every push to `main`. Since GitHub Pages serves this repo directly with no build stage, the last commit to `main` *is* the last deployment, so the two are always the same moment — bump it as the last edit before every commit that ships.
+A small, non-interactive footer note — `deployed <date/time>` — sits at the bottom of the intro/menu page, below the debug export/import links. It lives inside `#menu` in the DOM, so it hides itself the instant that overlay does — no separate show/hide logic, just ordinary page flow. There's no build step or CI on this static site to bake in a real deploy timestamp, so `DEPLOY_TIME` in `rl.js` (right next to `GAME_VERSION`) is stamped by hand on every push to `main`. Since GitHub Pages serves this repo directly with no build stage, the last commit to `main` *is* the last deployment, so the two are always the same moment — bump it as the last edit before every commit that ships.
 
 ## Debug export
 

@@ -6,8 +6,8 @@
   branch is fine). No pull requests unless explicitly requested.
 - Before every push that ships a change, bump `DEPLOY_TIME` in `rl.js`
   (right next to `GAME_VERSION`) to the actual current UTC time (`date -u
-  +"%Y-%m-%dT%H:%M:%SZ"`). It drives the "deployed ..." badge shown at all
-  times in-game — GitHub Pages serves this repo directly with no build
+  +"%Y-%m-%dT%H:%M:%SZ"`). It drives the "deployed ..." footer note on the
+  intro/menu page — GitHub Pages serves this repo directly with no build
   step, so the last commit to `main` genuinely is the last deployment, and
   the badge is only honest if this gets bumped every time.
 
