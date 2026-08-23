@@ -132,6 +132,19 @@ html, body {
 }
 .item-btns button:hover:not(:disabled) { background: #27394a !important; }
 .item-btns button:disabled { opacity: 0.35; }
+.compare-btn { border-color: #2f5a7f !important; color: #7fb8e8 !important; }
+.item-card-wrap { display: flex; flex-direction: column; }
+.item-compare {
+  margin-top: 6px; padding: 8px 12px; background: #101a24;
+  border: 1px solid #2f4152; border-radius: 4px; font-size: 11.5px;
+}
+.item-compare.hidden { display: none; }
+.item-compare .diff-vs { color: #6b7f8e; margin-bottom: 4px; font-style: italic; }
+.item-compare .diff-row { display: flex; justify-content: space-between; gap: 10px; padding: 1px 0; }
+.item-compare .diff-label { color: #8fa3b2; }
+.item-compare .diff-up { color: #6fe0b0; }
+.item-compare .diff-down { color: #ff8a70; }
+.item-compare .diff-empty { color: #5d7080; font-style: italic; }
 #btn-gear { min-width: 72px; }
 
 /* ---------------- log ---------------- */

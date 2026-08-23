@@ -390,6 +390,43 @@ function check(name, cond) {
   await rareSell.click();
   check("armedSalvageSells", await page.evaluate(() =>
     !window.RL.itemById(window.__sellRare.id)));
+  // backpack cards carry a Compare button that diffs the item's derived
+  // stats against whatever's equipped in that slot, without actually
+  // equipping it — __modsTestItem is a bulkhead (plating) rare with a
+  // known implicit + four affixes, so its diff against the starting
+  // plating should surface every one of those stats
+  await page.click('#gear-tabs button[data-tab="pack"]');
+  const cmpBtn = await page.evaluateHandle(() =>
+    [...document.querySelectorAll("#gear-pack .item-card")]
+      .find(c => c.textContent.includes(window.__modsTestItem.name))
+      .querySelector(".compare-btn"));
+  await cmpBtn.click();
+  check("compareShowsDiff", await page.evaluate(() => {
+    const card = [...document.querySelectorAll("#gear-pack .item-card")]
+      .find(c => c.textContent.includes(window.__modsTestItem.name));
+    const panel = card.closest(".item-card-wrap").querySelector(".item-compare");
+    return !panel.classList.contains("hidden") && panel.querySelectorAll(".diff-row").length >= 4;
+  }));
+  check("compareLabelsVsEquipped", await page.evaluate(() => {
+    const card = [...document.querySelectorAll("#gear-pack .item-card")]
+      .find(c => c.textContent.includes(window.__modsTestItem.name));
+    const panel = card.closest(".item-card-wrap").querySelector(".item-compare");
+    return panel.querySelector(".diff-vs").textContent.startsWith("vs. ");
+  }));
+  check("compareDoesNotEquip", await page.evaluate(() =>
+    window.RL.run.player.equip.plating !== window.__modsTestItem.id));
+  await cmpBtn.click();
+  check("compareTogglesHidden", await page.evaluate(() => {
+    const card = [...document.querySelectorAll("#gear-pack .item-card")]
+      .find(c => c.textContent.includes(window.__modsTestItem.name));
+    return card.closest(".item-card-wrap").querySelector(".item-compare").classList.contains("hidden");
+  }));
+  check("noCompareOnEquippedCards", await page.evaluate(() => {
+    document.querySelector('#gear-tabs button[data-tab="equip"]').click();
+    return document.querySelectorAll("#gear-slots .compare-btn").length === 0;
+  }));
+
+  await page.click('#gear-tabs button[data-tab="pack"]');
   await page.keyboard.press("4");
   check("suppliesTabByKey", await page.evaluate(() =>
     !document.getElementById("tab-supplies").classList.contains("hidden")));

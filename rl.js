@@ -1061,7 +1061,7 @@ const GAME_VERSION = "2026-08-23-config";
 // static site to bake in a real deploy timestamp, so this is it. Shown
 // as a footer note on the intro/menu page, so it's always clear which
 // build a given browser tab is actually running before you dive in.
-const DEPLOY_TIME = "2026-08-23T15:25:00Z";
+const DEPLOY_TIME = "2026-08-23T15:35:23Z";
 function showDeployBadge() {
   const el = document.getElementById("deploy-badge");
   if (!el) return;
@@ -5177,6 +5177,72 @@ function itemModsHTML(item) {
   if (item.lore) html += `<span class="mod lore">${item.lore}</span>`;
   return html;
 }
+// derived-stat fields worth showing on a backpack-vs-equipped diff, plus
+// which direction counts as an upgrade (cost stats are better lower)
+const COMPARE_STATS = [
+  { key: "dmg", label: "dmg" },
+  { key: "atkCost", label: "power/strike", invert: true },
+  { key: "bsBonus", label: "rear-strike dmg" },
+  { key: "rollCost", label: "dash cost", invert: true },
+  { key: "parryCost", label: "deflect cost", invert: true },
+  { key: "maxHp", label: "max integrity" },
+  { key: "maxSt", label: "max power" },
+  { key: "flaskHealBonusTotal", label: "repair-cell heal" },
+  { key: "fovBonus", label: "sensor range" },
+  { key: "salvageMult", label: "core yield", pct: true },
+];
+const COMPARE_FLAGS = [
+  { key: "cleave", label: "cleaves" },
+  { key: "reach", label: "reach" },
+  { key: "siphonOnKill", label: "heal on kill" },
+];
+function snapshotCombatStats() {
+  const p = run.player;
+  const out = { siphonOnKill: p.siphonOnKill };
+  for (const s of COMPARE_STATS) out[s.key] = p[s.key];
+  for (const f of COMPARE_FLAGS) out[f.key] = p[f.key];
+  return out;
+}
+// swaps the item into its slot, snapshots the resulting derived stats, then
+// swaps back — recalc() is a pure function of equip + tree, so this is safe
+// to call from a UI render with no lasting effect on the run
+function compareItemStats(item) {
+  const p = run.player;
+  const slot = itemSlot(item);
+  const prevId = p.equip[slot];
+  const before = snapshotCombatStats();
+  p.equip[slot] = item.id;
+  recalc();
+  const after = snapshotCombatStats();
+  p.equip[slot] = prevId;
+  recalc();
+  return { before, after };
+}
+function compareHTML(item) {
+  const slot = itemSlot(item);
+  const equipped = equippedItem(slot);
+  const { before, after } = compareItemStats(item);
+  let rows = "";
+  for (const s of COMPARE_STATS) {
+    const b = before[s.key], a = after[s.key];
+    if (b === a) continue;
+    const delta = a - b;
+    const isGood = s.invert ? delta < 0 : delta > 0;
+    const cls = isGood ? "diff-up" : "diff-down";
+    const fmt = v => s.pct ? Math.round(v * 100) + "%" : v;
+    const deltaStr = s.pct ? Math.round(delta * 100) + "%" : String(delta);
+    rows += `<div class="diff-row"><span class="diff-label">${s.label}</span>` +
+      `<span class="${cls}">${fmt(b)} → ${fmt(a)} (${delta > 0 ? "+" : ""}${deltaStr})</span></div>`;
+  }
+  for (const f of COMPARE_FLAGS) {
+    const b = before[f.key], a = after[f.key];
+    if (b === a) continue;
+    rows += `<div class="diff-row"><span class="diff-label">${f.label}</span>` +
+      `<span class="${a ? "diff-up" : "diff-down"}">${a ? "gained" : "lost"}</span></div>`;
+  }
+  if (!rows) rows = `<div class="diff-empty">No stat change.</div>`;
+  return `<div class="diff-vs">vs. ${equipped ? equipped.name : SLOT_LABEL[slot] + " (empty)"}</div>` + rows;
+}
 function itemCardEl(item, equippedSlot) {
   const p = run.player;
   const base = BASE_TYPES[item.base];
@@ -5192,6 +5258,7 @@ function itemCardEl(item, equippedSlot) {
   el.appendChild(info);
   const btns = document.createElement("div");
   btns.className = "item-btns";
+  let comparePanel = null;
   if (equippedSlot) {
     const un = document.createElement("button");
     un.textContent = "Unequip";
@@ -5202,6 +5269,25 @@ function itemCardEl(item, equippedSlot) {
     eq.textContent = "Equip";
     eq.addEventListener("click", () => { if (equipItem(item.id)) { refreshGear(); refreshHud(); } });
     btns.appendChild(eq);
+    // backpack items diff against whatever's currently in that slot, so
+    // it's clear whether picking this up is actually an upgrade
+    const cmp = document.createElement("button");
+    cmp.className = "compare-btn";
+    cmp.textContent = "Compare";
+    comparePanel = document.createElement("div");
+    comparePanel.className = "item-compare hidden";
+    cmp.addEventListener("click", () => {
+      const showing = !comparePanel.classList.contains("hidden");
+      if (showing) {
+        comparePanel.classList.add("hidden");
+        cmp.textContent = "Compare";
+      } else {
+        comparePanel.innerHTML = compareHTML(item);
+        comparePanel.classList.remove("hidden");
+        cmp.textContent = "Hide diff";
+      }
+    });
+    btns.appendChild(cmp);
     const val = sellValue(item);
     const sell = document.createElement("button");
     sell.className = "sell-btn";
@@ -5230,7 +5316,12 @@ function itemCardEl(item, equippedSlot) {
     btns.appendChild(b);
   }
   el.appendChild(btns);
-  return el;
+  if (!comparePanel) return el;
+  const wrap = document.createElement("div");
+  wrap.className = "item-card-wrap";
+  wrap.appendChild(el);
+  wrap.appendChild(comparePanel);
+  return wrap;
 }
 function refreshGearSlots() {
   const el = document.getElementById("gear-slots");
