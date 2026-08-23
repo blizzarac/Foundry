@@ -168,21 +168,41 @@ window.IRONHEX_CONFIG = {
   // flat frame upgrades. Points come from Foundry milestones, never cores —
   // one per first-time sector purge, more per SENTINEL gate — so the tree
   // paces itself with the tier climb instead of capping out after the
-  // prologue. Three branches; each node lists the node(s) that unlock it
-  // ("requires": [] marks a branch entry point, open from the start).
-  // "kind" is small/notable/keystone/jewel: smalls carry flat stats through
-  // the same STAT_KEYS vocabulary items use, notables may instead carry a
-  // "mech" — a key into a real combat-code branch in rl.js (the closed set
-  // TREE_MECH_KEYS) plus its magnitude — keystones trade power for a
-  // downside, and jewels are the prism sockets past each keystone that fan
-  // into a tip cluster. Each spine also hangs side twigs (nodes whose
-  // requires point at a mid-spine node), and a node with several requires
-  // opens when ANY of them is installed — the cluster rings close on
-  // themselves. Refunding is free but only from the tip of a branch inward.
+  // prologue. Three stat branches plus a small root cluster; each node
+  // lists the node(s) that unlock it ("requires": [] marks a branch entry
+  // point, open from the start).
+  // "kind" is small/notable/keystone/jewel/special: smalls carry flat
+  // stats through the same STAT_KEYS vocabulary items use, notables may
+  // instead carry a "mech" — a key into a real combat-code branch in rl.js
+  // (the closed set TREE_MECH_KEYS) plus its magnitude — keystones trade
+  // power for a downside, jewels are the prism sockets past each keystone
+  // that fan into a tip cluster, and specials are the root-tier active
+  // attacks (also mech-keyed): exactly one active at a time, same
+  // exclusivity rule as keystones, but with no prerequisite and nothing
+  // ever hanging off one so they're always free to swap. Each spine also
+  // hangs side twigs (nodes whose requires point at a mid-spine node), and
+  // a node with several requires opens when ANY of them is installed — the
+  // cluster rings close on themselves. Refunding is free but only from the
+  // tip of a branch inward.
   "frameTree": {
     "pointsPerPurge": 1,
     "pointsPerGate": 2,
     "nodes": [
+      // root cluster: one special attack, picked independent of which of
+      // the three branches you sink points into (unlike a keystone, these
+      // sit at the very entry — no prerequisite chain at all) and mutually
+      // exclusive with each other the same way keystones are. Always free
+      // to remove (nothing ever hangs off a leaf with no children).
+      { "id": "spSlam",    "branch": "root", "kind": "special", "name": "Overload Slam",
+        "requires": [], "desc": "Vent the deflector field outward: every adjacent machine takes a hit and staggers.",
+        "mech": { "key": "specialSlam", "power": 1 } },
+      { "id": "spCharge",  "branch": "root", "kind": "special", "name": "Rail Charge",
+        "requires": [], "desc": "Punch the thrusters down a straight lane, striking everything in the path before you land.",
+        "mech": { "key": "specialCharge", "power": 1 } },
+      { "id": "spBarrage", "branch": "root", "kind": "special", "name": "Barrage Volley",
+        "requires": [], "desc": "Discharge the weapon down a lane at range — no reach required, but you hold your ground.",
+        "mech": { "key": "specialBarrage", "power": 1 } },
+
       { "id": "ch1", "branch": "chassis", "kind": "small",    "name": "Plating Weave",       "requires": [],      "effect": { "maxHpBonus": 2 } },
       { "id": "ch2", "branch": "chassis", "kind": "small",    "name": "Sealed Joints",       "requires": ["ch1"], "effect": { "maxHpBonus": 2 } },
       { "id": "chN1", "branch": "chassis", "kind": "notable", "name": "Reactive Plating",    "requires": ["ch2"],
@@ -367,7 +387,13 @@ window.IRONHEX_CONFIG = {
     "flaskHealBase": 8,
     // shared by the Volatile key mod and a Corrupted Zone kill: the dying
     // machine detonates for this much if you're standing adjacent
-    "volatileDetonationDmg": 1
+    "volatileDetonationDmg": 1,
+    // the root-tier special attack (Overload Slam / Rail Charge / Barrage
+    // Volley) — one power cost and one damage multiplier shared by all
+    // three, so tuning the special-attack economy is one number, not three.
+    // dmgMult sits under 1 since it lands on multiple targets (or without
+    // needing to be adjacent), rather than dominating the plain attack
+    "special": { "cost": 3, "range": 4, "dmgMult": 0.85 }
   },
 
   "events": {

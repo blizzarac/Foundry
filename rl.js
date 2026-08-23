@@ -131,7 +131,8 @@ function validateConfig(cfg) {
   // half a branch, so the whole graph is walked at boot
   const TREE_STAT_KEYS = ["dmg", "maxHpBonus", "maxStBonus", "bsBonus", "flaskHealBonus",
     "salvageMult", "siphonOnKill", "rollCostDelta", "parryCostDelta", "fovBonus"];
-  const MECH_KEYS = ["parryRefund", "parryRange", "bsKillRefund", "staggerBonus", "eliteOrbBonus", "lootDepthBonus"];
+  const MECH_KEYS = ["parryRefund", "parryRange", "bsKillRefund", "staggerBonus", "eliteOrbBonus", "lootDepthBonus",
+    "specialSlam", "specialCharge", "specialBarrage"];
   req(cfg.frameTree, "frameTree missing");
   if (cfg.frameTree) {
     const ft = cfg.frameTree;
@@ -141,7 +142,7 @@ function validateConfig(cfg) {
     if (Array.isArray(ft.nodes)) {
       const ids = new Set();
       ft.nodes.forEach((n, i) => {
-        req(n.id && n.branch && n.name && ["small", "notable", "keystone", "jewel"].includes(n.kind),
+        req(n.id && n.branch && n.name && ["small", "notable", "keystone", "jewel", "special"].includes(n.kind),
           `frameTree.nodes[${i}] missing id/branch/name or bad kind`);
         req(n.id && !ids.has(n.id), `frameTree.nodes[${i}] duplicate id "${n.id}"`);
         if (n.id) ids.add(n.id);
@@ -234,6 +235,8 @@ function validateConfig(cfg) {
       typeof cb.parryCost.max === "number", "combat.parryCost missing base/min/max");
     req(typeof cb.flaskHealBase === "number", "combat.flaskHealBase missing or not a number");
     req(typeof cb.volatileDetonationDmg === "number", "combat.volatileDetonationDmg missing or not a number");
+    req(cb.special && typeof cb.special.cost === "number" && typeof cb.special.range === "number" &&
+      typeof cb.special.dmgMult === "number", "combat.special missing cost/range/dmgMult");
   }
 
   req(cfg.events, "events missing");
@@ -846,6 +849,9 @@ function canAllocateNode(id) {
   // another's downside instead of committing to either
   if (n.kind === "keystone" && t.nodes.some(x => TREE_NODE_BY_ID[x] && TREE_NODE_BY_ID[x].kind === "keystone"))
     return { ok: false, reason: "Only one keystone at a time — remove the active one first." };
+  // same idea for the root specials: one active attack, not a loadout
+  if (n.kind === "special" && t.nodes.some(x => TREE_NODE_BY_ID[x] && TREE_NODE_BY_ID[x].kind === "special"))
+    return { ok: false, reason: "Only one special attack at a time — remove the active one first." };
   return { ok: true };
 }
 function allocateNode(id) {
@@ -1036,7 +1042,7 @@ function resumeRun() {
   run = cp.run;
   run.tiles = new Map(run.tiles.map(t => [key(t.q, t.r), t]));
   ui.screen = "game";
-  ui.rollMode = false; ui.throwDart = false; ui.walking = null;
+  ui.rollMode = false; ui.throwDart = false; ui.walking = null; ui.specialMode = null;
   document.body.classList.remove("overworld");
   for (const id of ["menu", "death", "win", "shop", "terminal", "inv", "node"])
     document.getElementById(id).classList.add("hidden");
@@ -1061,7 +1067,7 @@ const GAME_VERSION = "2026-08-23-config";
 // static site to bake in a real deploy timestamp, so this is it. Shown
 // as a footer note on the intro/menu page, so it's always clear which
 // build a given browser tab is actually running before you dive in.
-const DEPLOY_TIME = "2026-08-23T16:16:20Z";
+const DEPLOY_TIME = "2026-08-23T17:05:00Z";
 function showDeployBadge() {
   const el = document.getElementById("deploy-badge");
   if (!el) return;
@@ -1397,7 +1403,8 @@ function recalc() {
   // frame lattice: allocated stat nodes sum into the same totals as gear;
   // mech nodes set the flags the combat code branches on. Zeroed flags in
   // the prologue — the lattice belongs to the endgame frame only.
-  const mech = { parryRefund: 0, parryRange: 0, bsKillRefund: 0, staggerBonus: 0, eliteOrbBonus: 0, lootDepthBonus: 0 };
+  const mech = { parryRefund: 0, parryRange: 0, bsKillRefund: 0, staggerBonus: 0, eliteOrbBonus: 0, lootDepthBonus: 0,
+    specialSlam: 0, specialCharge: 0, specialBarrage: 0 };
   if (treeApplies()) {
     for (const id of profile.tree.nodes) {
       const n = TREE_NODE_BY_ID[id];
@@ -1407,6 +1414,9 @@ function recalc() {
     }
   }
   p.treeMech = mech;
+  // the three root specials are mutually exclusive (canAllocateNode enforces
+  // it), so at most one of these flags is ever set on a real character
+  p.specialAttack = mech.specialSlam ? "slam" : mech.specialCharge ? "charge" : mech.specialBarrage ? "barrage" : null;
   p.dmg = weaponType.dmg + p.bonusDmg + totals.dmg;
   p.atkCost = weaponType.atkCost;
   p.bsBonus = weaponType.bsBonus + totals.bsBonus;
@@ -1969,6 +1979,119 @@ function actFlask() {
   endTurn();
   return true;
 }
+/* Root-tier special attacks — unlocked by the frame lattice's root cluster
+   (spSlam/spCharge/spBarrage, mutually exclusive), gated everywhere below
+   on p.specialAttack matching. Numbers (cost/range/dmgMult) live in
+   config.js (combat.special) so tuning is a data edit like everything else. */
+function specialLabel(kind) {
+  return kind === "slam" ? "Overload Slam" : kind === "charge" ? "Rail Charge"
+    : kind === "barrage" ? "Barrage Volley" : null;
+}
+function actSlam() {
+  const p = run.player;
+  const sp = CFG.combat.special;
+  if (p.specialAttack !== "slam" || !canAfford(sp.cost)) return false;
+  logAction("slam", { at: [p.q, p.r] });
+  p.st -= sp.cost;
+  const dmg = Math.round(p.dmg * sp.dmgMult);
+  let hitCount = 0;
+  for (const k of ringHexes(p, 1, 1)) {
+    const [q, r] = unkey(k);
+    const target = run.enemies.find(o => o.q === q && o.r === r);
+    if (!target) continue;
+    hurtEnemy(target, dmg, "slam");
+    if (run.over) return true;
+    if (target.hp > 0) target.stagger = 2;
+    hitCount++;
+  }
+  log(hitCount ? `Overload slam staggers ${hitCount} machine${hitCount === 1 ? "" : "s"}.` : "Overload slam hits nothing.",
+    hitCount ? "good" : "");
+  sfx("block");
+  endTurn();
+  return true;
+}
+// candidate landing hexes for Rail Charge: straight lanes only, and only
+// as far as the path stays open — same "crosses bodies, not walls" rule
+// as a dash, but confined to one of the six axes instead of any hex
+function chargeTargets() {
+  const p = run.player, range = CFG.combat.special.range, out = [];
+  for (let d = 0; d < 6; d++) {
+    let q = p.q, r = p.r;
+    for (let i = 0; i < range; i++) {
+      q += DIRS[d][0]; r += DIRS[d][1];
+      const t = run.tiles.get(key(q, r));
+      if (!t || t.rock) break;
+      if (!occupied(q, r)) out.push([q, r]);
+    }
+  }
+  return out;
+}
+function canChargeTo(q, r) { return chargeTargets().some(([tq, tr]) => tq === q && tr === r); }
+function actCharge(q, r) {
+  const p = run.player;
+  const sp = CFG.combat.special;
+  if (p.specialAttack !== "charge" || !canAfford(sp.cost) || !canChargeTo(q, r)) return false;
+  logAction("charge", { from: [p.q, p.r], to: [q, r] });
+  p.st -= sp.cost;
+  const d = axisDir(p.q, p.r, q, r);
+  const dist = hexDist(p.q, p.r, q, r);
+  const dmg = Math.round(p.dmg * sp.dmgMult);
+  let cq = p.q, cr = p.r, hitCount = 0;
+  for (let i = 0; i < dist; i++) {
+    cq += DIRS[d][0]; cr += DIRS[d][1];
+    const target = run.enemies.find(o => o.q === cq && o.r === cr);
+    if (!target) continue;
+    hurtEnemy(target, dmg, "charge");
+    if (run.over) return true;
+    hitCount++;
+  }
+  p.q = q; p.r = r;
+  log(hitCount ? `Rail charge tears through ${hitCount} target${hitCount === 1 ? "" : "s"}.` : "Rail charge hits nothing.",
+    hitCount ? "good" : "");
+  sfx("dash");
+  afterPlayerMove();
+  endTurn();
+  return true;
+}
+// every hex a Barrage Volley could be aimed through — any of them fires
+// down the WHOLE lane, so clicking one is really just picking a direction
+function barrageTargets() {
+  const p = run.player, range = CFG.combat.special.range, out = [];
+  for (let d = 0; d < 6; d++) {
+    let q = p.q, r = p.r;
+    for (let i = 0; i < range; i++) {
+      q += DIRS[d][0]; r += DIRS[d][1];
+      const t = run.tiles.get(key(q, r));
+      if (!t || t.rock) break;
+      out.push([q, r]);
+    }
+  }
+  return out;
+}
+function actBarrage(q, r) {
+  const p = run.player;
+  const sp = CFG.combat.special;
+  if (p.specialAttack !== "barrage" || !canAfford(sp.cost)) return false;
+  const d = axisDir(p.q, p.r, q, r);
+  if (d < 0 || !barrageTargets().some(([tq, tr]) => tq === q && tr === r)) return false;
+  logAction("barrage", { at: [p.q, p.r], dir: d });
+  p.st -= sp.cost;
+  const dmg = Math.round(p.dmg * sp.dmgMult);
+  let hitCount = 0;
+  for (const k of laneHexesLen(p, [d], sp.range)) {
+    const [hq, hr] = unkey(k);
+    const target = run.enemies.find(o => o.q === hq && o.r === hr);
+    if (!target) continue;
+    hurtEnemy(target, dmg, "barrage");
+    if (run.over) return true;
+    hitCount++;
+  }
+  log(hitCount ? `Barrage volley rips through ${hitCount} target${hitCount === 1 ? "" : "s"}.` : "Barrage volley hits nothing.",
+    hitCount ? "good" : "");
+  sfx("strike");
+  endTurn();
+  return true;
+}
 function actRest() {
   const p = run.player;
   const b = run.bay;
@@ -2134,7 +2257,7 @@ function hurtEnemy(e, dmg, label) {
   e.hp -= dmg;
   e.flash = 0.25;
   addFloat(e.q, e.r, String(dmg) + (label ? " " + label + "!" : ""), label ? "#f0c060" : "#e8e8ef");
-  if (label) log(label === "backstab" ? "Backstab!" : "Riposte!", "good");
+  if (label === "backstab" || label === "riposte") log(label === "backstab" ? "Backstab!" : "Riposte!", "good");
   if (e.hp <= 0) {
     const def = ENEMY[e.type];
     let souls = e.elite ? def.souls * 3 : def.souls;
@@ -3350,7 +3473,7 @@ function enterOverworld() {
   const p = run.player;
   p.hp = p.maxHp; p.st = p.maxSt; p.flask = p.maxFlask;
   ui.screen = "overworld";
-  ui.rollMode = false; ui.throwDart = false; ui.walking = null;
+  ui.rollMode = false; ui.throwDart = false; ui.walking = null; ui.specialMode = null;
   document.body.classList.add("overworld");
   for (const id of ["menu", "death", "win", "shop", "terminal", "inv", "node"])
     document.getElementById(id).classList.add("hidden");
@@ -3435,7 +3558,7 @@ function enterNode(q, r, keyId) {
   run.floorConf.keyMods = skey.affixes.map(a => a.mod);
   genFloor();
   ui.screen = "game";
-  ui.rollMode = false; ui.throwDart = false; ui.walking = null;
+  ui.rollMode = false; ui.throwDart = false; ui.walking = null; ui.specialMode = null;
   document.body.classList.remove("overworld");
   document.getElementById("node").classList.add("hidden");
   centerCam();
@@ -3607,7 +3730,7 @@ function extractToOverworld() {
   const p = run.player;
   p.hp = p.maxHp; p.st = p.maxSt; p.flask = p.maxFlask; p.parry = false; p.dead = false;
   ui.screen = "overworld";
-  ui.rollMode = false; ui.throwDart = false; ui.walking = null;
+  ui.rollMode = false; ui.throwDart = false; ui.walking = null; ui.specialMode = null;
   document.body.classList.add("overworld");
   cam.tx = 0; cam.ty = 0;
   log("Extraction. The Bay repairs your frame.", "good");
@@ -4065,6 +4188,19 @@ function render(now) {
       ctx.lineWidth = 2.5;
       ctx.stroke();
       ctx.globalAlpha = 1;
+    }
+  }
+
+  /* special-attack targets: Rail Charge (landing hexes) and Barrage
+     Volley (every hex the aimed lane could pass through) share the same
+     lane-highlight look, distinct from the dash ring's cyan */
+  if (ui.specialMode && run.player.st >= CFG.combat.special.cost) {
+    const hexes = ui.specialMode === "charge" ? chargeTargets() : barrageTargets();
+    for (const [q, r] of hexes) {
+      hexPath(ctx, hexX(q, r), hexY(q, r), 0.7);
+      ctx.strokeStyle = "#f0a840";
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
     }
   }
 
@@ -4602,7 +4738,7 @@ function drawStain(b, t) {
 }
 
 /* ================================= UI =================================== */
-const ui = { screen: "game", rollMode: false, throwDart: false, walking: null, keys: {}, gearTab: "equip" };
+const ui = { screen: "game", rollMode: false, throwDart: false, walking: null, specialMode: null, keys: {}, gearTab: "equip" };
 
 function refreshHud() {
   const p = run.player;
@@ -4638,6 +4774,18 @@ function refreshHud() {
   rollBtn.disabled = p.st < p.rollCost || run.over;
   document.getElementById("btn-parry").disabled = p.st < p.parryCost || run.over;
   document.getElementById("btn-flask").disabled = p.flask <= 0 || p.hp >= p.maxHp || run.over;
+  const specBtn = document.getElementById("btn-special");
+  specBtn.classList.toggle("hidden", !p.specialAttack);
+  if (p.specialAttack) {
+    specBtn.textContent = specialLabel(p.specialAttack);
+    specBtn.title = p.specialAttack === "slam"
+      ? `Vent the deflector field: every adjacent machine takes a hit and staggers (${CFG.combat.special.cost} power)`
+      : p.specialAttack === "charge"
+      ? `Punch a straight lane, striking everything in the path before you land (${CFG.combat.special.cost} power) [S]`
+      : `Discharge down a lane at range, no reach required (${CFG.combat.special.cost} power) [S]`;
+    specBtn.classList.toggle("active", !!ui.specialMode);
+    specBtn.disabled = p.st < CFG.combat.special.cost || run.over;
+  }
   const b = run.bay;
   document.getElementById("btn-rest").classList.toggle("hidden",
     !b || b.used || hexDist(p.q, p.r, b.q, b.r) > 1 || run.over);
@@ -4827,7 +4975,7 @@ document.getElementById("shop-close").addEventListener("click", () => {
    by kind (small -> ringed notable -> big keystone), curved edges that
    light up along the allocated path. Names live in the tap-detail bar,
    not on the tree — the constellation itself stays iconography. */
-const TREE_KIND_LABEL = { small: "Node", notable: "Notable", keystone: "Keystone", jewel: "Prism" };
+const TREE_KIND_LABEL = { small: "Node", notable: "Notable", keystone: "Keystone", jewel: "Prism", special: "Special" };
 let treeSelected = null;
 function treeNodeText(n) {
   const parts = [];
@@ -4845,6 +4993,10 @@ function treeNodeText(n) {
 // renders at the origin.
 const TREE_LAYOUT = (() => {
   const LOCAL = {
+    // root: the three special attacks, a small fan right at the hub — no
+    // spine, no depth, just three leaves sitting in the gap between the
+    // three branch angles below
+    spSlam: [-70, 70], spCharge: [0, 85], spBarrage: [70, 70],
     // servos: the blade
     sv1: [0, 95], sv2: [-40, 175], svt1: [-115, 150], svN1: [-60, 265],
     sv3: [5, 340], sv4: [65, 415], svt2: [140, 380], svN2: [35, 505],
@@ -4864,7 +5016,7 @@ const TREE_LAYOUT = (() => {
     sy7: [70, 740], sy8: [140, 815], syt4: [215, 780], syK: [80, 895],
     syJ: [10, 965], syc1: [-70, 1015], syc2: [60, 1045], syc3: [-15, 1095],
   };
-  const ANGLES = { chassis: 150, servos: -90, systems: 30 };
+  const ANGLES = { chassis: 150, servos: -90, systems: 30, root: 90 };
   const pos = {};
   const counts = {};
   for (const n of TREE_NODES) {
@@ -4900,7 +5052,7 @@ function applyTreeView() {
   svg.setAttribute("viewBox", `${treeView.x} ${treeView.y} ${treeView.w} ${treeView.w}`);
 }
 function treeNodeRadius(kind) {
-  return kind === "keystone" ? 34 : kind === "jewel" ? 28 : kind === "notable" ? 26 : 16;
+  return kind === "keystone" ? 34 : kind === "jewel" ? 28 : kind === "notable" || kind === "special" ? 26 : 16;
 }
 function renderTreeGraph() {
   const t = treeState();
@@ -5676,6 +5828,15 @@ function tryPlayerAction(q, r) {
     refreshHud();
     return;
   }
+  if (ui.specialMode) {
+    const mode = ui.specialMode;
+    ui.specialMode = null;
+    if (mode === "charge") actCharge(q, r);
+    else if (mode === "barrage") actBarrage(q, r);
+    // a tap anywhere invalid just cancels, same as a missed dash target
+    refreshHud();
+    return;
+  }
   if (ui.throwDart) {
     ui.throwDart = false;
     if (enemy) { if (!useConsumable("dart", enemy)) log("No clear lane for the dart.", "warn"); }
@@ -5817,6 +5978,16 @@ document.getElementById("btn-roll").addEventListener("click", () => {
   ui.rollMode = !ui.rollMode;
   refreshHud();
 });
+// Slam resolves immediately (no target needed); Charge/Barrage toggle the
+// same click-a-highlighted-hex targeting mode Dash already uses
+function triggerSpecial() {
+  const p = run.player;
+  if (!p.specialAttack) return;
+  if (p.specialAttack === "slam") actSlam();
+  else ui.specialMode = ui.specialMode ? null : p.specialAttack;
+  refreshHud();
+}
+document.getElementById("btn-special").addEventListener("click", triggerSpecial);
 document.getElementById("btn-parry").addEventListener("click", () => { actParry(); refreshHud(); });
 document.getElementById("btn-flask").addEventListener("click", () => { actFlask(); refreshHud(); });
 document.getElementById("btn-wait").addEventListener("click", () => { actWait(); refreshHud(); });
@@ -5852,9 +6023,10 @@ window.addEventListener("keydown", ev => {
   if (k === "r") { ui.rollMode = !ui.rollMode; }
   else if (k === "f") actParry();
   else if (k === "h" || k === "q") actFlask();
+  else if (k === "s") triggerSpecial();
   else if (k === "b" || k === "i") { if (gearOpen()) closeGear(); else openGear(); }
   else if (k === " ") { ev.preventDefault(); actWait(); }
-  else if (k === "escape") { ui.rollMode = false; ui.throwDart = false; closeGear(); }
+  else if (k === "escape") { ui.rollMode = false; ui.throwDart = false; ui.specialMode = null; closeGear(); }
   refreshHud();
 });
 
@@ -6003,6 +6175,7 @@ window.RL = {
   newRun, startRun, descend,
   actStep, actWait, actAttack, actRoll, actParry, actFlask, actRest,
   dashPath, canDashTo, dashTargets, DASH_RANGE,
+  actSlam, actCharge, actBarrage, chargeTargets, canChargeTo, barrageTargets, specialLabel,
   spawnEnemy, endTurn, bfsDist, updateFov, hexDist,
   persist, savePersist, cam,
   ENEMY, BASE_TYPES, BARE_FISTS, SLOTS, SLOT_LABEL, RARITY, STAT_KEYS,
@@ -6033,7 +6206,7 @@ window.RL = {
   buildDebugBundle, exportDebugState, importDebugState, downloadJSON, GAME_VERSION,
   AFFIX_TIER_BANDS, SHOP_RESTOCKS, SHOP_ORBS, GAMBLE_COST, showShop,
   TREE_NODES, TREE_NODE_BY_ID, treeState, treeApplies, canAllocateNode, allocateNode,
-  canRefundNode, refundNode, grantTreePoints, showTree,
+  canRefundNode, refundNode, grantTreePoints, showTree, refreshHud,
   CFG, CFG_ERRORS, validateConfig,
   paletteFor, mixColor, BIOME_PALETTES, CAMPAIGN_THEMES,
   resize, resetZoom, syncBarHeight,

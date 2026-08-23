@@ -23,16 +23,19 @@
   fab curve, item/key salvage formulas, plus the retired shop upgrades
   kept only as migration-refund data), the frame lattice (points per
   purge/gate and every tree node: branch, edges, stat magnitudes, each
-  notable's mech key + power — the mech *implementations* are combat
-  code in rl.js, keyed by the closed TREE_MECH_KEYS set the validator
-  enforces), item/affix/rarity
+  notable's or special's mech key + power — the mech *implementations*
+  are combat code in rl.js, keyed by the closed TREE_MECH_KEYS set the
+  validator enforces; the root cluster's three special attacks are
+  mech-keyed the same way, just with no `requires` and mutually
+  exclusive like keystones), item/affix/rarity
   tables (base type stats,
   every implicit's roll range plus the depth-scaling coefficient that
   widens it, prefix/suffix pools and their tier magnitudes — plus a slot
   restriction each could carry, currently unused — corrupted-downside
   mods, affix-tier depth bands, uniques, crafting caps), small combat constants
   (dash range, FOV, dash/deflect cost bounds, repair-cell heal, the shared
-  detonation-on-death damage), and node-event tuning (density/weights,
+  detonation-on-death damage, the root specials' shared power cost/range/
+  damage multiplier), and node-event tuning (density/weights,
   Fabricator Surge wave count/interval/soul bonus, Timed Vault lockdown
   cycles, Salvage Convoy hauler count/entry delay, Corrupted Zone radius/
   damage) live here as one plain data object (`window.IRONHEX_CONFIG`),
@@ -52,7 +55,9 @@
   `node tests/events-smoke.js` (Foundry Anomalies node events),
   `node tests/tree-smoke.js` (frame lattice: point grants, allocation
   graph, every mech notable's combat branch, keystone exclusivity,
-  v5/v6 migration refunds),
+  v5/v6 migration refunds, the root cluster's three special attacks —
+  exclusivity, cost/mode gating, and each one's real damage/movement
+  resolution inside a sector),
   `node tests/boss-smoke.js` (gate guardian ladder: band→boss config
   mapping, every WARDEN/CRUCIBLE/FORGE-PRIME verb and phase, apex node
   lifecycle and rewards),

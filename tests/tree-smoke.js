@@ -178,6 +178,118 @@ function check(name, cond) {
     const topWith = maxTierRolled();
     out.scannersDeepenLoot = topWithout <= 2 && topWith >= 3;
 
+    // --- root specials: mutually exclusive at the root (no prerequisite,
+    // available from the very first point), and each attack's real
+    // damage/movement/cost resolution ---
+    try {
+    out.specialsExclusiveAtRoot = (() => {
+      RL.allocateNode("spSlam");
+      const blocked = !RL.canAllocateNode("spCharge").ok;
+      const refunded = RL.refundNode("spSlam");
+      const nowOpen = RL.canAllocateNode("spCharge").ok;
+      return blocked && refunded && nowOpen;
+    })();
+
+    RL.fabricateKey(1);
+    const kSp = RL.profile.atlas.keys.find(k => k.tier === 1);
+    const fkSp = Object.keys(RL.profile.atlas.nodes).find(k => RL.profile.atlas.nodes[k].state === "frontier");
+    const [spq, spr] = fkSp.split(",").map(Number);
+    RL.enterNode(spq, spr, kSp.id);
+    RL.run.enemies.length = 0;   // a clean floor: only the test's own placements matter here
+    const spCost = CFG.combat.special.cost;
+    const SP_DIRS = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
+    const openHex = (q, r) => {
+      const t = RL.run.tiles.get(q + "," + r);
+      return !!t && !t.rock && !RL.run.enemies.some(e => e.q === q && e.r === r);
+    };
+    // a real sector's terrain, not a guess: find a direction with at
+    // least `len` genuinely open (non-rock, unoccupied) hexes ahead
+    const findClearLane = len => {
+      for (const [dq, dr] of SP_DIRS) {
+        const hexes = [];
+        let q = p.q, r = p.r, ok = true;
+        for (let i = 0; i < len; i++) {
+          q += dq; r += dr;
+          if (!openHex(q, r)) { ok = false; break; }
+          hexes.push([q, r]);
+        }
+        if (ok) return hexes;
+      }
+      return null;
+    };
+
+    // Overload Slam: hits and staggers every adjacent machine, misses one
+    // two rings out, and never moves the player
+    RL.allocateNode("spSlam");
+    RL.recalc();
+    RL.refreshHud();
+    out.slamSelectedSetsSpecialAttack = p.specialAttack === "slam";
+    out.specialBtnShowsLabel = !document.getElementById("btn-special").classList.contains("hidden") &&
+      document.getElementById("btn-special").textContent === "Overload Slam";
+    const slamLane = findClearLane(2);   // [0]=ring1 (adjacent), [1]=ring2 (control, should miss)
+    const slamAdj1 = RL.spawnEnemy("scrapper", slamLane[0][0], slamLane[0][1]);
+    slamAdj1.hp = slamAdj1.maxHp = 9999;   // survives the hit so stagger is observable
+    const otherDir = SP_DIRS.find(([dq, dr]) => openHex(p.q - dq, p.r - dr));
+    const slamAdj2 = RL.spawnEnemy("scrapper", p.q - otherDir[0], p.r - otherDir[1]);
+    slamAdj2.hp = slamAdj2.maxHp = 9999;
+    const slamFar = RL.spawnEnemy("scrapper", slamLane[1][0], slamLane[1][1]);
+    const [pqBeforeSlam, prBeforeSlam] = [p.q, p.r];
+    p.st = 0;
+    out.slamRefusedWithoutPower = !RL.actSlam();
+    p.st = spCost;
+    RL.actSlam();
+    out.slamHitsBothAdjacent = slamAdj1.hp < slamAdj1.maxHp && slamAdj2.hp < slamAdj2.maxHp;
+    out.slamStaggersAdjacent = slamAdj1.stagger > 0 && slamAdj2.stagger > 0;
+    out.slamMissesRing2 = slamFar.hp === slamFar.maxHp;
+    out.slamDoesNotMovePlayer = p.q === pqBeforeSlam && p.r === prBeforeSlam;
+    out.slamSpendsCost = p.st === 0;
+    p.st = spCost;
+    out.wrongSpecialModeRefused = !RL.actCharge(slamLane[0][0], slamLane[0][1]);   // specialAttack is "slam"
+    RL.refundNode("spSlam");
+    RL.recalc();
+
+    // Rail Charge: damages everything on a straight lane and lands on the
+    // far (open) hex clicked, not just the nearest one
+    RL.allocateNode("spCharge");
+    RL.recalc();
+    out.chargeSelectedSetsSpecialAttack = p.specialAttack === "charge";
+    RL.run.enemies.length = 0;   // clear the slam test's leftovers before hunting a lane
+    const chargeLane = findClearLane(3);
+    const chargeNear = RL.spawnEnemy("scrapper", chargeLane[0][0], chargeLane[0][1]);
+    const chargeFar = RL.spawnEnemy("scrapper", chargeLane[1][0], chargeLane[1][1]);
+    const landing = chargeLane[2];
+    out.chargeTargetsOffersLanding =
+      RL.chargeTargets().some(([q, r]) => q === landing[0] && r === landing[1]);
+    p.st = spCost;
+    RL.actCharge(landing[0], landing[1]);
+    out.chargeHitsBothInLane = chargeNear.hp < chargeNear.maxHp && chargeFar.hp < chargeFar.maxHp;
+    out.chargeMovesPlayerToLanding = p.q === landing[0] && p.r === landing[1];
+    out.chargeSpendsCost = p.st === 0;
+    RL.refundNode("spCharge");
+    RL.recalc();
+
+    // Barrage Volley: same lane damage, but the player holds position
+    RL.allocateNode("spBarrage");
+    RL.recalc();
+    out.barrageSelectedSetsSpecialAttack = p.specialAttack === "barrage";
+    RL.run.enemies.length = 0;   // clear the charge test's leftovers before hunting a lane
+    const barrageLane = findClearLane(2);
+    const barrageNear = RL.spawnEnemy("scrapper", barrageLane[0][0], barrageLane[0][1]);
+    const barrageFar = RL.spawnEnemy("scrapper", barrageLane[1][0], barrageLane[1][1]);
+    const [pqBeforeBarrage, prBeforeBarrage] = [p.q, p.r];
+    p.st = spCost;
+    RL.actBarrage(barrageLane[0][0], barrageLane[0][1]);
+    out.barrageHitsBothInLane = barrageNear.hp < barrageNear.maxHp && barrageFar.hp < barrageFar.maxHp;
+    out.barrageDoesNotMovePlayer = p.q === pqBeforeBarrage && p.r === prBeforeBarrage;
+    out.barrageSpendsCost = p.st === 0;
+    RL.refundNode("spBarrage");
+    RL.recalc();
+    RL.refreshHud();
+    out.specialBtnHidesAfterRefundingAll =
+      document.getElementById("btn-special").classList.contains("hidden");
+    out.specialAttackClearedAfterRefundAll = !p.specialAttack;
+    } catch (e) { out.__specialErr = e.message + "\n" + e.stack; }
+
     RL.extractToOverworld();
 
     // the lattice never applies to a prologue rig: same profile, fresh
@@ -277,6 +389,7 @@ function check(name, cond) {
     try { localStorage.removeItem("ironhex-foundry"); localStorage.removeItem("ironhex-run"); } catch (e) {}
     return out;
   });
+  if (r.__specialErr) console.log("SPECIAL ERR:", r.__specialErr);
   for (const [k, v] of Object.entries(r)) check(k, !!v);
 
   // --- UI: the lattice overlay renders the full graph and allocates on tap ---
@@ -302,8 +415,9 @@ function check(name, cond) {
     const expected = RL.TREE_NODES.reduce((a, n) => a + Math.max(1, n.requires.length), 0);
     return document.querySelectorAll("#tree-graph .tree-edge").length === expected;
   }));
+  // 3 branch entries (ch1/sv1/sy1) + 3 root specials (spSlam/spCharge/spBarrage)
   check("entryNodesAvailable", await page.evaluate(() =>
-    document.querySelectorAll("#tree-graph .tree-node.avail").length === 3));
+    document.querySelectorAll("#tree-graph .tree-node.avail").length === 6));
   // tap an entry node, then its Install button in the detail bar (SVG
   // groups have no HTMLElement.click, so dispatch a real click event)
   await page.evaluate(() => {

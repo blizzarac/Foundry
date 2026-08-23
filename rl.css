@@ -338,6 +338,8 @@ html, body {
 .tree-node.jewel .body { stroke: #7a62a8; }
 .tree-node.jewel .ring { stroke: #7a62a8; stroke-dasharray: 5 4; }
 .tree-node.jewel .socket { fill: #0a0f16; stroke: #55447a; stroke-width: 1.5; }
+.tree-node.special .body { stroke: #3fa88a; }
+.tree-node.special .ring { stroke: #3fa88a; }
 .tree-node.allocated .body { fill: #14293a; stroke: #4fc0e0; filter: drop-shadow(0 0 8px #4fc0e088); }
 .tree-node.allocated.notable .body { stroke: #f0c060; filter: drop-shadow(0 0 9px #f0c06088); }
 .tree-node.allocated.notable .gem { fill: #f0c060; filter: drop-shadow(0 0 6px #f0c060); }
@@ -345,6 +347,8 @@ html, body {
 .tree-node.allocated.keystone .gem { fill: #f08fb0; filter: drop-shadow(0 0 6px #f08fb0); }
 .tree-node.allocated.jewel .body { stroke: #b08ff0; filter: drop-shadow(0 0 10px #b08ff088); }
 .tree-node.allocated.jewel .gem { fill: #b08ff0; filter: drop-shadow(0 0 7px #b08ff0); }
+.tree-node.allocated.special .body { stroke: #3fe0b8; filter: drop-shadow(0 0 10px #3fe0b888); }
+.tree-node.allocated.special .gem { fill: #3fe0b8; filter: drop-shadow(0 0 6px #3fe0b8); }
 .tree-node.locked { opacity: 0.4; }
 .tree-node .pulse {
   fill: none; stroke: #7fd6ec; stroke-width: 2;
