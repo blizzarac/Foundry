@@ -1067,7 +1067,7 @@ const GAME_VERSION = "2026-08-23-config";
 // static site to bake in a real deploy timestamp, so this is it. Shown
 // as a footer note on the intro/menu page, so it's always clear which
 // build a given browser tab is actually running before you dive in.
-const DEPLOY_TIME = "2026-08-23T17:34:08Z";
+const DEPLOY_TIME = "2026-08-23T17:47:25Z";
 function showDeployBadge() {
   const el = document.getElementById("deploy-badge");
   if (!el) return;
@@ -1946,9 +1946,12 @@ function actRoll(dq, dr) {
   const q = p.q + dq, r = p.r + dr;
   if (!canDashTo(q, r)) return false;
   logAction("dash", { from: [p.q, p.r], to: [q, r] });
+  const fromX = hexX(p.q, p.r), fromY = hexY(p.q, p.r);
   p.st -= p.rollCost;
   p.q = q; p.r = r;
   log("Thrusters fire.", "");
+  fx.push({ type: "dashStreak", x1: fromX, y1: fromY, x2: hexX(q, r), y2: hexY(q, r),
+    color: "79,214,232", t: 0, dur: 0.22 });
   sfx("dash");
   afterPlayerMove();
   endTurn();
@@ -2006,7 +2009,7 @@ function actSlam() {
   }
   log(hitCount ? `Overload slam staggers ${hitCount} machine${hitCount === 1 ? "" : "s"}.` : "Overload slam hits nothing.",
     hitCount ? "good" : "");
-  fx.push({ type: "slamRing", x: hexX(p.q, p.r), y: hexY(p.q, p.r), t: 0, dur: 0.35 });
+  fx.push({ type: "slamRing", x: hexX(p.q, p.r), y: hexY(p.q, p.r), color: "63,224,184", t: 0, dur: 0.35 });
   shake = Math.max(shake, 5);
   sfx("block");
   endTurn();
@@ -2051,7 +2054,8 @@ function actCharge(q, r) {
   p.q = q; p.r = r;
   log(hitCount ? `Rail charge tears through ${hitCount} target${hitCount === 1 ? "" : "s"}.` : "Rail charge hits nothing.",
     hitCount ? "good" : "");
-  fx.push({ type: "chargeStreak", x1: fromX, y1: fromY, x2: hexX(q, r), y2: hexY(q, r), t: 0, dur: 0.3 });
+  fx.push({ type: "chargeStreak", x1: fromX, y1: fromY, x2: hexX(q, r), y2: hexY(q, r),
+    color: "63,224,184", t: 0, dur: 0.3 });
   sfx("dash");
   afterPlayerMove();
   endTurn();
@@ -2095,7 +2099,8 @@ function actBarrage(q, r) {
     hitCount ? "good" : "");
   if (lane.length) {
     const [eq, er] = unkey(lane[lane.length - 1]);
-    fx.push({ type: "barrageBeam", x1: hexX(p.q, p.r), y1: hexY(p.q, p.r), x2: hexX(eq, er), y2: hexY(eq, er), t: 0, dur: 0.3 });
+    fx.push({ type: "barrageBeam", x1: hexX(p.q, p.r), y1: hexY(p.q, p.r), x2: hexX(eq, er), y2: hexY(eq, er),
+      color: "63,224,184", t: 0, dur: 0.3 });
   }
   sfx("strike");
   endTurn();
@@ -4230,8 +4235,10 @@ function render(now) {
   ctx.drawImage(fogCache.canvas, -fogCache.span, -fogCache.span,
     fogCache.span * 2, fogCache.span * 2);
 
-  /* special-attack fx: expanding ring (Slam), a growing-then-fading
-     streak (Charge), a beam that shoots out then fades (Barrage) */
+  /* movement/action fx: expanding ring (Slam), a growing-then-fading
+     streak (Dash, Rail Charge), a beam that shoots out then fades
+     (Barrage). Color carries identity — teal for the root specials,
+     cyan for the dash everyone has — the shape carries the verb. */
   for (let i = fx.length - 1; i >= 0; i--) {
     const f = fx[i];
     f.t += dt;
@@ -4241,19 +4248,20 @@ function render(now) {
       const rad = HEX * (0.7 + k * 2.1);
       ctx.beginPath();
       ctx.arc(f.x, f.y, rad, 0, TAU);
-      ctx.strokeStyle = `rgba(63,224,184,${(1 - k) * 0.85})`;
+      ctx.strokeStyle = `rgba(${f.color},${(1 - k) * 0.85})`;
       ctx.lineWidth = 4 * (1 - k) + 1;
       ctx.stroke();
-    } else if (f.type === "chargeStreak" || f.type === "barrageBeam") {
-      // charge grows out fast then fades; barrage is already full-length
-      // (it never moves the player) so it just fades from full brightness
-      const grow = f.type === "chargeStreak" ? Math.min(1, k * 2.2) : 1;
+    } else if (f.type === "chargeStreak" || f.type === "barrageBeam" || f.type === "dashStreak") {
+      // charge/dash grow out fast then fade; barrage is already
+      // full-length (it never moves the player) so it just fades from
+      // full brightness
+      const grow = f.type === "barrageBeam" ? 1 : Math.min(1, k * 2.2);
       const fade = k < 0.4 ? 1 : 1 - (k - 0.4) / 0.6;
       const ex = lerp(f.x1, f.x2, grow), ey = lerp(f.y1, f.y2, grow);
       ctx.beginPath();
       ctx.moveTo(f.x1, f.y1);
       ctx.lineTo(ex, ey);
-      ctx.strokeStyle = `rgba(63,224,184,${fade * 0.85})`;
+      ctx.strokeStyle = `rgba(${f.color},${fade * 0.85})`;
       ctx.lineWidth = 5;
       ctx.lineCap = "round";
       ctx.stroke();

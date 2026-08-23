@@ -64,6 +64,10 @@ function check(name, cond) {
       p.q === from[0] + 2 && p.r === from[1] - 1;
     out.dashCostsPower = p.st === stBefore - p.rollCost;
     out.dashEndsTurn = RL.run.turn > turnBefore;
+    // a dash gets its own cyan streak fx, distinct from the special
+    // attacks' teal, so it reads as its own verb rather than a plain walk
+    const lastFx = RL.fx[RL.fx.length - 1];
+    out.dashSpawnsStreakFx = lastFx && lastFx.type === "dashStreak" && lastFx.color === "79,214,232";
 
     // --- any length up to the max, so a single-hex hop is legal too
     p = arena(); from = [p.q, p.r];
