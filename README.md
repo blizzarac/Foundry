@@ -33,6 +33,8 @@ Prefixes carry raw power (damage, integrity, rear-strike, repair output, core yi
 
 Corrupted terminals fabricate **corrupted rares**: strong rolls with a downside modifier baked in, and corruption seals the item against every orb. No take-backs.
 
+The gear panel (`B`) is tabbed — **Equipped | Backpack | Keys | Supplies**, with live counts on each tab and number keys `1`–`4` to switch. The backpack sorts by slot (with section headers) and best rarity first; keys sort deepest-tier first, crafted ahead of plain. The Keys tab only appears once the Foundry is unlocked.
+
 ## The Foundry (endgame)
 
 Kill the OVERSEER once and the game changes shape: the five-sector descent becomes a one-time prologue, and the **Foundry** opens — an endless overworld hex map of sealed sector nodes spreading outward from your home dock, **the Bay**. Your character is now persistent: frame, gear, currency, and the map itself survive death and browser restarts (saved in `localStorage`).

@@ -245,7 +245,21 @@ body.overworld #actions #btn-gear { display: inline-block; }
 #btn-extract.purged { box-shadow: 0 0 12px #3fc88a90; }
 #node-actions { display: flex; flex-direction: column; gap: 8px; margin: 14px 0 4px; }
 #gear-keys { display: flex; flex-direction: column; gap: 6px; }
-#gear-keys-h.hidden, #gear-keys.hidden { display: none; }
+.pack-slot-head {
+  color: #6b7f8e; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+  margin: 8px 0 2px; padding-left: 2px;
+}
+.pack-slot-head:first-child { margin-top: 0; }
+#gear-tabs { display: flex; gap: 6px; margin: 8px 0 12px; }
+#gear-tabs button {
+  flex: 1; background: #16202a; border: 1px solid #2f4152; border-radius: 4px;
+  color: #8fa3b2; padding: 8px 4px; font-size: 12px; font-weight: 600;
+  font-family: inherit; cursor: pointer; letter-spacing: 0.3px; white-space: nowrap;
+}
+#gear-tabs button:hover { background: #1e2c38; }
+#gear-tabs button.active { background: #12333e; border-color: #4fd6e8; color: #a8f0ff; }
+#gear-tabs button.hidden { display: none; }
+.gear-tab.hidden { display: none; }
 
 /* ---------------- small screens ---------------- */
 @media (max-width: 720px) {

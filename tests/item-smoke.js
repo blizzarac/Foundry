@@ -135,11 +135,25 @@ function check(name, cond) {
   });
   for (const [k, v] of Object.entries(r)) check(k, !!v);
 
-  // UI: gear panel opens with five slot cards, closes on Escape
+  // UI: gear panel opens tabbed — Equipped active by default with five
+  // slot cards, tabs switch by click and by number key, Escape closes
   await page.keyboard.press("b");
   await page.waitForTimeout(150);
   check("gearPanelOpens", await page.evaluate(() => !document.getElementById("inv").classList.contains("hidden")));
+  check("equipTabDefault", await page.evaluate(() =>
+    !document.getElementById("tab-equip").classList.contains("hidden") &&
+    document.getElementById("tab-pack").classList.contains("hidden")));
   check("fiveSlotCards", await page.locator("#gear-slots .item-card").count() === 5);
+  await page.click('#gear-tabs button[data-tab="pack"]');
+  check("packTabByClick", await page.evaluate(() =>
+    !document.getElementById("tab-pack").classList.contains("hidden") &&
+    document.getElementById("tab-equip").classList.contains("hidden")));
+  check("packTabShowsCount", (await page.locator('#gear-tabs button[data-tab="pack"]').textContent()).includes("("));
+  await page.keyboard.press("4");
+  check("suppliesTabByKey", await page.evaluate(() =>
+    !document.getElementById("tab-supplies").classList.contains("hidden")));
+  check("keysTabHiddenPreFoundry", await page.evaluate(() =>
+    document.querySelector('#gear-tabs button[data-tab="keys"]').classList.contains("hidden")));
   await page.keyboard.press("Escape");
   check("gearPanelCloses", await page.evaluate(() => document.getElementById("inv").classList.contains("hidden")));
 

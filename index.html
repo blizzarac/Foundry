@@ -55,15 +55,27 @@
   <div class="box gear-box">
     <h2>Equipment</h2>
     <p id="gear-note" class="stats"></p>
-    <div id="gear-slots"></div>
-    <h3>Backpack</h3>
-    <div id="gear-pack"></div>
-    <h3>Currency</h3>
-    <div id="gear-currency"></div>
-    <h3 id="gear-keys-h" class="hidden">Sector Keys</h3>
-    <div id="gear-keys" class="hidden"></div>
-    <h3>Tools</h3>
-    <div id="gear-tools"></div>
+    <div id="gear-tabs">
+      <button data-tab="equip" class="active">Equipped</button>
+      <button data-tab="pack">Backpack</button>
+      <button data-tab="keys">Keys</button>
+      <button data-tab="supplies">Supplies</button>
+    </div>
+    <div id="tab-equip" class="gear-tab">
+      <div id="gear-slots"></div>
+    </div>
+    <div id="tab-pack" class="gear-tab hidden">
+      <div id="gear-pack"></div>
+    </div>
+    <div id="tab-keys" class="gear-tab hidden">
+      <div id="gear-keys"></div>
+    </div>
+    <div id="tab-supplies" class="gear-tab hidden">
+      <h3>Currency</h3>
+      <div id="gear-currency"></div>
+      <h3>Tools</h3>
+      <div id="gear-tools"></div>
+    </div>
     <button id="inv-close" class="secondary">Close</button>
   </div>
 </div>

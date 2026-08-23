@@ -3569,7 +3569,7 @@ function drawStain(b, t) {
 }
 
 /* ================================= UI =================================== */
-const ui = { screen: "game", rollMode: false, throwDart: false, walking: null, keys: {} };
+const ui = { screen: "game", rollMode: false, throwDart: false, walking: null, keys: {}, gearTab: "equip" };
 
 function refreshHud() {
   const p = run.player;
@@ -3827,13 +3827,29 @@ function refreshGearSlots() {
     }
   }
 }
+const RARITY_ORDER = { unique: 0, rare: 1, magic: 2, normal: 3 };
 function refreshGearPack() {
   const p = run.player;
   const el = document.getElementById("gear-pack");
   const pack = p.items.filter(i => !isEquipped(i.id));
   if (!pack.length) { el.innerHTML = '<div class="gear-empty">Backpack empty.</div>'; return; }
+  // grouped by slot, best rarity first — so the list reads like a stash
+  pack.sort((a, b) =>
+    SLOTS.indexOf(itemSlot(a)) - SLOTS.indexOf(itemSlot(b)) ||
+    RARITY_ORDER[a.rarity] - RARITY_ORDER[b.rarity]);
   el.innerHTML = "";
-  for (const item of pack) el.appendChild(itemCardEl(item, null));
+  let lastSlot = null;
+  for (const item of pack) {
+    const slot = itemSlot(item);
+    if (slot !== lastSlot) {
+      lastSlot = slot;
+      const h = document.createElement("div");
+      h.className = "pack-slot-head";
+      h.textContent = SLOT_LABEL[slot];
+      el.appendChild(h);
+    }
+    el.appendChild(itemCardEl(item, null));
+  }
 }
 function refreshGearCurrency() {
   const p = run.player;
@@ -3859,18 +3875,20 @@ function keyOrbChoices(k) {
 }
 function refreshGearKeys() {
   const p = run.player;
-  const h = document.getElementById("gear-keys-h");
   const el = document.getElementById("gear-keys");
-  const show = !!(profile && profile.atlas && profile.atlas.unlocked);
-  h.classList.toggle("hidden", !show);
-  el.classList.toggle("hidden", !show);
-  if (!show) return;
+  if (!(profile && profile.atlas && profile.atlas.unlocked)) {
+    el.innerHTML = "";
+    return;
+  }
   el.innerHTML = "";
   if (!profile.atlas.keys.length) {
     el.innerHTML = '<div class="gear-empty">No keys. Purge sectors for drops, or fabricate at the Bay.</div>';
     return;
   }
-  for (const k of profile.atlas.keys) {
+  // deepest keys first, crafted ones ahead of plain at the same tier
+  const keys = [...profile.atlas.keys].sort((a, b) =>
+    b.tier - a.tier || RARITY_ORDER[a.rarity] - RARITY_ORDER[b.rarity]);
+  for (const k of keys) {
     const card = document.createElement("div");
     card.className = "item-card";
     let mods = "";
@@ -3930,6 +3948,35 @@ function refreshGearTools() {
     el.appendChild(card);
   }
 }
+// one section at a time: Equipped | Backpack | Keys | Supplies. The old
+// single-column stack outgrew itself the moment a real character existed.
+const GEAR_TABS = ["equip", "pack", "keys", "supplies"];
+function setGearTab(tab) {
+  if (!GEAR_TABS.includes(tab)) return;
+  ui.gearTab = tab;
+  applyGearTabs();
+}
+function applyGearTabs() {
+  const keysUnlocked = !!(profile && profile.atlas && profile.atlas.unlocked);
+  if (ui.gearTab === "keys" && !keysUnlocked) ui.gearTab = "equip";
+  const p = run.player;
+  const packN = p.items.filter(i => !isEquipped(i.id)).length;
+  const keysN = keysUnlocked ? profile.atlas.keys.length : 0;
+  const orbsN = Object.values(p.currency).reduce((a, b) => a + b, 0);
+  const labels = {
+    equip: "Equipped", pack: `Backpack (${packN})`,
+    keys: `Keys (${keysN})`, supplies: `Supplies (${orbsN})`,
+  };
+  document.querySelectorAll("#gear-tabs button").forEach(b => {
+    const tab = b.dataset.tab;
+    b.textContent = labels[tab];
+    b.classList.toggle("active", tab === ui.gearTab);
+    b.classList.toggle("hidden", tab === "keys" && !keysUnlocked);
+  });
+  for (const tab of GEAR_TABS) {
+    document.getElementById("tab-" + tab).classList.toggle("hidden", tab !== ui.gearTab);
+  }
+}
 function refreshGear() {
   document.getElementById("gear-note").textContent = inCombat()
     ? "⚠ Hostiles in sensor range — equipping, unequipping or crafting will cost your turn."
@@ -3939,7 +3986,11 @@ function refreshGear() {
   refreshGearCurrency();
   refreshGearKeys();
   refreshGearTools();
+  applyGearTabs();
 }
+document.querySelectorAll("#gear-tabs button").forEach(b => {
+  b.addEventListener("click", () => setGearTab(b.dataset.tab));
+});
 document.getElementById("btn-gear").addEventListener("click", () => {
   if (gearOpen()) closeGear(); else openGear();
 });
@@ -4255,6 +4306,11 @@ document.getElementById("mute").textContent = muted ? "🔇" : "🔊";
 
 window.addEventListener("keydown", ev => {
   const kk = ev.key.toLowerCase();
+  // 1-4 switch gear tabs whenever the panel is open, on any screen
+  if (gearOpen() && ["1", "2", "3", "4"].includes(kk)) {
+    setGearTab(GEAR_TABS[Number(kk) - 1]);
+    return;
+  }
   if (ui.screen === "overworld") {
     if (kk === "b" || kk === "i") { if (gearOpen()) closeGear(); else openGear(); }
     else if (kk === "escape") { closeGear(); document.getElementById("node").classList.add("hidden"); }
