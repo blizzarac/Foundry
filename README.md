@@ -64,7 +64,14 @@ Planned next: distinct bosses per band, atlas passives (a currency sink that dir
 
 Power is meant to live in gear, not in the repair bay. The **shop is capped and steep** — Chassis reinforcement (5 ranks), Capacitor bank (2), Weapon calibration (3), Nanite reservoir (2), cost ×2 per rank — a solid boost through the prologue that then *ends*; existing saves keep any ranks bought before the cap, the button just reads **MAX**. From there, power comes from Sector Keys and the loot they generate.
 
-The bay stays worth a visit after the caps, though: it **restocks consumables** — Shock Darts (40 cores) and Power Cells (60 cores), repeatable forever and otherwise unobtainable outside chest luck. Together with salvage this closes the core loop: strip unwanted loot for cores, spend cores on keys and tools.
+The bay stays worth a visit after the caps, though — it's a real vendor now, in four sections:
+
+- **Frame upgrades** — the capped prologue ranks above.
+- **Restock** — Shock Darts (40 cores) and Power Cells (60), repeatable forever and otherwise unobtainable outside chest luck.
+- **Currency orbs** — every orb is purchasable at a premium over drop rates: Transmutation 30, Augmentation 50, Alchemy 90, Regal 140, Chaos 250, Exalted 400. Cores flow straight into the crafting chase.
+- **Prototype fabrication** — the gamble vendor: 350 cores buys a blind-rolled **Rare** in a slot of your choice, with modifiers rolled one past your atlas tier cap — the same affix bands the deepest sector you can key would drop. The endgame core sink.
+
+And in the Foundry, the shop is no longer locked behind docking: a **Fabricate** button sits next to Gear on the overworld — a remote uplink to the Bay fabricator from anywhere on the map. Together with salvage this closes the loop: strip unwanted loot for cores, spend cores on orbs, prototypes, keys and tools.
 
 **Enemies scale to match a 15-tier climb**: integrity grows ~5.9× from T1 to T15 (up from the old ~4.5×), damage adds +1 every 2 tiers past T3 instead of every 3, an extra Prime unit joins at T7 and T11 on top of the T3 bump, and pack density grows slightly with tier. **Gear has a reason to keep chasing past T4**: prefix and suffix modifiers now roll five tiers instead of three — tier 4 only starts appearing at T8+, tier 5 at T12+ — so there are affix rolls that flatly cannot exist on early gear.
 

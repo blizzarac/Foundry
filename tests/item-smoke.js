@@ -130,7 +130,29 @@ function check(name, cond) {
     const again = [...document.querySelectorAll("#shop-items .shop-item")]
       .find(b => b.textContent.includes("Shock Dart"));
     out.shopRestockRepeats = !!again && !again.disabled;
+
+    // orbs for sale: cores convert into crafting currency
+    p.souls = 1000;
+    RL.showShop();
+    const findBtn = t => [...document.querySelectorAll("#shop-items .shop-item")]
+      .find(b => b.textContent.includes(t));
+    const trBefore = p.currency.transmute || 0;
+    findBtn("Transmutation").click();
+    out.shopSellsOrbs = (p.currency.transmute || 0) === trBefore + 1 &&
+      p.souls === 1000 - RL.SHOP_ORBS.find(o => o.kind === "transmute").cost;
+
+    // prototype gamble: a blind-rolled Rare in the chosen slot, souls deducted
+    p.souls = 1000;
+    RL.showShop();
+    const nItems = p.items.length;
+    findBtn("Prototype weapon").click();
+    const proto = p.items[p.items.length - 1];
+    out.shopGamble = p.items.length === nItems + 1 && proto.rarity === "rare" &&
+      RL.BASE_TYPES[proto.base].slot === "weapon" &&
+      p.souls === 1000 - RL.GAMBLE_COST;
+    out.shopHasSections = document.querySelectorAll("#shop-items .shop-head").length === 4;
     document.getElementById("shop").classList.add("hidden");
+    RL.dropItem(proto.id);
 
     const counts = { normal: 0, magic: 0, rare: 0, unique: 0 };
     for (let i = 0; i < 2000; i++) counts[RL.rollRarity(mk, 3, false)]++;

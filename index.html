@@ -34,6 +34,7 @@
   <button id="btn-flask" title="Inject a repair cell: restores integrity, but it costs the turn [H]">Repair</button>
   <button id="btn-wait" title="Vent heat: hold position, +2 power [Space]">Vent</button>
   <button id="btn-gear" title="Equipment [B]">Gear</button>
+  <button id="btn-shop" title="Uplink to the Bay fabricator">Fabricate</button>
   <button id="btn-extract" class="hidden extract" title="Return to the Bay">Extract</button>
   <button id="btn-rest" class="hidden rest">Dock at repair bay</button>
   <button id="btn-fabricator" class="hidden rest" title="Wake the fabricator: 4 scripted waves, a Surge Cache if you hold the line">Activate fabricator</button>
@@ -133,6 +134,7 @@
 <div id="shop" class="overlay hidden">
   <div class="box">
     <h2>Repair bay · fabrication</h2>
+    <p id="shop-sub" class="stats"></p>
     <div id="shop-items"></div>
     <button id="shop-close">Undock</button>
   </div>

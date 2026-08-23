@@ -230,6 +230,11 @@ html, body {
 
 /* ---------------- fabrication list ---------------- */
 #shop-items { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.shop-head {
+  margin: 8px 0 0; text-align: left;
+  font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: #5d7080;
+}
+.shop-head:first-child { margin-top: 0; }
 .shop-item {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   background: #16202a !important; color: #cfdae2 !important;
@@ -246,6 +251,9 @@ html, body {
 /* ---------------- the Foundry (overworld) ---------------- */
 body.overworld #actions button { display: none; }
 body.overworld #actions #btn-gear { display: inline-block; }
+/* the Bay's fabricator is reachable by uplink anywhere on the overworld */
+#btn-shop { display: none; }
+body.overworld #actions #btn-shop { display: inline-block; }
 #btn-extract.extract { background: #123a30dd; border-color: #3fc88a; color: #9ff0c8; }
 #btn-extract.purged { box-shadow: 0 0 12px #3fc88a90; }
 #node-actions { display: flex; flex-direction: column; gap: 8px; margin: 14px 0 4px; }

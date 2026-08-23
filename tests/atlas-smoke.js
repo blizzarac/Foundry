@@ -268,6 +268,26 @@ function check(name, cond) {
     out.menuButton = document.getElementById("begin-btn").textContent === "Enter the Foundry";
     RL.enterOverworld();
     out.characterRestored = RL.run.player.items.length > 0 && RL.ui.screen === "overworld";
+
+    // the Bay fabricator is one uplink tap away anywhere on the overworld
+    out.uplinkVisible =
+      getComputedStyle(document.getElementById("btn-shop")).display !== "none";
+    const p = RL.run.player;
+    p.souls = 1000;
+    RL.showShop();
+    out.uplinkSubShown =
+      document.getElementById("shop-sub").textContent.includes("uplink");
+    const shopBtn = t => [...document.querySelectorAll("#shop-items .shop-item")]
+      .find(b => b.textContent.includes(t));
+    const dartsBefore = p.consumables.dart || 0;
+    shopBtn("Shock Dart").click();
+    out.uplinkBuyPersists = (p.consumables.dart || 0) === dartsBefore + 1 &&
+      RL.profile.character.souls === p.souls &&
+      (RL.profile.character.consumables.dart || 0) === dartsBefore + 1;
+    // the prototype gamble rolls at the atlas tier cap (8 after the gate)
+    out.uplinkGambleAtCap =
+      shopBtn("Prototype weapon").textContent.includes("T8 depth");
+    document.getElementById("shop").classList.add("hidden");
     try { localStorage.removeItem("ironhex-foundry"); } catch (e) {}
     return out;
   });

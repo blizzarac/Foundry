@@ -546,6 +546,18 @@ const SHOP_RESTOCKS = [
   { kind: "dart", name: "Shock Dart", desc: "+1 shock dart", cost: 40 },
   { kind: "cell", name: "Power Cell", desc: "+1 power cell", cost: 60 },
 ];
+// currency orbs at a premium over drop rates: cores flow into crafting
+const SHOP_ORBS = [
+  { kind: "transmute", cost: 30 },
+  { kind: "aug",       cost: 50 },
+  { kind: "alch",      cost: 90 },
+  { kind: "regal",     cost: 140 },
+  { kind: "chaos",     cost: 250 },
+  { kind: "exalt",     cost: 400 },
+];
+// prototype gamble: a blind-rolled Rare in a chosen slot. Depth tracks the
+// atlas tier cap, so the fabricator chases the same affix bands sectors do.
+const GAMBLE_COST = 350;
 
 /* ------------------------------------------------------------ game state */
 let run = null;
@@ -650,7 +662,7 @@ function resumeRun() {
 // Everything needed to reproduce a bug report: campaign meta, the Foundry
 // profile, and a fresh mid-run checkpoint if one applies. Pure data in,
 // pure data out — no DOM — so it's directly testable.
-const GAME_VERSION = "2026-08-22-anomalies";
+const GAME_VERSION = "2026-08-23-bazaar";
 function buildDebugBundle() {
   if (run && !run.over && run.mode !== "overworld" && ui.screen === "game") saveRun();
   if (profile) saveProfile();
@@ -3703,47 +3715,88 @@ function showShop() {
   const p = run.player;
   const box = document.getElementById("shop-items");
   box.innerHTML = "";
+  const head = t => {
+    const h = document.createElement("div");
+    h.className = "shop-head";
+    h.textContent = t;
+    box.appendChild(h);
+  };
+  const offer = (disabled, html, fn) => {
+    const el = document.createElement("button");
+    el.className = "shop-item";
+    el.disabled = disabled;
+    el.innerHTML = html;
+    el.addEventListener("click", fn);
+    box.appendChild(el);
+  };
+  const paid = cost => {
+    p.souls -= cost;
+    sfx("core");
+    if (run.mode !== "campaign") { syncProfileFromPlayer(); saveProfile(); }
+    saveRun();
+    showShop();
+    refreshHud();
+  };
+  document.getElementById("shop-sub").textContent =
+    run.mode === "overworld" ? "Remote uplink to the Bay fabricator." : "";
+
+  head("Frame upgrades");
   for (const u of UPGRADES) {
     const n = bought[u.id] || 0;
     const maxed = n >= u.cap;   // saves from before the cap keep any extra ranks already bought
     const cost = Math.round(u.base * Math.pow(2, n));
-    const el = document.createElement("button");
-    el.className = "shop-item";
-    el.disabled = maxed || p.souls < cost;
-    el.innerHTML = `<b>${u.name}</b><span>${u.desc}</span><em>${maxed ? "MAX" : cost + " cores"}</em>`;
-    el.addEventListener("click", () => {
-      if (maxed || p.souls < cost) return;
-      p.souls -= cost;
-      bought[u.id] = n + 1;
-      u.apply(p);
-      recalc();
-      log(u.name + " installed.", "good");
-      if (run.mode !== "campaign") { syncProfileFromPlayer(); saveProfile(); }
-      saveRun();
-      showShop();
-      refreshHud();
-    });
-    box.appendChild(el);
+    offer(maxed || p.souls < cost,
+      `<b>${u.name}</b><span>${u.desc}</span><em>${maxed ? "MAX" : cost + " cores"}</em>`, () => {
+        if (maxed || p.souls < cost) return;
+        bought[u.id] = n + 1;
+        u.apply(p);
+        recalc();
+        log(u.name + " installed.", "good");
+        paid(cost);
+      });
   }
+
   // repeatable restocks keep the bay useful after the upgrades cap out —
   // there is no other way to refill darts and cells
+  head("Restock");
   for (const s of SHOP_RESTOCKS) {
-    const el = document.createElement("button");
-    el.className = "shop-item";
-    el.disabled = p.souls < s.cost;
-    el.innerHTML = `<b>${s.name}</b><span>${s.desc}</span><em>${s.cost} cores</em>`;
-    el.addEventListener("click", () => {
-      if (p.souls < s.cost) return;
-      p.souls -= s.cost;
-      p.consumables[s.kind] = (p.consumables[s.kind] || 0) + 1;
-      log(s.name + " fabricated.", "good");
-      sfx("core");
-      if (run.mode !== "campaign") { syncProfileFromPlayer(); saveProfile(); }
-      saveRun();
-      showShop();
-      refreshHud();
-    });
-    box.appendChild(el);
+    offer(p.souls < s.cost,
+      `<b>${s.name}</b><span>${s.desc}</span><em>${s.cost} cores</em>`, () => {
+        if (p.souls < s.cost) return;
+        p.consumables[s.kind] = (p.consumables[s.kind] || 0) + 1;
+        log(s.name + " fabricated.", "good");
+        paid(s.cost);
+      });
+  }
+
+  head("Currency orbs");
+  for (const o of SHOP_ORBS) {
+    const c = CURRENCY[o.kind];
+    offer(p.souls < o.cost,
+      `<b>${c.name}</b><span>${c.desc}</span><em>${o.cost} cores</em>`, () => {
+        if (p.souls < o.cost) return;
+        p.currency[o.kind] = (p.currency[o.kind] || 0) + 1;
+        log(c.name + " fabricated.", "good");
+        paid(o.cost);
+      });
+  }
+
+  head("Prototype fabrication");
+  const atlasLive = profile && profile.atlas && profile.atlas.unlocked;
+  const depth = atlasLive ? profile.atlas.tierCap + 1 : run.floor + 2;
+  const depthNote = atlasLive ? ` Mods roll at T${profile.atlas.tierCap} depth.` : "";
+  for (const slot of SLOTS) {
+    const label = SLOT_LABEL[slot].toLowerCase();
+    offer(p.souls < GAMBLE_COST,
+      `<b>Prototype ${label}</b><span>A blind-rolled Rare ${label}.${depthNote}</span>` +
+      `<em>${GAMBLE_COST} cores</em>`, () => {
+        if (p.souls < GAMBLE_COST) return;
+        const bases = Object.keys(BASE_TYPES).filter(b => BASE_TYPES[b].slot === slot);
+        const item = genItem(craftRng, bases[(craftRng() * bases.length) | 0], "rare", depth);
+        p.items.push(item);
+        log("Prototype fabricated: " + item.name + " (Rare).", "good");
+        paid(GAMBLE_COST);
+      });
   }
   document.getElementById("shop").classList.remove("hidden");
 }
@@ -4357,6 +4410,9 @@ document.getElementById("btn-parry").addEventListener("click", () => { actParry(
 document.getElementById("btn-flask").addEventListener("click", () => { actFlask(); refreshHud(); });
 document.getElementById("btn-wait").addEventListener("click", () => { actWait(); refreshHud(); });
 document.getElementById("btn-rest").addEventListener("click", () => { actRest(); });
+document.getElementById("btn-shop").addEventListener("click", () => {
+  if (run && run.mode === "overworld") showShop();
+});
 document.getElementById("btn-fabricator").addEventListener("click", () => { actActivateFabricator(); refreshHud(); });
 document.getElementById("mute").addEventListener("click", () => {
   muted = !muted;
@@ -4558,7 +4614,7 @@ window.RL = {
   placeSurge, placeVault, placeConvoy, placeCorruptZone,
   ui,
   buildDebugBundle, exportDebugState, importDebugState, downloadJSON, GAME_VERSION,
-  UPGRADES, AFFIX_TIER_BANDS, SHOP_RESTOCKS, showShop,
+  UPGRADES, AFFIX_TIER_BANDS, SHOP_RESTOCKS, SHOP_ORBS, GAMBLE_COST, showShop,
   paletteFor, mixColor, BIOME_PALETTES, CAMPAIGN_THEMES,
   setRun(r) { run = r; },
 };
