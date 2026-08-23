@@ -243,6 +243,7 @@ function check(name, cond) {
     out.slamMissesRing2 = slamFar.hp === slamFar.maxHp;
     out.slamDoesNotMovePlayer = p.q === pqBeforeSlam && p.r === prBeforeSlam;
     out.slamSpendsCost = p.st === 0;
+    out.slamSpawnsRingFx = RL.fx[RL.fx.length - 1] && RL.fx[RL.fx.length - 1].type === "slamRing";
     p.st = spCost;
     out.wrongSpecialModeRefused = !RL.actCharge(slamLane[0][0], slamLane[0][1]);   // specialAttack is "slam"
     RL.refundNode("spSlam");
@@ -265,6 +266,7 @@ function check(name, cond) {
     out.chargeHitsBothInLane = chargeNear.hp < chargeNear.maxHp && chargeFar.hp < chargeFar.maxHp;
     out.chargeMovesPlayerToLanding = p.q === landing[0] && p.r === landing[1];
     out.chargeSpendsCost = p.st === 0;
+    out.chargeSpawnsStreakFx = RL.fx[RL.fx.length - 1] && RL.fx[RL.fx.length - 1].type === "chargeStreak";
     RL.refundNode("spCharge");
     RL.recalc();
 
@@ -282,6 +284,7 @@ function check(name, cond) {
     out.barrageHitsBothInLane = barrageNear.hp < barrageNear.maxHp && barrageFar.hp < barrageFar.maxHp;
     out.barrageDoesNotMovePlayer = p.q === pqBeforeBarrage && p.r === prBeforeBarrage;
     out.barrageSpendsCost = p.st === 0;
+    out.barrageSpawnsBeamFx = RL.fx[RL.fx.length - 1] && RL.fx[RL.fx.length - 1].type === "barrageBeam";
     RL.refundNode("spBarrage");
     RL.recalc();
     RL.refreshHud();
