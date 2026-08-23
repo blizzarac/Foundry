@@ -541,6 +541,11 @@ const UPGRADES = [
   { id: "dmg",   name: "Weapon calibration",    desc: "+1 weapon damage", base: 60, cap: 3, apply: p => { p.bonusDmg += 1; } },
   { id: "flask", name: "Nanite reservoir",      desc: "+1 repair cell",   base: 40, cap: 2, apply: p => { p.maxFlask += 1; p.flask += 1; } },
 ];
+// consumable restocks: repeatable, so the bay stays worth a visit forever
+const SHOP_RESTOCKS = [
+  { kind: "dart", name: "Shock Dart", desc: "+1 shock dart", cost: 40 },
+  { kind: "cell", name: "Power Cell", desc: "+1 power cell", cost: 60 },
+];
 
 /* ------------------------------------------------------------ game state */
 let run = null;
@@ -787,6 +792,32 @@ function dropItem(id) {
   if (!item || isEquipped(id)) return false;
   run.player.items = run.player.items.filter(i => i.id !== id);
   log(item.name + " discarded.", "");
+  return true;
+}
+/* salvage: strip an unwanted part for cores. Value follows the same axes
+   the loot chase does — rarity floor plus a bonus per affix tier — so a
+   deep-tier rare is worth carrying home. Corrupted parts fetch half. */
+const SALVAGE_BASE = { normal: 5, magic: 15, rare: 40, unique: 120 };
+function sellValue(item) {
+  let v = SALVAGE_BASE[item.rarity] || 5;
+  for (const a of item.affixes) {
+    if (a.kind === "corrupt") continue;
+    v += (a.tier || 1) * 5;
+  }
+  if (item.corrupted) v = Math.ceil(v / 2);
+  return v;
+}
+function sellItem(id) {
+  const item = itemById(id);
+  if (!item || isEquipped(id)) return false;
+  const v = sellValue(item);
+  run.player.items = run.player.items.filter(i => i.id !== id);
+  run.player.souls += v;
+  log(item.name + " salvaged for " + v + " cores.", "good");
+  sfx("core");
+  spendGearTurn();
+  if (run.mode !== "campaign") { syncProfileFromPlayer(); saveProfile(); }
+  saveRun();
   return true;
 }
 function activeWeaponItem() { return equippedItem("weapon"); }
@@ -3694,6 +3725,26 @@ function showShop() {
     });
     box.appendChild(el);
   }
+  // repeatable restocks keep the bay useful after the upgrades cap out —
+  // there is no other way to refill darts and cells
+  for (const s of SHOP_RESTOCKS) {
+    const el = document.createElement("button");
+    el.className = "shop-item";
+    el.disabled = p.souls < s.cost;
+    el.innerHTML = `<b>${s.name}</b><span>${s.desc}</span><em>${s.cost} cores</em>`;
+    el.addEventListener("click", () => {
+      if (p.souls < s.cost) return;
+      p.souls -= s.cost;
+      p.consumables[s.kind] = (p.consumables[s.kind] || 0) + 1;
+      log(s.name + " fabricated.", "good");
+      sfx("core");
+      if (run.mode !== "campaign") { syncProfileFromPlayer(); saveProfile(); }
+      saveRun();
+      showShop();
+      refreshHud();
+    });
+    box.appendChild(el);
+  }
   document.getElementById("shop").classList.remove("hidden");
 }
 document.getElementById("shop-close").addEventListener("click", () => {
@@ -3794,10 +3845,22 @@ function itemCardEl(item, equippedSlot) {
     eq.textContent = "Equip";
     eq.addEventListener("click", () => { if (equipItem(item.id)) { refreshGear(); refreshHud(); } });
     btns.appendChild(eq);
-    const drop = document.createElement("button");
-    drop.textContent = "Drop";
-    drop.addEventListener("click", () => { if (dropItem(item.id)) { refreshGear(); refreshHud(); } });
-    btns.appendChild(drop);
+    const val = sellValue(item);
+    const sell = document.createElement("button");
+    sell.className = "sell-btn";
+    sell.textContent = "Salvage +" + val;
+    sell.title = "Strip this part for " + val + " cores.";
+    // rare/unique parts are the chase — arm on the first tap, sell on the second
+    const arm = item.rarity === "rare" || item.rarity === "unique";
+    sell.addEventListener("click", () => {
+      if (arm && !sell.classList.contains("armed")) {
+        sell.classList.add("armed");
+        sell.textContent = "Sure? +" + val;
+        return;
+      }
+      if (sellItem(item.id)) { refreshGear(); refreshHud(); }
+    });
+    btns.appendChild(sell);
   }
   for (const kind of orbChoices(item)) {
     const n = p.currency[kind] || 0;
@@ -4477,7 +4540,7 @@ window.RL = {
   ENEMY, BASE_TYPES, SLOTS, SLOT_LABEL, RARITY, STAT_KEYS,
   PREFIXES, SUFFIXES, UNIQUES, CURRENCY,
   genItem, genUnique, genArmoryItem, genCorruptedItem, rollItemLoot, rollRarity,
-  equipItem, unequipItem, dropItem, itemById, equippedItem, isEquipped, itemEffect,
+  equipItem, unequipItem, dropItem, sellItem, sellValue, itemById, equippedItem, isEquipped, itemEffect,
   activeWeaponItem, getActiveWeaponType,
   canApplyOrb, applyOrb, grantOrbs, rollOrbKind,
   useConsumable, inCombat, recalc, canReach,
@@ -4495,7 +4558,7 @@ window.RL = {
   placeSurge, placeVault, placeConvoy, placeCorruptZone,
   ui,
   buildDebugBundle, exportDebugState, importDebugState, downloadJSON, GAME_VERSION,
-  UPGRADES, AFFIX_TIER_BANDS,
+  UPGRADES, AFFIX_TIER_BANDS, SHOP_RESTOCKS, showShop,
   paletteFor, mixColor, BIOME_PALETTES, CAMPAIGN_THEMES,
   setRun(r) { run = r; },
 };

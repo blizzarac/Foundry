@@ -98,6 +98,40 @@ function check(name, cond) {
     p.items.push(spare);
     out.drop = RL.dropItem(spare.id) && !RL.itemById(spare.id);
 
+    // salvage: rarity floors scale, affix tiers add value, corrupted halves
+    const vNorm = RL.sellValue(RL.genItem(mk, "servo", "normal", 1));
+    const vMagic = RL.sellValue(RL.genItem(mk, "servo", "magic", 3));
+    const vRare = RL.sellValue(RL.genItem(mk, "servo", "rare", 5));
+    const vUniq = RL.sellValue(RL.genUnique(mk));
+    out.sellRarityScales = vNorm < vMagic && vMagic < vRare && vRare < vUniq;
+    const halfProbe = RL.genItem(mk, "optics", "rare", 5);
+    const vFull = RL.sellValue(halfProbe);
+    halfProbe.corrupted = true;
+    out.sellCorruptedHalf = RL.sellValue(halfProbe) === Math.ceil(vFull / 2);
+    out.noSellEquipped = !RL.sellItem(plate.id);
+    const scrap = RL.genItem(mk, "servo", "magic", 3);
+    p.items.push(scrap);
+    const scrapVal = RL.sellValue(scrap);
+    const soulsBefore = p.souls;
+    out.sellPaysCores = RL.sellItem(scrap.id) && !RL.itemById(scrap.id) &&
+      p.souls === soulsBefore + scrapVal;
+
+    // repair bay restocks consumables — repeatable, never MAXes out
+    p.souls = 500;
+    const dartsBefore = p.consumables.dart || 0;
+    RL.showShop();
+    const shopBtns = [...document.querySelectorAll("#shop-items .shop-item")];
+    const dartBtn = shopBtns.find(b => b.textContent.includes("Shock Dart"));
+    const cellBtn = shopBtns.find(b => b.textContent.includes("Power Cell"));
+    out.shopSellsTools = !!dartBtn && !!cellBtn && !dartBtn.disabled && !cellBtn.disabled;
+    if (dartBtn) dartBtn.click();
+    out.shopRestockWorks = (p.consumables.dart || 0) === dartsBefore + 1 &&
+      p.souls === 500 - RL.SHOP_RESTOCKS.find(s => s.kind === "dart").cost;
+    const again = [...document.querySelectorAll("#shop-items .shop-item")]
+      .find(b => b.textContent.includes("Shock Dart"));
+    out.shopRestockRepeats = !!again && !again.disabled;
+    document.getElementById("shop").classList.add("hidden");
+
     const counts = { normal: 0, magic: 0, rare: 0, unique: 0 };
     for (let i = 0; i < 2000; i++) counts[RL.rollRarity(mk, 3, false)]++;
     out.rarityOrder = counts.normal > counts.rare && counts.magic > counts.rare && counts.rare > counts.unique;
@@ -131,6 +165,11 @@ function check(name, cond) {
     // boss floor always stocks the armory
     for (let f = 1; f < 5; f++) RL.descend();
     out.bossArmoryStocked = run2.chests.some(c => c.contents.kind === "item");
+
+    // seed the backpack for the UI checks below
+    window.__sellNormal = RL.genItem(mk, "servo", "normal", 1);
+    window.__sellRare = RL.genItem(mk, "cleaver", "rare", 5);
+    p2.items.push(window.__sellNormal, window.__sellRare);
     return out;
   });
   for (const [k, v] of Object.entries(r)) check(k, !!v);
@@ -149,6 +188,24 @@ function check(name, cond) {
     !document.getElementById("tab-pack").classList.contains("hidden") &&
     document.getElementById("tab-equip").classList.contains("hidden")));
   check("packTabShowsCount", (await page.locator('#gear-tabs button[data-tab="pack"]').textContent()).includes("("));
+  // backpack cards carry a Salvage button; rares arm on the first tap
+  check("salvageBtnShown", await page.evaluate(() =>
+    [...document.querySelectorAll("#gear-pack .sell-btn")].some(b => b.textContent.startsWith("Salvage +"))));
+  const rareSell = await page.evaluateHandle(() =>
+    [...document.querySelectorAll("#gear-pack .item-card")]
+      .find(c => c.textContent.includes(window.__sellRare.name))
+      .querySelector(".sell-btn"));
+  await rareSell.click();
+  check("rareSalvageArms", await page.evaluate(() => {
+    const b = [...document.querySelectorAll("#gear-pack .item-card")]
+      .find(c => c.textContent.includes(window.__sellRare.name))
+      .querySelector(".sell-btn");
+    return b.classList.contains("armed") && b.textContent.startsWith("Sure?") &&
+      !!window.RL.itemById(window.__sellRare.id);
+  }));
+  await rareSell.click();
+  check("armedSalvageSells", await page.evaluate(() =>
+    !window.RL.itemById(window.__sellRare.id)));
   await page.keyboard.press("4");
   check("suppliesTabByKey", await page.evaluate(() =>
     !document.getElementById("tab-supplies").classList.contains("hidden")));

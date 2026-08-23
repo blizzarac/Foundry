@@ -35,6 +35,8 @@ Corrupted terminals fabricate **corrupted rares**: strong rolls with a downside 
 
 The gear panel (`B`) is tabbed — **Equipped | Backpack | Keys | Supplies**, with live counts on each tab and number keys `1`–`4` to switch. The backpack sorts by slot (with section headers) and best rarity first; keys sort deepest-tier first, crafted ahead of plain. The Keys tab only appears once the Foundry is unlocked.
 
+Nothing in the backpack is dead weight: every unequipped item can be **salvaged for cores** on the spot. Value follows the same axes the loot chase does — a rarity floor (Normal 5, Magic 15, Rare 40, Unique 120) plus a bonus per affix tier, so a deep-tier rare is worth carrying home; corrupted parts fetch half. Rare and Unique salvage arms on the first tap and sells on the second, so a fat-fingered tap can't vaporize the chase item. Like all gear-fiddling, salvaging is free in peace and costs the turn under hostile eyes.
+
 ## The Foundry (endgame)
 
 Kill the OVERSEER once and the game changes shape: the five-sector descent becomes a one-time prologue, and the **Foundry** opens — an endless overworld hex map of sealed sector nodes spreading outward from your home dock, **the Bay**. Your character is now persistent: frame, gear, currency, and the map itself survive death and browser restarts (saved in `localStorage`).
@@ -61,6 +63,8 @@ Planned next: distinct bosses per band, atlas passives (a currency sink that dir
 ## The power curve
 
 Power is meant to live in gear, not in the repair bay. The **shop is capped and steep** — Chassis reinforcement (5 ranks), Capacitor bank (2), Weapon calibration (3), Nanite reservoir (2), cost ×2 per rank — a solid boost through the prologue that then *ends*; existing saves keep any ranks bought before the cap, the button just reads **MAX**. From there, power comes from Sector Keys and the loot they generate.
+
+The bay stays worth a visit after the caps, though: it **restocks consumables** — Shock Darts (40 cores) and Power Cells (60 cores), repeatable forever and otherwise unobtainable outside chest luck. Together with salvage this closes the core loop: strip unwanted loot for cores, spend cores on keys and tools.
 
 **Enemies scale to match a 15-tier climb**: integrity grows ~5.9× from T1 to T15 (up from the old ~4.5×), damage adds +1 every 2 tiers past T3 instead of every 3, an extra Prime unit joins at T7 and T11 on top of the T3 bump, and pack density grows slightly with tier. **Gear has a reason to keep chasing past T4**: prefix and suffix modifiers now roll five tiers instead of three — tier 4 only starts appearing at T8+, tier 5 at T12+ — so there are affix rolls that flatly cannot exist on early gear.
 

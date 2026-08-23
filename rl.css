@@ -99,6 +99,11 @@ html, body {
 .mod.lore { color: #6b7f8e; font-style: italic; }
 .item-base { color: #6b7f8e !important; font-size: 10px !important; }
 .orb-btn { border-color: #6b5a2f !important; color: #c9a24b !important; }
+.sell-btn { border-color: #3f5a3a !important; color: #8fce7f !important; }
+.sell-btn.armed {
+  border-color: #a85838 !important; color: #ffb08a !important;
+  background: #2c1c14 !important;
+}
 .item-card {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
   background: #16202a; border: 1px solid #2f4152; border-radius: 4px;
