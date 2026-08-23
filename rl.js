@@ -1057,6 +1057,21 @@ function resumeRun() {
 // profile, and a fresh mid-run checkpoint if one applies. Pure data in,
 // pure data out — no DOM — so it's directly testable.
 const GAME_VERSION = "2026-08-23-config";
+// stamped by hand on every push — there's no build step or CI on this
+// static site to bake in a real deploy timestamp, so this is it. Shown
+// persistently in a corner so it's always clear which build a given
+// browser tab is actually running.
+const DEPLOY_TIME = "2026-08-23T14:58:27Z";
+function showDeployBadge() {
+  const el = document.getElementById("deploy-badge");
+  if (!el) return;
+  const d = new Date(DEPLOY_TIME);
+  if (isNaN(d.getTime())) return;
+  el.textContent = "deployed " + d.toLocaleString(undefined, {
+    year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+  });
+  el.title = "Last pushed to main: " + d.toISOString();
+}
 function buildDebugBundle() {
   if (run && !run.over && run.mode !== "overworld" && ui.screen === "game") saveRun();
   if (profile) saveProfile();
@@ -5875,6 +5890,7 @@ cam.x = hexX(run.player.q, run.player.r);
 cam.y = hexY(run.player.q, run.player.r);
 refreshHud();
 showMenu();
+showDeployBadge();
 requestAnimationFrame(render);
 
 /* test/debug API */

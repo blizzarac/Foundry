@@ -96,6 +96,10 @@ What's *not* in there: item/affix *identity* — slot assignment, names, flavor 
 
 Every affix in `config.js` also carries a `slots` field, currently `null` on every entry — meaning any base type can roll any prefix or suffix, which is the real behavior today. The read path already respects it (`rollAffix` filters the pool by the item's slot whenever `slots` isn't null), so gating an affix to specific slots later is a config edit, not a code change.
 
+## Deploy badge
+
+A small, non-interactive corner watermark — `deployed <date/time>` — sits above the action bar at all times: menu, gameplay, overworld, every screen. There's no build step or CI on this static site to bake in a real deploy timestamp, so `DEPLOY_TIME` in `rl.js` (right next to `GAME_VERSION`) is stamped by hand on every push to `main`. Since GitHub Pages serves this repo directly with no build stage, the last commit to `main` *is* the last deployment, so the two are always the same moment — bump it as the last edit before every commit that ships.
+
 ## Debug export
 
 Every screen has a way to export the exact game state as JSON, for bug reports: the 🐞 icon in the topbar during play, **Export debug state** on the main menu and the death screen. It bundles campaign meta (deaths, wins, best floor), the full Foundry profile (character, atlas, keys) if unlocked, and a fresh mid-run checkpoint if one applies — everything needed to reproduce what you were seeing. **Import debug state** on the main menu loads one of these files back in (overwriting local storage) and reloads the page, so a state exported from your browser reproduces exactly in mine.

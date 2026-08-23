@@ -303,6 +303,18 @@ function check(name, cond) {
   const menuImportVisible = await page.locator("#import-debug").isVisible();
   check("menuImportLinkVisible", menuImportVisible);
 
+  // deploy badge: a persistent, non-interactive corner watermark stamped
+  // by hand on every push, shown on the menu and carried into gameplay —
+  // "at all times" per the request, not a menu-only or in-game-only thing
+  const badgeOnMenu = (await page.locator("#deploy-badge").textContent()).trim();
+  check("deployBadgeShowsOnMenu", badgeOnMenu.length > 0);
+  check("deployBadgeIsNonInteractive", await page.evaluate(() =>
+    getComputedStyle(document.getElementById("deploy-badge")).pointerEvents === "none"));
+  await page.click("#begin-btn");
+  await page.waitForTimeout(300);
+  const badgeInGame = (await page.locator("#deploy-badge").textContent()).trim();
+  check("deployBadgePersistsIntoGame", badgeInGame === badgeOnMenu);
+
   check("noPageErrors", errors.length === 0);
   if (errors.length) console.log("ERRORS:", errors.slice(0, 8));
   await browser.close();

@@ -170,6 +170,21 @@ html, body {
   50% { box-shadow: 0 0 10px rgba(63,200,138,0.6); }
 }
 
+/* ---------------- deploy badge ----------------
+   a persistent, non-interactive corner watermark, in the DOM outside
+   every screen-toggled container so it never gets hidden — z-index sits
+   above overlays (40) so a menu/shop/tree modal never covers it either */
+#deploy-badge {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(56px + max(4px, env(safe-area-inset-bottom)));
+  z-index: 999; pointer-events: none;
+  font-family: monospace; font-size: 9px; letter-spacing: 0.02em;
+  color: #b8c8d4; background: #0a0f15; border: 1px solid #2a3a4a;
+  border-radius: 8px; padding: 2px 8px; white-space: nowrap;
+  box-shadow: 0 2px 6px #000a;
+}
+#deploy-badge:empty { display: none; }
+
 /* ---------------- action bar ---------------- */
 #actions {
   position: fixed; bottom: max(12px, env(safe-area-inset-bottom));
