@@ -14,8 +14,10 @@
   terminal odds, key-drop odds, gate jump size, key mods), the whole
   economy (shop upgrades, restocks, orb prices, gamble cost, key fab curve,
   item/key salvage formulas), item/affix/rarity tables (base type stats,
-  prefix/suffix pools and their tier magnitudes, corrupted-downside mods,
-  affix-tier depth bands, uniques, crafting caps), small combat constants
+  every implicit's roll range plus the depth-scaling coefficient that
+  widens it, prefix/suffix pools and their tier magnitudes — plus a slot
+  restriction each could carry, currently unused — corrupted-downside
+  mods, affix-tier depth bands, uniques, crafting caps), small combat constants
   (dash range, FOV, dash/deflect cost bounds, repair-cell heal, the shared
   detonation-on-death damage), and node-event tuning (density/weights,
   Fabricator Surge wave count/interval/soul bonus, Timed Vault lockdown

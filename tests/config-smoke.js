@@ -116,6 +116,34 @@ function check(name, cond) {
     out.uniquesAreConfigTable = RL.UNIQUES === CFG.items.uniques;
     out.keyModCapFromConfig = RL.KEY_MOD_CAP.rare === CFG.items.keyModCap.rare;
 
+    // --- implicits: PoE2-style roll range + depth scaling, sourced from
+    // items.baseTypes[x].implicit (a {min,max} per stat) and
+    // items.implicitScaling. The generation-invariant proofs (real
+    // variance, range containment, depth growth) live in item-smoke.js;
+    // this proves the specific numbers trace back to config.
+    const bkCfg = CFG.items.baseTypes.bulkhead.implicit.maxHpBonus;
+    out.implicitRangeIsConfigData = RL.BASE_TYPES.bulkhead.implicit.maxHpBonus.min === bkCfg.min &&
+      RL.BASE_TYPES.bulkhead.implicit.maxHpBonus.max === bkCfg.max;
+    const depth10Scale = 1 + CFG.items.implicitScaling.growthPerDepthTier * 9;
+    const rolled = RL.rollImplicit(() => 0.5, "bulkhead", 10);   // midpoint roll
+    const expectedMid = Math.round((bkCfg.min * depth10Scale + bkCfg.max * depth10Scale) / 2);
+    out.rollImplicitUsesScalingConfig = rolled.maxHpBonus === expectedMid;
+    // changing the scaling coefficient changes the result — not a copy
+    // still baked into the formula
+    const rolledFlat = RL.rollImplicit(() => 0.5, "bulkhead", 1);
+    out.depthScalingActuallyMoves = rolled.maxHpBonus > rolledFlat.maxHpBonus;
+    // the empty-base-type case (weapons carry no implicit) stays empty
+    out.emptyImplicitStaysEmpty = Object.keys(RL.rollImplicit(() => 0.5, "blade", 10)).length === 0;
+    // validator: a malformed range (min > max, or a missing bound) is rejected
+    const implBad1 = JSON.parse(JSON.stringify(CFG));
+    implBad1.items.baseTypes.plating.implicit.maxHpBonus = { min: 5, max: 2 };
+    out.validatorRejectsInvertedImplicitRange = RL.validateConfig(implBad1)
+      .some(e => e.includes("baseTypes.plating.implicit.maxHpBonus"));
+    const implBad2 = JSON.parse(JSON.stringify(CFG));
+    delete implBad2.items.implicitScaling;
+    out.validatorRejectsMissingImplicitScaling = RL.validateConfig(implBad2)
+      .some(e => e.includes("implicitScaling"));
+
     // --- affix slot restrictions: scaffolded but not yet used. Every
     // entry ships with slots:null (unrestricted, today's real behavior);
     // wiring is live in rollAffix so a later config edit is all it takes

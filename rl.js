@@ -120,8 +120,21 @@ function validateConfig(cfg) {
       "items.keyModCap missing a rarity");
     req(it.baseTypes, "items.baseTypes missing");
     if (it.baseTypes) {
-      for (const t of BASE_TYPE_KEYS) req(it.baseTypes[t], `items.baseTypes.${t} missing`);
+      for (const t of BASE_TYPE_KEYS) {
+        const bt = it.baseTypes[t];
+        req(bt, `items.baseTypes.${t} missing`);
+        // implicit is a map of stat -> {min,max} roll range (or {} for none)
+        if (bt && bt.implicit) {
+          for (const stat in bt.implicit) {
+            const r = bt.implicit[stat];
+            req(r && typeof r.min === "number" && typeof r.max === "number" && r.min <= r.max,
+              `items.baseTypes.${t}.implicit.${stat} must be {min,max} with min <= max`);
+          }
+        }
+      }
     }
+    req(it.implicitScaling && typeof it.implicitScaling.growthPerDepthTier === "number",
+      "items.implicitScaling missing growthPerDepthTier");
     req(it.bareFists && typeof it.bareFists.dmg === "number", "items.bareFists missing or malformed");
     const VALID_SLOTS = ["weapon", "plating", "sensor", "drive", "utility"];
     for (const key of ["prefixes", "suffixes"]) {
@@ -449,10 +462,42 @@ function nameItem(rng, item) {
     item.name = base.name;
   }
 }
+// implicits roll within a per-stat range set on the base type (config.js
+// items.baseTypes[x].implicit), like PoE2: every item of that base always
+// carries it, but the rolled value varies item to item. Both bounds widen
+// with sector depth (items.implicitScaling) — a negative-benefit range
+// (e.g. servo's dash-cost discount) grows more negative, correctly
+// stronger, since the scale multiplies without flipping sign.
+function rollImplicit(rng, baseKey, depth) {
+  const ranges = BASE_TYPES[baseKey].implicit;
+  const scale = 1 + CFG.items.implicitScaling.growthPerDepthTier * ((depth || 1) - 1);
+  const out = {};
+  for (const stat in ranges) {
+    const { min, max } = ranges[stat];
+    const lo = min * scale, hi = max * scale;
+    const v = lo + rng() * (hi - lo);
+    out[stat] = stat === "salvageMult" ? v : Math.round(v);
+  }
+  return out;
+}
+// fallback for items saved before implicits rolled per-item (no item.implicit
+// stored): the depth-1 midpoint of each range, so an old save doesn't just
+// lose its implicit outright
+function implicitMidpoint(baseKey) {
+  const ranges = BASE_TYPES[baseKey].implicit;
+  const out = {};
+  for (const stat in ranges) {
+    const { min, max } = ranges[stat];
+    const v = (min + max) / 2;
+    out[stat] = stat === "salvageMult" ? v : Math.round(v);
+  }
+  return out;
+}
 function genItem(rng, baseKey, rarity, depth) {
   const item = {
     id: ++itemSeq, base: baseKey, rarity,
     name: BASE_TYPES[baseKey].name,
+    implicit: rollImplicit(rng, baseKey, depth),
     affixes: [], corrupted: false, lore: null,
   };
   const n = rarity === "magic" ? 1 + (rng() < 0.5 ? 1 : 0)
@@ -461,10 +506,11 @@ function genItem(rng, baseKey, rarity, depth) {
   nameItem(rng, item);
   return item;
 }
-function genUnique(rng) {
+function genUnique(rng, depth) {
   const u = UNIQUES[(rng() * UNIQUES.length) | 0];
   return {
     id: ++itemSeq, base: u.base, rarity: "unique", name: u.name,
+    implicit: rollImplicit(rng, u.base, depth),
     affixes: [{ id: ++itemSeq, kind: "unique", stat: null, tier: 0, label: null, effect: u.effects }],
     corrupted: false, lore: u.lore,
   };
@@ -491,7 +537,7 @@ function rollBaseType(rng) {
 }
 function rollItemLoot(rng, depth, elite) {
   const rarity = rollRarity(rng, depth, elite);
-  if (rarity === "unique") return genUnique(rng);
+  if (rarity === "unique") return genUnique(rng, depth);
   return genItem(rng, rollBaseType(rng), rarity, depth);
 }
 // the last armory before the OVERSEER: a guaranteed rare weapon
@@ -925,7 +971,9 @@ function isEquipped(id) { return SLOTS.some(s => run.player.equip[s] === id); }
 function itemEffect(item) {
   const out = {};
   for (const k of STAT_KEYS) out[k] = 0;
-  const imp = BASE_TYPES[item.base].implicit;
+  // item.implicit is the per-item rolled value; older saves predate that
+  // and fall back to the range's midpoint rather than losing the implicit
+  const imp = item.implicit || implicitMidpoint(item.base);
   for (const k in imp) out[k] += imp[k];
   for (const a of item.affixes) {
     for (const k in a.effect) if (STAT_KEYS.includes(k)) out[k] += a.effect[k];
@@ -4169,7 +4217,9 @@ function itemModsHTML(item) {
       `${base.cleave ? " · cleaves" : ""}${base.reach ? " · reach" : ""}</span>`;
   }
   if (Object.keys(base.implicit).length) {
-    html += `<span class="mod implicit">${describeEffect(base.implicit)}</span>`;
+    // this item's own rolled implicit, not the base type's generic range
+    const imp = item.implicit || implicitMidpoint(item.base);
+    html += `<span class="mod implicit">${describeEffect(imp)}</span>`;
   }
   for (const a of item.affixes) {
     const cls = a.kind === "corrupt" ? "corrupt" : a.kind === "unique" ? "unique" : "affix";
@@ -4911,6 +4961,7 @@ window.RL = {
   ENEMY, BASE_TYPES, BARE_FISTS, SLOTS, SLOT_LABEL, RARITY, STAT_KEYS,
   PREFIXES, SUFFIXES, UNIQUES, CURRENCY, CORRUPT_MODS, KEY_MOD_CAP, FOV_R, playerFovR, FLASK_HEAL,
   genItem, genUnique, genArmoryItem, genCorruptedItem, rollItemLoot, rollRarity,
+  rollImplicit, implicitMidpoint,
   equipItem, unequipItem, dropItem, sellItem, sellValue, sellKey, keySalvageValue,
   itemById, equippedItem, isEquipped, itemEffect,
   activeWeaponItem, getActiveWeaponType,

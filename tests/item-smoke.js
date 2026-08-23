@@ -49,8 +49,45 @@ function check(name, cond) {
     out.rareCaps = rareOk;
     out.noDupStats = !statDup;
 
-    const u = RL.genUnique(mk);
+    // implicits roll within a per-item range (PoE2-style) and widen with
+    // sector depth — not the flat, identical-every-time value they used
+    // to be. Sample a base type with a wide range (bulkhead) at shallow
+    // and deep depth to check range containment, real variance, and that
+    // depth actually shifts the roll upward on average.
+    const bkRange = RL.CFG.items.baseTypes.bulkhead.implicit.maxHpBonus;
+    const scaleAt = d => 1 + RL.CFG.items.implicitScaling.growthPerDepthTier * (d - 1);
+    let shallowRolls = [], deepRolls = [];
+    let allWithinRange = true;
+    for (let i = 0; i < 150; i++) {
+      const s = RL.genItem(mk, "bulkhead", "normal", 1);
+      const dScale = scaleAt(1);
+      if (s.implicit.maxHpBonus < Math.round(bkRange.min * dScale) - 1 ||
+          s.implicit.maxHpBonus > Math.round(bkRange.max * dScale) + 1) allWithinRange = false;
+      shallowRolls.push(s.implicit.maxHpBonus);
+      const d = RL.genItem(mk, "bulkhead", "normal", 14);
+      deepRolls.push(d.implicit.maxHpBonus);
+    }
+    out.implicitRangeHonored = allWithinRange;
+    out.implicitHasRealVariance = new Set(shallowRolls).size > 1;
+    const avg = arr => arr.reduce((a, b) => a + b, 0) / arr.length;
+    out.implicitScalesUpWithDepth = avg(deepRolls) > avg(shallowRolls);
+
+    // an item saved before implicits rolled per-item (no .implicit field)
+    // falls back to the range midpoint rather than losing the stat
+    const legacyItem = { base: "plating", rarity: "normal", affixes: [] };
+    const legacyEffect = RL.itemEffect(legacyItem);
+    const plRange = RL.CFG.items.baseTypes.plating.implicit.maxHpBonus;
+    out.legacyItemFallsBackToMidpoint = legacyEffect.maxHpBonus === Math.round((plRange.min + plRange.max) / 2);
+
+    const u = RL.genUnique(mk, 3);
     out.unique = u.rarity === "unique" && !!u.lore && u.affixes.length === 1;
+    out.uniqueHasImplicitField = typeof u.implicit === "object" && u.implicit !== null;
+    // uniques carry the base type's implicit too, same as any other item —
+    // force-pick UNIQUES[0] (Overseer's Eye, base "optics", which has a
+    // real implicit range) via a zero rng to check a non-empty case
+    const zeroRng = () => 0;
+    const u0 = RL.genUnique(zeroRng, 3);
+    out.uniqueCarriesBaseImplicit = u0.base === "optics" && Object.keys(u0.implicit).length > 0;
 
     const arm = RL.genArmoryItem(mk);
     out.armoryIsRareWeapon = arm.rarity === "rare" && RL.BASE_TYPES[arm.base].slot === "weapon";
@@ -59,12 +96,17 @@ function check(name, cond) {
     out.corruptedHasDownside = cor.corrupted && cor.affixes.some(a => a.kind === "corrupt");
     out.corruptRejectsOrbs = !RL.canApplyOrb("exalt", cor).ok && !RL.canApplyOrb("chaos", cor).ok;
 
-    // equip flow: implicit applies and reverts
+    // equip flow: implicit applies and reverts. The implicit now rolls
+    // within a per-item range (config: items.baseTypes.plating.implicit),
+    // so check it landed within that range rather than an exact literal.
     const plate = RL.genItem(mk, "plating", "normal", 1);
+    const platingRange = RL.CFG.items.baseTypes.plating.implicit.maxHpBonus;
+    out.implicitWithinConfigRange = plate.implicit.maxHpBonus >= platingRange.min &&
+      plate.implicit.maxHpBonus <= platingRange.max;
     p.items.push(plate);
     const hpBefore = p.maxHp;
     RL.equipItem(plate.id);
-    out.implicitApplies = p.maxHp === hpBefore + 3;
+    out.implicitApplies = p.maxHp === hpBefore + plate.implicit.maxHpBonus;
     RL.unequipItem("plating");
     out.unequipReverts = p.maxHp === hpBefore;
     RL.equipItem(plate.id);

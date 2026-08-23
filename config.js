@@ -135,23 +135,35 @@ window.IRONHEX_CONFIG = {
     // a key only ever needs one number, its total mod slots)
     "keyModCap": { "normal": 0, "magic": 2, "rare": 4 },
     // base type numbers; slot/name/desc/cleave/reach (weapon-archetype
-    // behavior flags read by the attack code) stay in rl.js as identity
+    // behavior flags read by the attack code) stay in rl.js as identity.
+    // Each implicit stat is a [min,max] roll range at depth 1 (like PoE2:
+    // every item of a base type always carries it, but the rolled value
+    // varies item to item) — see implicitScaling below for how the range
+    // grows with sector depth. An empty {} means the base carries none.
     "baseTypes": {
       "blade":     { "implicit": {}, "dmg": 2, "atkCost": 1, "rollCost": 2, "bsBonus": 2 },
       "shiv":      { "implicit": {}, "dmg": 1, "atkCost": 1, "rollCost": 1, "bsBonus": 4 },
       "cleaver":   { "implicit": {}, "dmg": 4, "atkCost": 2, "rollCost": 2, "bsBonus": 2 },
       "lance":     { "implicit": {}, "dmg": 2, "atkCost": 1, "rollCost": 2, "bsBonus": 2 },
-      "plating":   { "implicit": { "maxHpBonus": 3 } },
-      "bulkhead":  { "implicit": { "maxHpBonus": 5, "rollCostDelta": 1 } },
-      "optics":    { "implicit": { "bsBonus": 2 } },
-      "array":     { "implicit": { "fovBonus": 1 } },
-      "servo":     { "implicit": { "rollCostDelta": -1 } },
-      "regulator": { "implicit": { "flaskHealBonus": 3 } },
-      "capacitor": { "implicit": { "maxStBonus": 1 } },
-      "recycler":  { "implicit": { "salvageMult": 0.3333333333333333 } },
-      "reclaimer": { "implicit": { "siphonOnKill": 1 } },
-      "dampener":  { "implicit": { "parryCostDelta": -1 } }
+      "plating":   { "implicit": { "maxHpBonus": { "min": 2, "max": 4 } } },
+      "bulkhead":  { "implicit": { "maxHpBonus": { "min": 4, "max": 6 }, "rollCostDelta": { "min": 1, "max": 2 } } },
+      "optics":    { "implicit": { "bsBonus": { "min": 1, "max": 3 } } },
+      "array":     { "implicit": { "fovBonus": { "min": 1, "max": 2 } } },
+      "servo":     { "implicit": { "rollCostDelta": { "min": -2, "max": -1 } } },
+      "regulator": { "implicit": { "flaskHealBonus": { "min": 2, "max": 4 } } },
+      "capacitor": { "implicit": { "maxStBonus": { "min": 1, "max": 2 } } },
+      "recycler":  { "implicit": { "salvageMult": { "min": 0.25, "max": 0.4 } } },
+      // siphonOnKill is a boolean gate in combat (>0 triggers it), same as
+      // its suffix pool's flat tiers — a roll range here would be fake
+      // precision with no gameplay effect, so it stays fixed at 1
+      "reclaimer": { "implicit": { "siphonOnKill": { "min": 1, "max": 1 } } },
+      "dampener":  { "implicit": { "parryCostDelta": { "min": -2, "max": -1 } } }
     },
+    // both bounds of every implicit range scale by this factor as sector
+    // depth grows: scale = 1 + growthPerDepthTier * (depth - 1). Negative
+    // ranges (rollCostDelta/parryCostDelta benefits) scale the same way,
+    // which grows their magnitude correctly since the sign never flips.
+    "implicitScaling": { "growthPerDepthTier": 0.06 },
     "bareFists": { "dmg": 1, "atkCost": 1, "rollCost": 2, "bsBonus": 0 },
     // affix pools: prefixes carry raw power, suffixes carry utility. Five
     // tiers each; deeper sectors roll higher tiers per affixTierBands.
