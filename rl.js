@@ -1025,7 +1025,10 @@ function genFloor() {
     run.player.q = 0; run.player.r = R - 1;
     const t0 = run.tiles.get(key(0, R - 1));
     if (t0) t0.rock = false;
-    run.bay = { q: 0, r: R - 2, used: false };
+    // maps get no bay: whatever you walk into a gate boss with is what
+    // you fight it with. The prologue keeps one before the OVERSEER —
+    // that's a one-time onboarding run, not the challenge.
+    run.bay = run.mode === "sector" ? null : { q: 0, r: R - 2, used: false };
     const tb = run.tiles.get(key(0, R - 2));
     if (tb) tb.rock = false;
     // a last armory before the OVERSEER: guaranteed strong steel
@@ -1105,13 +1108,16 @@ function genFloor() {
   }
   const [sq, sr] = unkey(far);
   run.stairs = { q: sq, r: sr };
-  // repair bay roughly midway
+  // repair bay roughly midway — maps get none: whatever you're carrying
+  // when you dropped in is what you clear the sector with. bk still marks
+  // that midpoint so enemies and events keep the same spacing off it
+  // either way, which keeps sector layout otherwise unchanged on maps.
   const mid = floorKeys.filter(k => {
     const d = dist.get(k);
     return d !== undefined && Math.abs(d - fd / 2) <= 2 && k !== pk && k !== far;
   });
   const bk = pick(mid.length ? mid : floorKeys);
-  run.bay = { q: unkey(bk)[0], r: unkey(bk)[1], used: false };
+  run.bay = run.mode === "sector" ? null : { q: unkey(bk)[0], r: unkey(bk)[1], used: false };
 
   // Corrupted Zone anomaly: a risk pocket, placed before enemies spawn so
   // anything born inside it can be flagged hostile-and-volatile
@@ -1231,7 +1237,7 @@ function spawnEnemy(type, q, r) {
     stagger: 0, moveToggle: false, elite: false,
     bossCount: 0, bossPhase2: false,
   };
-  // keyed sectors scale machines by key tier and key mods (bay respawns too).
+  // keyed sectors scale machines by key tier and key mods.
   // Enemy power has to outpace player power over 15 tiers of gear/shop
   // growth: hp grows ~5.9x by T15 (was ~4.5x), damage adds +1 every 2
   // tiers past T3 (was every 3) — deep tiers are earned, not assumed.

@@ -56,6 +56,9 @@ function check(name, cond) {
     const [q0, r0] = frontierKeys()[0].split(",").map(Number);
     out.anyKeyAnyNode = RL.enterNode(q0, r0, k3.id);
     out.keySetsTier = RL.run.floorConf.tier === 3;
+    // maps carry no repair bay: no free heal, no docking to reroll the
+    // fight fresh — whatever you carried in is what you clear it with
+    out.mapHasNoBay = RL.run.bay === null;
     const grunt = RL.run.enemies.find(e => e.type === "scrapper" && !e.elite);
     out.tierScalesEnemies = grunt && grunt.maxHp === 7 && grunt.dmg === 4; // round(4*1.7), 3dmg+1
     out.tierScalesElites = RL.run.eliteTotal === 2; // 1 + (tier>=3)
@@ -198,6 +201,7 @@ function check(name, cond) {
     RL.fabricateKey(4);
     const k4b = RL.profile.atlas.keys.find(k => k.tier === 4 && k.rarity === "normal");
     out.gateEntered = RL.enterNode(gq, gr, k4b.id);
+    out.gateHasNoBay = RL.run.bay === null;   // no bay before a gate boss either
     const boss = RL.run.enemies.find(e => e.type === "sentinel");
     out.gateArena = !!boss && RL.run.floorConf.boss === true && RL.run.enemies.length === 1 &&
       RL.run.stairs === null;

@@ -209,6 +209,9 @@ function check(name, cond) {
     // boss floor always stocks the armory
     for (let f = 1; f < 5; f++) RL.descend();
     out.bossArmoryStocked = run2.chests.some(c => c.contents.kind === "item");
+    // the prologue keeps its bay, including before the OVERSEER — only
+    // Foundry maps lost theirs
+    out.prologueKeepsBay = run2.bay !== null && typeof run2.bay.q === "number";
 
     // seed the backpack for the UI checks below
     window.__sellNormal = RL.genItem(mk, "servo", "normal", 1);
