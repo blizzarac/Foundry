@@ -4341,8 +4341,12 @@ document.getElementById("shop-close").addEventListener("click", () => {
   refreshHud();
 });
 
-/* ------- frame lattice UI ------- */
-const TREE_BRANCH_LABEL = { chassis: "Chassis", servos: "Servos", systems: "Systems" };
+/* ------- frame lattice UI: a radial constellation, PoE-tree style -------
+   The graph is an SVG the player pans and pinches: a hub emblem at the
+   center, the three branches winding outward 120° apart, hex nodes sized
+   by kind (small -> ringed notable -> big keystone), curved edges that
+   light up along the allocated path. Names live in the tap-detail bar,
+   not on the tree — the constellation itself stays iconography. */
 const TREE_KIND_LABEL = { small: "Node", notable: "Notable", keystone: "Keystone" };
 let treeSelected = null;
 function treeNodeText(n) {
@@ -4351,59 +4355,238 @@ function treeNodeText(n) {
   if (n.effect) parts.push(describeEffect(n.effect));
   return parts.join(" ");
 }
-function showTree() {
-  const t = treeState();
-  if (!t) return;
-  document.getElementById("tree-sub").textContent =
-    `${t.pts} point${t.pts === 1 ? "" : "s"} unspent · ${t.nodes.length}/${TREE_NODES.length} installed — ` +
-    `purging sectors earns points; removal is free from the tip of a branch inward.`;
-  const cols = document.getElementById("tree-cols");
-  cols.innerHTML = "";
-  for (const branch of Object.keys(TREE_BRANCH_LABEL)) {
-    const col = document.createElement("div");
-    col.className = "tree-col";
-    const h = document.createElement("div");
-    h.className = "tree-branch-head";
-    h.textContent = TREE_BRANCH_LABEL[branch];
-    col.appendChild(h);
-    for (const n of TREE_NODES.filter(x => x.branch === branch)) {
-      const b = document.createElement("button");
-      const state = t.nodes.includes(n.id) ? "allocated"
-        : canAllocateNode(n.id).ok ? "avail" : "locked";
-      b.className = `tree-node ${n.kind} ${state}` + (treeSelected === n.id ? " selected" : "");
-      b.innerHTML = `<b>${n.name}</b><span>${treeNodeText(n)}</span>`;
-      b.addEventListener("click", () => { treeSelected = n.id; showTree(); });
-      col.appendChild(b);
-    }
-    cols.appendChild(col);
+// hand-tuned winding path per chain index (lateral, outward): curls left
+// to the first notable, swings right to the second, back left to the
+// third, then out to the keystone — one silhouette, rotated per branch
+// (and mirrored on one) so the three limbs read as siblings, not clones
+const TREE_LAYOUT = (() => {
+  const PATH = [
+    [0, 96], [-54, 164], [-96, 248],
+    [-52, 326], [24, 376], [100, 444],
+    [46, 518], [-30, 554], [-104, 614],
+    [-58, 688], [18, 726], [0, 810],
+  ];
+  const ANGLES = { chassis: 150, servos: -90, systems: 30 };
+  const MIRROR = { chassis: -1, servos: 1, systems: 1 };
+  const pos = {};
+  for (const branch in ANGLES) {
+    const a = ANGLES[branch] * Math.PI / 180;
+    const dx = Math.cos(a), dy = Math.sin(a);
+    const chain = TREE_NODES.filter(n => n.branch === branch);
+    chain.forEach((n, i) => {
+      const [lx0, ly] = PATH[i] || [0, 96 + i * 72];
+      const lx = lx0 * MIRROR[branch];
+      pos[n.id] = [dx * ly - dy * lx, dy * ly + dx * lx];
+    });
   }
+  return pos;
+})();
+const TREE_R = 900;            // world half-extent the viewBox pans within
+const SVGNS = "http://www.w3.org/2000/svg";
+let treeView = null;           // current viewBox; survives re-renders, reset on open
+let treePanMoved = false;      // true while the last gesture was a drag, not a tap
+function hexPointsStr(r) {
+  const pts = [];
+  for (let i = 0; i < 6; i++) {
+    const a = (30 + i * 60) * Math.PI / 180;
+    pts.push((r * Math.cos(a)).toFixed(1) + "," + (r * Math.sin(a)).toFixed(1));
+  }
+  return pts.join(" ");
+}
+function svgEl(tag, attrs, parent) {
+  const el = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) el.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(el);
+  return el;
+}
+function applyTreeView() {
+  const svg = document.getElementById("tree-graph");
+  treeView.w = clamp(treeView.w, TREE_R / 4, TREE_R * 2.3);
+  svg.setAttribute("viewBox", `${treeView.x} ${treeView.y} ${treeView.w} ${treeView.w}`);
+}
+function treeNodeRadius(kind) { return kind === "keystone" ? 34 : kind === "notable" ? 26 : 16; }
+function renderTreeGraph() {
+  const t = treeState();
+  const svg = document.getElementById("tree-graph");
+  svg.innerHTML = "";
+  // deep-field backdrop: deterministic star dust so the graph floats in
+  // the same void the game does (hash keeps it stable frame to frame)
+  const stars = svgEl("g", { class: "tree-stars" }, svg);
+  for (let i = 0; i < 150; i++) {
+    const h1 = hash2(i, 17, 0xACE1), h2v = hash2(i, 91, 0xBEE5), h3 = hash2(i, 53, 0xCAFE);
+    svgEl("circle", {
+      cx: ((h1 * 2 - 1) * TREE_R * 1.15).toFixed(0), cy: ((h2v * 2 - 1) * TREE_R * 1.15).toFixed(0),
+      r: (0.9 + h3 * 2.2).toFixed(1), opacity: (0.12 + h3 * 0.3).toFixed(2),
+    }, stars);
+  }
+  const alloc = id => t.nodes.includes(id);
+  // edges first, under the nodes: each require-link plus the three hub
+  // spokes. Curved quadratics — the bend side is hashed off the ids so
+  // the web waves organically instead of fanning identically
+  const edges = svgEl("g", {}, svg);
+  const edge = (x1, y1, x2, y2, cls, seed) => {
+    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+    const ex = x2 - x1, ey = y2 - y1;
+    const len = Math.hypot(ex, ey) || 1;
+    const side = hash2(seed, 7, 0xE06E) > 0.5 ? 1 : -1;
+    const cx = mx - (ey / len) * len * 0.16 * side, cy = my + (ex / len) * len * 0.16 * side;
+    svgEl("path", { d: `M ${x1} ${y1} Q ${cx} ${cy} ${x2} ${y2}`, class: "tree-edge " + cls }, edges);
+  };
+  const entrySeeds = {};
+  TREE_NODES.forEach((n, i) => { entrySeeds[n.id] = i + 1; });
+  for (const n of TREE_NODES) {
+    const [x, y] = TREE_LAYOUT[n.id];
+    if (!n.requires.length) {
+      edge(0, 0, x, y, alloc(n.id) ? "lit" : "open", entrySeeds[n.id]);
+    } else {
+      for (const r of n.requires) {
+        const [px, py] = TREE_LAYOUT[r];
+        const cls = alloc(r) && alloc(n.id) ? "lit" : alloc(r) ? "open" : "dim";
+        edge(px, py, x, y, cls, entrySeeds[n.id] * 31 + entrySeeds[r]);
+      }
+    }
+  }
+  // the hub: the frame itself, decorative anchor of the three limbs
+  const hub = svgEl("g", { class: "tree-hub" }, svg);
+  svgEl("polygon", { points: hexPointsStr(52), class: "hub-outer" }, hub);
+  svgEl("polygon", { points: hexPointsStr(34), class: "hub-inner" }, hub);
+  svgEl("polygon", { points: hexPointsStr(12), class: "hub-core" }, hub);
+  // nodes
+  for (const n of TREE_NODES) {
+    const [x, y] = TREE_LAYOUT[n.id];
+    const state = alloc(n.id) ? "allocated" : canAllocateNode(n.id).ok ? "avail" : "locked";
+    const g = svgEl("g", {
+      class: `tree-node ${n.kind} ${state}` + (treeSelected === n.id ? " selected" : ""),
+      transform: `translate(${x.toFixed(1)} ${y.toFixed(1)})`,
+      "data-node": n.id,
+    }, svg);
+    const r = treeNodeRadius(n.kind);
+    svgEl("polygon", { points: hexPointsStr(r + 18), class: "hit" }, g);          // fat tap halo
+    if (state === "avail") svgEl("polygon", { points: hexPointsStr(r + 9), class: "pulse" }, g);
+    if (treeSelected === n.id) svgEl("polygon", { points: hexPointsStr(r + 9), class: "sel-ring" }, g);
+    svgEl("polygon", { points: hexPointsStr(r), class: "body" }, g);
+    if (n.kind !== "small") svgEl("polygon", { points: hexPointsStr(r - 7), class: "ring" }, g);
+    if (alloc(n.id)) svgEl("polygon", { points: hexPointsStr(r === 16 ? 6 : 9), class: "gem" }, g);
+    svgEl("title", {}, g).textContent = n.name;
+    g.addEventListener("click", () => {
+      if (treePanMoved) return;   // that click was the tail of a pan
+      treeSelected = n.id;
+      showTree();
+    });
+  }
+  if (!treeView) {
+    // open framing: the whole constellation, nudged up because the
+    // servos limb points north — pinch or +/- to dive into a branch
+    const w = TREE_R * 1.95;
+    treeView = { x: -w / 2, y: -w / 2 - 140, w };
+  }
+  applyTreeView();
+}
+function renderTreeDetail() {
+  const t = treeState();
   const det = document.getElementById("tree-detail");
   det.innerHTML = "";
   const sel = treeSelected && TREE_NODE_BY_ID[treeSelected];
   det.classList.toggle("hidden", !sel);
-  if (sel) {
-    const info = document.createElement("div");
-    info.innerHTML = `<b>${sel.name}</b> · ${TREE_KIND_LABEL[sel.kind]}<span>${treeNodeText(sel)}</span>`;
-    det.appendChild(info);
-    const act = document.createElement("button");
-    if (t.nodes.includes(sel.id)) {
-      const refund = canRefundNode(sel.id);
-      act.textContent = refund.ok ? "Remove (free)" : refund.reason;
-      act.disabled = !refund.ok;
-      act.addEventListener("click", () => { if (refundNode(sel.id)) { sfx("core"); showTree(); } });
-    } else {
-      const can = canAllocateNode(sel.id);
-      act.textContent = can.ok ? "Install — 1 point" : can.reason;
-      act.disabled = !can.ok;
-      act.addEventListener("click", () => { if (allocateNode(sel.id)) { sfx("core"); showTree(); } });
-    }
-    det.appendChild(act);
+  if (!sel) return;
+  const info = document.createElement("div");
+  info.innerHTML = `<b>${sel.name}</b> · ${TREE_KIND_LABEL[sel.kind]}<span>${treeNodeText(sel)}</span>`;
+  det.appendChild(info);
+  const act = document.createElement("button");
+  if (t.nodes.includes(sel.id)) {
+    const refund = canRefundNode(sel.id);
+    act.textContent = refund.ok ? "Remove (free)" : refund.reason;
+    act.disabled = !refund.ok;
+    act.addEventListener("click", () => { if (refundNode(sel.id)) { sfx("core"); showTree(); } });
+  } else {
+    const can = canAllocateNode(sel.id);
+    act.textContent = can.ok ? "Install — 1 point" : can.reason;
+    act.disabled = !can.ok;
+    act.addEventListener("click", () => { if (allocateNode(sel.id)) { sfx("core"); showTree(); } });
   }
-  document.getElementById("tree").classList.remove("hidden");
+  det.appendChild(act);
+}
+function showTree() {
+  const t = treeState();
+  if (!t) return;
+  const overlay = document.getElementById("tree");
+  if (overlay.classList.contains("hidden")) { treeView = null; treeSelected = null; }
+  document.getElementById("tree-sub").textContent =
+    `${t.pts} point${t.pts === 1 ? "" : "s"} unspent · ${t.nodes.length}/${TREE_NODES.length} installed — purge sectors to earn more`;
+  renderTreeGraph();
+  renderTreeDetail();
+  overlay.classList.remove("hidden");
+}
+// pan / pinch / wheel on the graph — listeners live on the svg element
+// itself, so the per-render innerHTML rebuilds never detach them
+{
+  const svg = document.getElementById("tree-graph");
+  const pointers = new Map();
+  let pinchStartDist = 0, pinchStartW = 0;
+  const unitsPerPx = () => {
+    const rect = svg.getBoundingClientRect();
+    return treeView.w / Math.min(rect.width || 1, rect.height || 1);
+  };
+  svg.addEventListener("pointerdown", e => {
+    svg.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.size === 1) treePanMoved = false;
+    if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      pinchStartDist = Math.hypot(a.x - b.x, a.y - b.y);
+      pinchStartW = treeView.w;
+    }
+  });
+  svg.addEventListener("pointermove", e => {
+    const pt = pointers.get(e.pointerId);
+    if (!pt || !treeView) return;
+    const dx = e.clientX - pt.x, dy = e.clientY - pt.y;
+    if (pointers.size === 1) {
+      if (Math.abs(dx) + Math.abs(dy) > 6) treePanMoved = true;
+      const s = unitsPerPx();
+      treeView.x -= dx * s;
+      treeView.y -= dy * s;
+      applyTreeView();
+    }
+    pt.x = e.clientX; pt.y = e.clientY;
+    if (pointers.size === 2 && pinchStartDist > 0) {
+      treePanMoved = true;
+      const [a, b] = [...pointers.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (d > 0) {
+        const cx = treeView.x + treeView.w / 2, cy = treeView.y + treeView.w / 2;
+        treeView.w = pinchStartW * (pinchStartDist / d);
+        treeView.x = cx - treeView.w / 2; treeView.y = cy - treeView.w / 2;
+        applyTreeView();
+      }
+    }
+  });
+  const lift = e => { pointers.delete(e.pointerId); pinchStartDist = 0; };
+  svg.addEventListener("pointerup", lift);
+  svg.addEventListener("pointercancel", lift);
+  svg.addEventListener("wheel", e => {
+    if (!treeView) return;
+    e.preventDefault();
+    const f = e.deltaY > 0 ? 1.15 : 1 / 1.15;
+    const cx = treeView.x + treeView.w / 2, cy = treeView.y + treeView.w / 2;
+    treeView.w *= f;
+    treeView.x = cx - treeView.w / 2; treeView.y = cy - treeView.w / 2;
+    applyTreeView();
+  }, { passive: false });
+  const zoomBy = f => {
+    if (!treeView) return;
+    const cx = treeView.x + treeView.w / 2, cy = treeView.y + treeView.w / 2;
+    treeView.w *= f;
+    treeView.x = cx - treeView.w / 2; treeView.y = cy - treeView.w / 2;
+    applyTreeView();
+  };
+  document.getElementById("tree-zoom-in").addEventListener("click", () => zoomBy(1 / 1.35));
+  document.getElementById("tree-zoom-out").addEventListener("click", () => zoomBy(1.35));
 }
 document.getElementById("tree-close").addEventListener("click", () => {
   document.getElementById("tree").classList.add("hidden");
   treeSelected = null;
+  treeView = null;
   refreshHud();
 });
 

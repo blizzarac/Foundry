@@ -228,21 +228,27 @@ function check(name, cond) {
     RL.showTree();
   });
   check("treeRendersAllNodes", await page.evaluate(() =>
-    document.querySelectorAll("#tree-cols .tree-node").length === window.RL.TREE_NODES.length));
-  check("treeThreeBranches", await page.evaluate(() =>
-    document.querySelectorAll("#tree-cols .tree-col").length === 3));
+    document.querySelectorAll("#tree-graph .tree-node").length === window.RL.TREE_NODES.length));
+  // one edge per require-link plus a hub spoke per branch entry
+  check("treeEdgesDrawn", await page.evaluate(() => {
+    const RL = window.RL;
+    const expected = RL.TREE_NODES.reduce((a, n) => a + Math.max(1, n.requires.length), 0);
+    return document.querySelectorAll("#tree-graph .tree-edge").length === expected;
+  }));
   check("entryNodesAvailable", await page.evaluate(() =>
-    document.querySelectorAll("#tree-cols .tree-node.avail").length === 3));
-  // tap an entry node, then its Install button in the detail footer
+    document.querySelectorAll("#tree-graph .tree-node.avail").length === 3));
+  // tap an entry node, then its Install button in the detail bar (SVG
+  // groups have no HTMLElement.click, so dispatch a real click event)
   await page.evaluate(() => {
-    [...document.querySelectorAll("#tree-cols .tree-node.avail")][0].click();
+    [...document.querySelectorAll("#tree-graph .tree-node.avail")][0]
+      .dispatchEvent(new MouseEvent("click", { bubbles: true }));
   });
   check("detailShowsInstall", await page.evaluate(() =>
     !document.getElementById("tree-detail").classList.contains("hidden") &&
     document.querySelector("#tree-detail button").textContent.includes("Install")));
   await page.click("#tree-detail button");
   check("tapInstallAllocates", await page.evaluate(() =>
-    document.querySelectorAll("#tree-cols .tree-node.allocated").length === 1 &&
+    document.querySelectorAll("#tree-graph .tree-node.allocated").length === 1 &&
     window.RL.treeState().pts === 2));
   // the shop's Frame section is now the lattice row, not upgrade buttons
   await page.evaluate(() => { document.getElementById("tree-close").click(); window.RL.showShop(); });

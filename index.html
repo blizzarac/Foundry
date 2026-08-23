@@ -143,11 +143,17 @@
 </div>
 
 <div id="tree" class="overlay hidden">
-  <div class="box">
+  <div class="box tree-box">
     <h2>Frame lattice</h2>
     <p id="tree-sub" class="stats"></p>
     <div id="tree-detail" class="hidden"></div>
-    <div id="tree-cols"></div>
+    <div id="tree-graph-wrap">
+      <svg id="tree-graph" preserveAspectRatio="xMidYMid meet"></svg>
+      <div id="tree-zoom">
+        <button id="tree-zoom-in" title="Zoom in">+</button>
+        <button id="tree-zoom-out" title="Zoom out">−</button>
+      </div>
+    </div>
     <button id="tree-close">Close</button>
   </div>
 </div>
