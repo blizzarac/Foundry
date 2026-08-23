@@ -79,9 +79,13 @@ window.IRONHEX_CONFIG = {
       "gateArenaR": 9,
       // pack density: spawnCount *= 1 + packGrowthPct * floor(tier / packGrowthEveryNTiers)
       "packGrowthEveryNTiers": 3,
-      "packGrowthPct": 0.05,
-      // sectors at these tiers (and beyond) each add one more Prime unit
-      "eliteBumpTiers": [3, 7, 11],
+      "packGrowthPct": 0.1,
+      // sectors at these tiers (and beyond) each add one more Prime unit —
+      // the purge objective only requires killing Primes, so this is the
+      // lever that actually forces more simultaneous attackers on a player
+      // routing around trash packs; it used to stop at 11, leaving T12-15
+      // (the gate-band ceiling) with no added pressure over a T11 sector
+      "eliteBumpTiers": [3, 7, 11, 13, 15],
       "chestBonusAtTier": 3,
       "chestPerLootBonus": 0.25,
       "terminalChance": 0.4,
