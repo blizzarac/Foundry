@@ -153,6 +153,39 @@ function check(name, cond) {
 
     out.noLastOutcomeInitially = RL.persist().lastOutcome === undefined;
 
+    // every action type the player can take gets its own actionLog entry —
+    // not just a snapshot of the terminal event. Drive one of each on the
+    // real prologue floor 1, direction-agnostic since terrain is generated.
+    RL.startRun(9010);
+    const DIRS6 = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
+    const tryDirs = fn => DIRS6.some(([dq, dr]) => fn(dq, dr));
+    const ps = RL.run.player;
+    out.stepSucceeded = tryDirs((dq, dr) => RL.actStep(dq, dr));
+    out.waitSucceeded = RL.actWait();
+    ps.st = ps.maxSt;
+    out.dashSucceeded = tryDirs((dq, dr) => RL.actRoll(dq, dr));
+    ps.hp = Math.max(1, ps.maxHp - 3);
+    out.flaskSucceeded = RL.actFlask();
+    ps.st = ps.maxSt;
+    out.parrySucceeded = RL.actParry();
+    const target = RL.spawnEnemy("scrapper", ps.q + 1, ps.r);   // always hex-adjacent by construction
+    ps.st = ps.maxSt;
+    out.attackSucceeded = RL.actAttack(target);
+    const types = RL.run.actionLog.map(a => a.type);
+    out.logHasStep = types.includes("step");
+    out.logHasWait = types.includes("wait");
+    out.logHasDash = types.includes("dash");
+    out.logHasFlask = types.includes("flask");
+    out.logHasParryAttemptAndResult = types.includes("parry") &&
+      (types.includes("parry-miss") || types.includes("parry-hit"));
+    out.logHasAttackAndHit = types.includes("attack") && types.includes("hit");
+    out.logEntriesHaveTurnNumbers = RL.run.actionLog.every(a => typeof a.turn === "number");
+    // still a live, un-ended run: the checkpoint should carry the log too
+    RL.saveRun();
+    const cp = RL.loadRunCheckpoint();
+    out.actionLogSurvivesCheckpoint = Array.isArray(cp.run.actionLog) &&
+      cp.run.actionLog.length === RL.run.actionLog.length;
+
     // prologue death: a real attacker deals the killing blow
     RL.startRun(9001);
     const p = RL.run.player;
@@ -165,6 +198,9 @@ function check(name, cond) {
     out.deathRecordsCombatCounts = typeof lo.turn === "number" && typeof lo.kills === "number";
     out.deathRecordsEquip = !!lo.equip && !!lo.equip.weapon && lo.equip.weapon.base === "blade";
     out.deathHasNoKeyInfo = lo.keyRarity === null && lo.keyMods === null;   // prologue carries no key
+    out.deathActionsIncludeHurtAndEndWithDied = Array.isArray(lo.actions) &&
+      lo.actions.some(a => a.type === "hurt" && a.source === "crusher") &&
+      lo.actions[lo.actions.length - 1].type === "died";
 
     // prologue win
     RL.startRun(9003);
@@ -183,10 +219,13 @@ function check(name, cond) {
     const [q, r] = fk.split(",").map(Number);
     const kk = RL.profile.atlas.keys.filter(k => k.tier === 1 && k.rarity === "normal").pop();
     RL.enterNode(q, r, kk.id);
+    out.actionLogResetsPerSector = RL.run.actionLog.length === 0;   // a fresh attempt, not carried from the prologue
     for (const el of [...RL.run.enemies].filter(x => x.elite)) RL.hurtEnemy(el, 99999);
     lo = RL.persist().lastOutcome;
     out.sectorWinRecorded = lo.kind === "won" && lo.sub === "sector" && lo.tier === 1;
     out.sectorWinHasKeyInfo = lo.keyRarity === "normal" && Array.isArray(lo.keyMods);
+    out.sectorWinActionsEndWithWon = Array.isArray(lo.actions) && lo.actions.length > 0 &&
+      lo.actions[lo.actions.length - 1].type === "won" && lo.actions.some(a => a.type === "hit");
 
     // detonation death, still inside this purged-but-not-extracted sector
     // (the volatile check only fires in mode "sector"): force the flag
@@ -200,6 +239,11 @@ function check(name, cond) {
     RL.hurtEnemy(bomb, 1);
     lo = RL.persist().lastOutcome;
     out.detonationRecordsCause = lo.kind === "died" && lo.cause === "scrapper";
+    // this attempt's actions span BOTH the earlier purge and this death —
+    // the log isn't reset until the next enterNode, so the whole story of
+    // what happened in this sector node stays together
+    out.detonationActionsSpanBothEvents = Array.isArray(lo.actions) &&
+      lo.actions.some(a => a.type === "won") && lo.actions[lo.actions.length - 1].type === "died";
     RL.extractToOverworld();
     RL.run.player.souls = 999999;   // the death above wiped cores; restock for the next fabrication
 
@@ -209,10 +253,13 @@ function check(name, cond) {
     RL.fabricateKey(4);
     const gk = RL.profile.atlas.keys.filter(k => k.tier === 4 && k.rarity === "normal").pop();
     RL.enterNode(1, 0, gk.id);
+    out.gateActionsResetFromPriorSector = RL.run.actionLog.length === 0;
     const guardian = RL.run.enemies.find(x => x.type === RL.run.floorConf.bossType);
     RL.hurtEnemy(guardian, 99999);
     lo = RL.persist().lastOutcome;
     out.gateWinRecorded = lo.kind === "won" && lo.sub === "gate" && lo.bossType === "sentinel";
+    out.gateWinActionsEndWithWon = Array.isArray(lo.actions) &&
+      lo.actions[lo.actions.length - 1].type === "won";
     RL.extractToOverworld();
 
     // a death right after a win overwrites lastOutcome — it always holds
@@ -227,6 +274,8 @@ function check(name, cond) {
     RL.hurtPlayer(grunt, 5);   // records a "died" — must overwrite the win above
     lo = RL.persist().lastOutcome;
     out.deathAfterWinOverwrites = lo.kind === "died" && lo.cause === "scrapper";
+    out.deathAfterWinActionsSpanBothEvents = Array.isArray(lo.actions) &&
+      lo.actions.some(a => a.type === "won") && lo.actions[lo.actions.length - 1].type === "died";
 
     // the debug bundle surfaces it at the top level too, not just buried
     // inside campaignMeta — same object, read from the same source

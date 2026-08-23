@@ -62,9 +62,16 @@
   session, or just read the JSON directly — `profile`/`runCheckpoint` mirror
   the shapes documented in rl.js's persistence section. The same export
   also carries `lastOutcome` (top-level, and its source of truth at
-  `campaignMeta.lastOutcome`): a snapshot of the single most recent death
-  or win — kind/sub, tier, biome/boss, killing-blow cause, turn/kill
-  counts, cores, hp, key rarity/mods, equipped loadout — written by
+  `campaignMeta.lastOutcome`): the single most recent death or win —
+  kind/sub, tier, biome/boss, killing-blow cause, turn/kill counts,
+  cores, hp, key rarity/mods, equipped loadout — written by
   `recordOutcome()` from `dieRun`/`winRun`/`sectorComplete`/`gateCleared`/
-  `apexCleared`. It's one snapshot, not a history: a balance question
-  about a specific past run still needs that run's own export.
+  `apexCleared`. It also carries `actions`: the full step-by-step log of
+  that one attempt (every move/dash/wait/parry/flask/attack, the hits
+  and hurts they caused, pickups, floor descents, each with its turn
+  number), written by `logAction()` — a separate, uncapped stream from
+  the narrative `log()` calls that feed the visible in-game panel — and
+  reset fresh on `newRun()`/`enterNode()` so it's scoped to the attempt
+  that produced this outcome, not the whole browsing session. It's one
+  attempt's full account, not a multi-run history: a balance question
+  spanning several runs still needs each run's own export.

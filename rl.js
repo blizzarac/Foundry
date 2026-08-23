@@ -1032,8 +1032,9 @@ function buildDebugBundle() {
     configVersion: (CFG && CFG.configVersion) || null,
     exportedAt: new Date().toISOString(),
     // the last level died or won — tier, boss, cause, loadout at the
-    // time — surfaced at the top for visibility; it's also the source
-    // it's read from, campaignMeta.lastOutcome, so the two always agree
+    // time, and the full step-by-step action log of that attempt —
+    // surfaced at the top for visibility; it's also the source it's
+    // read from, campaignMeta.lastOutcome, so the two always agree
     lastOutcome: campaignMeta.lastOutcome || null,
     campaignMeta,
     profile: JSON.parse(localStorage.getItem(PROFILE_KEY) || "null"),
@@ -1113,7 +1114,7 @@ function newRun(seed) {
     chests: [], groundLoot: [],
     stairs: null, bay: null, bloodstain: null, terminal: null,
     turn: 0, kills: 0, over: false, won: false,
-    log: [],
+    log: [], actionLog: [],
   };
   const p = run.player;
   const starter = genItem(mulberry32(run.seed >>> 0), "blade", "normal", 1);
@@ -1381,6 +1382,20 @@ function log(msg, cls) {
   renderLog();
 }
 function showMsg(text) { log(text, "sys"); }
+// a separate, uncapped stream from the narrative log() above: every
+// player action and its direct combat resolution, not just the notable
+// events log() surfaces to the UI panel. Exists purely for recordOutcome()
+// to attach a full account of the run to lastOutcome — never rendered.
+// The 5000-entry cap is a safety bound against a pathological run, not a
+// design trim; ordinary runs never come close to it.
+function logAction(type, detail) {
+  if (!run) return;
+  // a checkpoint saved before this field existed resumes into a fresh
+  // log rather than never logging again
+  if (!run.actionLog) run.actionLog = [];
+  run.actionLog.push({ turn: run.turn, type, ...detail });
+  if (run.actionLog.length > 5000) run.actionLog.shift();
+}
 
 /* ------------------------------------------------------------ floor gen */
 /* per-biome terrain shapes. Each returns rock-or-not for a hex; the
@@ -1676,6 +1691,7 @@ function descend() {
     biomeKey: theme, terrain: BIOMES[theme] ? BIOMES[theme].terrain : null };
   genFloor();
   log(run.floor === 5 ? "OVERSEER core detected." : "Sector " + run.floor + ".", "sys");
+  logAction("descend", { floor: run.floor });
   centerCam();
   invalidateFloorCaches();
 }
@@ -1743,6 +1759,7 @@ function actStep(dq, dr) {
   const p = run.player;
   const q = p.q + dq, r = p.r + dr;
   if (!walkable(q, r) || occupied(q, r)) return false;
+  logAction("step", { from: [p.q, p.r], to: [q, r] });
   p.q = q; p.r = r;
   p.st = Math.min(p.maxSt, p.st + 1);
   afterPlayerMove();
@@ -1750,6 +1767,7 @@ function actStep(dq, dr) {
   return true;
 }
 function actWait() {
+  logAction("wait", { at: [run.player.q, run.player.r] });
   run.player.st = Math.min(run.player.maxSt, run.player.st + 2);
   endTurn();
   return true;
@@ -1794,6 +1812,7 @@ function canReach(e) {
 function actAttack(e) {
   const p = run.player;
   if (!canReach(e) || !canAfford(p.atkCost)) return false;
+  logAction("attack", { at: [p.q, p.r], target: e.type, targetAt: [e.q, e.r] });
   p.st -= p.atkCost;
   // lunge animation nudge
   p.bumpX = (hexX(e.q, e.r) - hexX(p.q, p.r)) * 0.3;
@@ -1865,6 +1884,7 @@ function actRoll(dq, dr) {
   if (!canAfford(p.rollCost)) return false;
   const q = p.q + dq, r = p.r + dr;
   if (!canDashTo(q, r)) return false;
+  logAction("dash", { from: [p.q, p.r], to: [q, r] });
   p.st -= p.rollCost;
   p.q = q; p.r = r;
   log("Thrusters fire.", "");
@@ -1876,10 +1896,12 @@ function actRoll(dq, dr) {
 function actParry() {
   const p = run.player;
   if (!canAfford(p.parryCost)) return false;
+  logAction("parry", { at: [p.q, p.r] });
   p.st -= p.parryCost;
   p.parry = true;
   p.parryHit = false;
   endTurn();
+  logAction(p.parryHit ? "parry-hit" : "parry-miss", {});
   if (!p.parryHit && !run.over) log("Your deflector closes on nothing.", "warn");
   return true;
 }
@@ -1888,6 +1910,7 @@ function actFlask() {
   if (p.flask <= 0 || p.hp >= p.maxHp) return false;
   p.flask -= 1;
   const heal = flaskHeal();
+  logAction("flask", { at: [p.q, p.r], heal, hpAfter: Math.min(p.maxHp, p.hp + heal) });
   p.hp = Math.min(p.maxHp, p.hp + heal);
   sfx("repair");
   log("Repair cell injected.", "good");
@@ -1988,6 +2011,7 @@ function afterPlayerMove() {
     const s = run.shards[i];
     if (s.q === p.q && s.r === p.r) {
       p.souls += s.souls;
+      logAction("pickup", { kind: "cores", at: [p.q, p.r], n: s.souls });
       addFloat(p.q, p.r, "+" + s.souls + " cores", "#7fe0f4");
       sfx("core");
       run.shards.splice(i, 1);
@@ -2017,16 +2041,19 @@ function afterPlayerMove() {
     if (chest.contents.kind === "item") {
       const item = chest.contents.item;
       p.items.push(item);
+      logAction("pickup", { kind: "chest-item", at: [p.q, p.r], item: item.name, rarity: item.rarity });
       log("Cache open: " + item.name + " (" + RARITY[item.rarity].name + ").", "good");
       addFloat(p.q, p.r, item.name, RARITY[item.rarity].color);
     } else if (chest.contents.kind === "currency") {
       const label = CURRENCY[chest.contents.orb].name;
       p.currency[chest.contents.orb] = (p.currency[chest.contents.orb] || 0) + chest.contents.n;
+      logAction("pickup", { kind: "chest-currency", at: [p.q, p.r], orb: chest.contents.orb, n: chest.contents.n });
       log("Cache open: " + chest.contents.n + "× " + label + ".", "good");
       addFloat(p.q, p.r, "+" + chest.contents.n + " " + label, "#c9a24b");
     } else {
       const label = chest.contents.supply === "dart" ? "Shock Dart" : "Power Cell";
       p.consumables[chest.contents.supply] = (p.consumables[chest.contents.supply] || 0) + chest.contents.n;
+      logAction("pickup", { kind: "chest-supply", at: [p.q, p.r], supply: chest.contents.supply, n: chest.contents.n });
       log("Cache open: " + chest.contents.n + "× " + label + ".", "good");
       addFloat(p.q, p.r, "+" + chest.contents.n + " " + label, "#8fe0f0");
     }
@@ -2036,6 +2063,7 @@ function afterPlayerMove() {
   if (li >= 0) {
     const l = run.groundLoot[li];
     p.items.push(l.item);
+    logAction("pickup", { kind: "loot", at: [p.q, p.r], item: l.item.name, rarity: l.item.rarity });
     log("Recovered: " + l.item.name + " (" + RARITY[l.item.rarity].name + ").", "good");
     addFloat(p.q, p.r, l.item.name, RARITY[l.item.rarity].color);
     sfx("core");
@@ -2051,6 +2079,7 @@ function afterPlayerMove() {
 }
 
 function hurtEnemy(e, dmg, label) {
+  logAction("hit", { target: e.type, at: [e.q, e.r], dmg, label: label || null, killed: e.hp - dmg <= 0 });
   e.hp -= dmg;
   e.flash = 0.25;
   addFloat(e.q, e.r, String(dmg) + (label ? " " + label + "!" : ""), label ? "#f0c060" : "#e8e8ef");
@@ -2149,6 +2178,7 @@ function hurtPlayer(e, dmg) {
     sfx("parry");
     return;
   }
+  logAction("hurt", { source: e.type, at: [p.q, p.r], dmg, hpAfter: p.hp - dmg });
   p.hp -= dmg;
   addFloat(p.q, p.r, "-" + dmg, "#e06060");
   hitFlash = 0.3;
@@ -2801,6 +2831,7 @@ function recordOutcome(kind, cause) {
     : f && GATE_BOSS_TYPES.includes(f.bossType) ? "gate"
     : "sector";
   const theme = run.mode === "campaign" ? CAMPAIGN_THEMES[run.floor - 1] : null;
+  logAction(kind, { sub, cause: cause || null });   // the terminal entry, last in the captured actions
   const per = persist();
   per.lastOutcome = {
     kind, sub, at: new Date().toISOString(),
@@ -2814,6 +2845,13 @@ function recordOutcome(kind, cause) {
     keyRarity: (f && f.keyRarity) || null,
     keyMods: (f && f.keyMods) || null,
     equip,
+    // every step and action taken during this specific attempt, in order —
+    // moves, dashes, waits, deflects (attempt + hit/miss), repairs,
+    // attacks and the hits/kills they land, hits taken, pickups, floor
+    // descents — not just the state at the moment it ended. Reset fresh
+    // on newRun()/enterNode() so this is scoped to THIS attempt, not
+    // bleed-over from a previous sector in the same session.
+    actions: (run.actionLog || []).slice(),
   };
   savePersist(per);
 }
@@ -3242,7 +3280,7 @@ function enterOverworld() {
     player: characterToPlayer(profile.character),
     tiles: new Map(), enemies: [], shards: [], chests: [], groundLoot: [],
     stairs: null, bay: null, bloodstain: null, terminal: null,
-    turn: 0, kills: 0, over: false, won: false, log: [],
+    turn: 0, kills: 0, over: false, won: false, log: [], actionLog: [],
   };
   recalc();
   const p = run.player;
@@ -3281,6 +3319,7 @@ function enterNode(q, r, keyId) {
   const quant = keyQuant(skey);
   run.mode = "sector";
   run.sectorNode = nk;
+  run.actionLog = [];   // a fresh sector is a fresh attempt for recordOutcome's account
   run.seed = (profile.atlas.seed ^ (q * 73856093) ^ (r * 19349663) ^ (tier * 2654435761)) >>> 0;
   run.floor = tier + 1;   // drives loot depth (affix tiers, rarity weights)
   run.over = false; run.won = false; run.turn = 0; run.kills = 0;
@@ -5826,7 +5865,7 @@ window.RL = {
   donutHexes, laneHexes, gateCleared, spawnGateNode, atlasCap, tierColor,
   ringHexes, barrageHexes, laneHexesLen, wardenAct, crucibleAct, primeAct,
   resolveNewBossStrike, spawnApexNode, apexCleared, ensureApexNode, GATE_BOSS_TYPES,
-  hurtEnemy, hurtPlayer, strikeOne, winRun, dieRun, recordOutcome,
+  hurtEnemy, hurtPlayer, strikeOne, winRun, dieRun, recordOutcome, logAction,
   saveProfile, loadProfile, migrateProfile, syncProfileFromPlayer,
   saveRun, resumeRun, clearRunCheckpoint, loadRunCheckpoint,
   NODE_EVENTS, EVENT_GLYPH, EVENT_NAME, EVENT_DESC, EVENT_WEIGHTS, EVENT_DENSITY,
