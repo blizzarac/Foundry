@@ -60,7 +60,7 @@ function check(name, cond) {
     // fight fresh — whatever you carried in is what you clear it with
     out.mapHasNoBay = RL.run.bay === null;
     const grunt = RL.run.enemies.find(e => e.type === "scrapper" && !e.elite);
-    out.tierScalesEnemies = grunt && grunt.maxHp === 7 && grunt.dmg === 4; // round(4*1.7), 3dmg+1
+    out.tierScalesEnemies = grunt && grunt.maxHp === 7 && grunt.dmg === 5; // round(4*1.84), 3dmg+2
     out.tierScalesElites = RL.run.eliteTotal === 2; // 1 + (tier>=3)
     RL.extractToOverworld(); // abandon: key spent, node stays frontier
     out.abandonKeepsFrontier = RL.profile.atlas.nodes[q0 + "," + r0].state === "frontier";
@@ -144,11 +144,11 @@ function check(name, cond) {
     const biomeBase = (RL.BIOMES[RL.profile.atlas.nodes[q1 + "," + r1q].biome].chests || 1);
     RL.enterNode(q1, r1q, km.id);
     const f = RL.run.floorConf;
-    out.modPrimed = RL.run.eliteTotal === 2; // 1 base at T1 + 1 primed
+    out.modPrimed = RL.run.eliteTotal === 3; // 2 base at T1 (elite bump now starts at T1) + 1 primed
     const grunts = RL.run.enemies.filter(e => !e.elite);
     out.modArmored = grunts.length > 0 &&
       grunts.every(e => e.maxHp === Math.round(RL.ENEMY[e.type].hp * 1.3));
-    out.modOvercharged = grunts.every(e => e.dmg === RL.ENEMY[e.type].dmg + 1);
+    out.modOvercharged = grunts.every(e => e.dmg === RL.ENEMY[e.type].dmg + 2); // +1 T1 tier scaling + 1 mod
     out.modDark = f.fovPenalty === 2;
     out.modQuant = Math.abs(f.lootBonus - 0.65) < 1e-9;
     out.modChests = RL.run.chests.length === f.chests && f.chests === biomeBase + 2; // + floor(.65/.25)

@@ -37,9 +37,12 @@ window.IRONHEX_CONFIG = {
     },
     "scaling": {
       // keyed-sector hp: base.hp * (1 + hpGrowthPerTier * (tier - 1))
-      "hpGrowthPerTier": 0.35,
-      // keyed-sector dmg: base.dmg + 1 + floor((tier - dmgFreeTiers) / dmgStepEveryNTiers), from tier dmgFreeTiers on
-      "dmgFreeTiers": 3,
+      "hpGrowthPerTier": 0.42,
+      // keyed-sector dmg: base.dmg + 1 + floor((tier - dmgFreeTiers) / dmgStepEveryNTiers), from tier dmgFreeTiers on.
+      // dmgFreeTiers dropped to 1 so this applies from T1 (it used to leave
+      // T1-T2 with zero enemy dmg growth at all) — every tier gets a flat
+      // +1 dmg over the old curve, not just the deep end
+      "dmgFreeTiers": 1,
       "dmgStepEveryNTiers": 2,
       // a promoted Prime unit (any sector): hp *= hpMult, dmg += dmgAdd
       "elitePromotion": { "hpMult": 1.5, "dmgAdd": 1 }
@@ -83,9 +86,11 @@ window.IRONHEX_CONFIG = {
       // sectors at these tiers (and beyond) each add one more Prime unit —
       // the purge objective only requires killing Primes, so this is the
       // lever that actually forces more simultaneous attackers on a player
-      // routing around trash packs; it used to stop at 11, leaving T12-15
-      // (the gate-band ceiling) with no added pressure over a T11 sector
-      "eliteBumpTiers": [3, 7, 11, 13, 15],
+      // routing around trash packs. Spaced evenly from T1 instead of
+      // starting at 3, so the climb gets denser everywhere, not just past
+      // the old T11 stopping point — reaches the same T15 count as before,
+      // just earlier
+      "eliteBumpTiers": [1, 4, 7, 10, 13],
       "chestBonusAtTier": 3,
       "chestPerLootBonus": 0.25,
       "terminalChance": 0.4,

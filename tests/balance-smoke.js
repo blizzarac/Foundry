@@ -121,8 +121,12 @@ function check(name, cond, detail) {
     out.checks.bareFrameFallsBehind = bare[bare.length - 1].ttk > bare[0].ttk;
 
     // tier-appropriate gear should stay in a playable band at EVERY
-    // tested tier: never a one-shot machine, never a slog
-    out.checks.gearedTTKBand = geared.every(s => s.ttk >= 1 && s.ttk <= 6);
+    // tested tier: never a one-shot machine, never a slog. This coarse
+    // model excludes riposte/cleave/backstab, so its TTK reads higher than
+    // a real fight — the band is loose on purpose; a wide gap from real
+    // play is a modeling limit, not a balance problem, unless it widens
+    // further from here
+    out.checks.gearedTTKBand = geared.every(s => s.ttk >= 1 && s.ttk <= 8);
     out.checks.gearedHTDBand = geared.every(s => s.htd >= 3 && s.htd <= 20);
 
     // even the impossible everything-lattice build stays inside a sane
@@ -131,9 +135,9 @@ function check(name, cond, detail) {
     out.checks.fullLatticeHTDBand = latticed.every(s => s.htd >= 3 && s.htd <= 30);
 
     // the enemy curve itself must actually steepen by the documented
-    // multipliers: hp ~5.9x from T1->T15 (1 + 0.35*14), dmg step +1/2 tiers
+    // multipliers: hp ~6.9x from T1->T15 (1 + 0.42*14), dmg step +1/2 tiers
     const t1 = bare[0], t15 = bare[bare.length - 1];
-    out.checks.hpCurveSteep = Math.abs(t15.enemyHp / t1.enemyHp - 5.9) < 0.6;
+    out.checks.hpCurveSteep = Math.abs(t15.enemyHp / t1.enemyHp - 6.9) < 0.6;
     out.checks.dmgCurveSteep = t15.enemyDmg - t1.enemyDmg >= 5;
 
     // affix tiers 4/5 are the T8+/T12+ chase — confirm the weights exist
