@@ -207,6 +207,11 @@ function check(name, cond) {
     const hpBefore = pv.hp;
     RL.hurtEnemy(adj, 9999);
     out.volatileBlast = pv.hp === hpBefore - 1;
+    // the detonation bypasses hurtPlayer(), so it needs its own logAction
+    // call — otherwise it's damage the debug-export action log can't see
+    const lastLog = RL.run.actionLog[RL.run.actionLog.length - 1];
+    out.volatileBlastLogged = lastLog.type === "hurt" && lastLog.dmg === 1 &&
+      lastLog.hpAfter === pv.hp && lastLog.source.includes("detonation");
 
     // death stores the wreck; re-keying places it back in the sector
     RL.run.player.souls = 77;

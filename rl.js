@@ -1061,7 +1061,7 @@ const GAME_VERSION = "2026-08-23-config";
 // static site to bake in a real deploy timestamp, so this is it. Shown
 // as a footer note on the intro/menu page, so it's always clear which
 // build a given browser tab is actually running before you dive in.
-const DEPLOY_TIME = "2026-08-23T15:35:23Z";
+const DEPLOY_TIME = "2026-08-23T15:58:46Z";
 function showDeployBadge() {
   const el = document.getElementById("deploy-badge");
   if (!el) return;
@@ -2187,6 +2187,7 @@ function hurtEnemy(e, dmg, label) {
         hexDist(run.player.q, run.player.r, e.q, e.r) === 1) {
       const pl = run.player;
       const dmg = CFG.combat.volatileDetonationDmg;
+      logAction("hurt", { source: e.type + "-detonation", at: [pl.q, pl.r], dmg, hpAfter: pl.hp - dmg });
       pl.hp -= dmg;
       hitFlash = 0.3;
       addFloat(pl.q, pl.r, "-" + dmg, "#e06060");

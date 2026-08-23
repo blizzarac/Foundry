@@ -268,6 +268,8 @@ function check(name, cond) {
     zv.zoneVolatile = true;
     RL.hurtEnemy(zv, 9999);
     out.zoneVolatileDetonates = p.hp === hpBefore - 1;
+    const lastLog = RL.run.actionLog[RL.run.actionLog.length - 1];
+    out.zoneVolatileLogged = lastLog.type === "hurt" && lastLog.dmg === 1 && lastLog.hpAfter === p.hp;
     RL.extractToOverworld();
 
     RL.saveProfile();
