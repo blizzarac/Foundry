@@ -159,6 +159,27 @@ function check(name, cond) {
       return RL.run.chests.some(c => c.q === cq && c.r === cr && c.vault === true);
     });
     out.vaultUntriggered = v.triggered === false;
+    // sensor range must never weaponize the vault against its owner: with
+    // boosted optics a chest is VISIBLE from far beyond what nine cycles
+    // of movement can cross, so a bare sighting trigger welded every vault
+    // shut for endgame sensor builds. Seeing it from afar must leave the
+    // lockdown unarmed — only closing to within sightRange starts the clock
+    {
+      for (const t of RL.run.tiles.values()) t.rock = false;   // open sightlines
+      const [cq0, cr0] = v.chestHexes[0].split(",").map(Number);
+      let farTile = null;
+      for (const t of RL.run.tiles.values()) {
+        const d = RL.hexDist(t.q, t.r, cq0, cr0);
+        if (d >= RL.VAULT_SIGHT_RANGE + 3 && d <= RL.VAULT_SIGHT_RANGE + 5) { farTile = t; break; }
+      }
+      const fovBefore = RL.run.player.fovBonus;
+      RL.run.player.q = farTile.q; RL.run.player.r = farTile.r;
+      RL.run.player.fovBonus = 40;                             // omniscient sensors
+      RL.updateFov();
+      RL.tickEvents();
+      out.vaultFarSightDoesNotArm = v.triggered === false;
+      RL.run.player.fovBonus = fovBefore;
+    }
     // sight it: put the player on the chest hex and force an FOV recompute via tick
     const [vq, vr] = v.chestHexes[0].split(",").map(Number);
     RL.run.player.q = vq; RL.run.player.r = vr;

@@ -713,7 +713,11 @@ window.IRONHEX_CONFIG = {
     "density": 0.28,
     "weights": { "surge": 0.40, "vault": 0.25, "convoy": 0.20, "corrupted": 0.15 },
     "surge": { "waveCount": 4, "waveInterval": 3, "killSoulMult": 1.5 },
-    "vault": { "lockdownCycles": 9 },
+    // sightRange caps how far away a chest can arm the lockdown: sensor
+    // gear extends what you can SEE well past what you can REACH in nine
+    // cycles, so an unbounded sighting trigger made endgame sensor builds
+    // weld every vault shut before the player could possibly cross to it
+    "vault": { "lockdownCycles": 9, "sightRange": 7 },
     "convoy": { "totalHaulers": 3, "entryInCycles": 3 },
     "corrupted": { "radius": 3, "dmgAdd": 1 }
   }

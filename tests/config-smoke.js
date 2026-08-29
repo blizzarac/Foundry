@@ -291,6 +291,7 @@ function check(name, cond) {
     out.surgeWaveConfigFromConfig = RL.WAVE_COUNT === CFG.events.surge.waveCount &&
       RL.WAVE_INTERVAL === CFG.events.surge.waveInterval;
     out.vaultLockdownFromConfig = RL.VAULT_LOCKDOWN_CYCLES === CFG.events.vault.lockdownCycles;
+    out.vaultSightRangeFromConfig = RL.VAULT_SIGHT_RANGE === CFG.events.vault.sightRange;
 
     // the validator itself: an empty config must fail with real errors,
     // and a deliberately broken one must name the specific missing field —

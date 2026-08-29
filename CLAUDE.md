@@ -47,7 +47,7 @@
   detonation-on-death damage, the root specials' shared power cost/range/
   damage multiplier), and node-event tuning (density/weights,
   Fabricator Surge wave count/interval/soul bonus, Timed Vault lockdown
-  cycles, Salvage Convoy hauler count/entry delay, Corrupted Zone radius/
+  cycles + arming sight range, Salvage Convoy hauler count/entry delay, Corrupted Zone radius/
   damage) live here as one plain data object (`window.IRONHEX_CONFIG`),
   loaded by `<script>` before `rl.js` — not a real `.json` file, since
   `fetch()` can't read local disk over `file://` and this game has no

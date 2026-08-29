@@ -258,7 +258,8 @@ function validateConfig(cfg) {
       "events.weights missing a kind");
     req(ev.surge && typeof ev.surge.waveCount === "number" && typeof ev.surge.waveInterval === "number" &&
       typeof ev.surge.killSoulMult === "number", "events.surge missing waveCount/waveInterval/killSoulMult");
-    req(ev.vault && typeof ev.vault.lockdownCycles === "number", "events.vault missing lockdownCycles");
+    req(ev.vault && typeof ev.vault.lockdownCycles === "number" && typeof ev.vault.sightRange === "number",
+      "events.vault missing lockdownCycles/sightRange");
     req(ev.convoy && typeof ev.convoy.totalHaulers === "number" && typeof ev.convoy.entryInCycles === "number",
       "events.convoy missing totalHaulers/entryInCycles");
     req(ev.corrupted && typeof ev.corrupted.radius === "number" && typeof ev.corrupted.dmgAdd === "number",
@@ -1129,7 +1130,7 @@ const GAME_VERSION = "2026-08-23-config";
 // static site to bake in a real deploy timestamp, so this is it. Shown
 // as a footer note on the intro/menu page, so it's always clear which
 // build a given browser tab is actually running before you dive in.
-const DEPLOY_TIME = "2026-08-29T08:22:31Z";
+const DEPLOY_TIME = "2026-08-29T08:27:14Z";
 function showDeployBadge() {
   const el = document.getElementById("deploy-badge");
   if (!el) return;
@@ -3271,7 +3272,7 @@ const EVENT_GLYPH = { surge: "⚒", vault: "◫", convoy: "▸", corrupted: "☣
 const EVENT_NAME = { surge: "Fabricator Surge", vault: "Timed Vault", convoy: "Salvage Convoy", corrupted: "Corrupted Zone" };
 const EVENT_DESC = {
   surge: "A dormant fabricator waits to be woken. Survive its production run near the machine for a Surge Cache.",
-  vault: "A sealed vault chamber. Lockdown begins the moment it's sighted — reach it before the door welds shut.",
+  vault: "A sealed vault chamber. Lockdown arms when you close within reach — get to the chests before the door welds shut.",
   convoy: "A hauler convoy crosses this sector on a fixed route. Cut it off before it clears the far side.",
   corrupted: "A corrupted pocket of the sector: hostile, volatile, and richer for it.",
 };
@@ -3290,6 +3291,7 @@ function rollNodeEvent(q, r) { return rollNodeEventForSeed(profile.atlas.seed, q
 
 const WAVE_INTERVAL = CFG.events.surge.waveInterval, WAVE_COUNT = CFG.events.surge.waveCount;
 const VAULT_LOCKDOWN_CYCLES = CFG.events.vault.lockdownCycles;
+const VAULT_SIGHT_RANGE = CFG.events.vault.sightRange;
 
 function inCorruptZone(q, r) {
   const z = run.event && run.event.zone;
@@ -3401,7 +3403,17 @@ function tickVault() {
   const v = run.event && run.event.vault;
   if (!v || v.sealed) return;
   if (!v.triggered) {
-    if (!v.chestHexes.some(hk => visible.has(hk))) return;
+    // arming needs line of sight AND proximity: sensor gear can see a
+    // vault from far beyond what nine cycles of movement can reach, so an
+    // unbounded trigger let long-range builds weld every vault shut on
+    // sighting. Seeing it early is now pure advantage — plan the route;
+    // the clock starts when you close to within reach
+    const p = run.player;
+    if (!v.chestHexes.some(hk => {
+      if (!visible.has(hk)) return false;
+      const [q, r] = unkey(hk);
+      return hexDist(q, r, p.q, p.r) <= VAULT_SIGHT_RANGE;
+    })) return;
     v.triggered = true;
     v.lockdownIn = VAULT_LOCKDOWN_CYCLES;
     log(`VAULT SIGHTED — lockdown in ${v.lockdownIn} cycles.`, "warn");
@@ -6455,7 +6467,7 @@ window.RL = {
   saveProfile, loadProfile, migrateProfile, syncProfileFromPlayer,
   saveRun, resumeRun, clearRunCheckpoint, loadRunCheckpoint,
   NODE_EVENTS, EVENT_GLYPH, EVENT_NAME, EVENT_DESC, EVENT_WEIGHTS, EVENT_DENSITY,
-  WAVE_INTERVAL, WAVE_COUNT, VAULT_LOCKDOWN_CYCLES,
+  WAVE_INTERVAL, WAVE_COUNT, VAULT_LOCKDOWN_CYCLES, VAULT_SIGHT_RANGE,
   rollNodeEvent, rollNodeEventForSeed, inCorruptZone, bfsPathBetween,
   tickEvents, tickFabricator, tickVault, tickConvoy, actActivateFabricator,
   placeSurge, placeVault, placeConvoy, placeCorruptZone,
