@@ -1218,7 +1218,7 @@ const GAME_VERSION = "2026-08-23-config";
 // static site to bake in a real deploy timestamp, so this is it. Shown
 // as a footer note on the intro/menu page, so it's always clear which
 // build a given browser tab is actually running before you dive in.
-const DEPLOY_TIME = "2026-08-29T09:10:05Z";
+const DEPLOY_TIME = "2026-08-29T13:30:14Z";
 function showDeployBadge() {
   const el = document.getElementById("deploy-badge");
   if (!el) return;
@@ -5279,7 +5279,9 @@ function refreshHud() {
     specBtn.classList.toggle("active", !!ui.specialMode);
     specBtn.disabled = p.st < CFG.combat.special.cost || run.over;
   }
-  // skill-chip sockets: hidden while empty, live counters while cooling
+  // skill-chip sockets: icon tiles, hidden while empty. Level and
+  // cooldown live in corner badges (see .skill-btn in rl.css) so the
+  // button stays icon-sized instead of stretching to fit a name
   for (let slot = 0; slot < 2; slot++) {
     const btn = document.getElementById("btn-skill-" + slot);
     const id = socketedSkill(slot);
@@ -5288,9 +5290,10 @@ function refreshHud() {
     const d = SKILLS.defs[id];
     const cd = (p.skillCd && p.skillCd[id]) || 0;
     const lv = skillLevel(id);
-    btn.textContent = SKILL_DEFS[id].glyph + " " + SKILL_DEFS[id].name +
-      (lv > 1 ? " Lv" + lv : "") + (cd > 0 ? " · " + cd : "");
-    btn.title = SKILL_DEFS[id].desc(lv) +
+    btn.querySelector(".skill-glyph").textContent = SKILL_DEFS[id].glyph;
+    btn.querySelector(".skill-lv").textContent = lv > 1 ? lv : "";
+    btn.querySelector(".skill-cd").textContent = cd > 0 ? cd : "";
+    btn.title = SKILL_DEFS[id].name + " · Lv" + lv + " — " + SKILL_DEFS[id].desc(lv) +
       ` ${d.cost ? d.cost + " power · " : ""}${d.cooldown}-cycle cooldown [${slot + 1}]`;
     btn.classList.toggle("active", !!(ui.skillMode && ui.skillMode.slot === slot));
     btn.disabled = cd > 0 || p.st < d.cost || run.over;
