@@ -24,7 +24,9 @@
   drops while fabrication stays capped at the ladder; past it enemy
   stats also gain the compounding enemies.scaling.postLadder multiplier,
   so exponential tiers beat linear gear and every build hits a wall
-  eventually), the whole
+  eventually; levelGen.territory sets the map's minimum-key-tier
+  geography — grace radius, ring width, hot-zone density/bonus, and the
+  loot-quantity bonus demanding land pays), the whole
   economy (restocks, orb prices, orb loot-drop weights, gamble cost, key
   fab curve, item/key salvage formulas, plus the retired shop upgrades
   kept only as migration-refund data), the frame lattice (points per

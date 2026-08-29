@@ -113,6 +113,27 @@ window.IRONHEX_CONFIG = {
       // (fabrication stays capped at the ladder ceiling)
       "keyDropAheadPostLadder": 1
     },
+    // territory minimums: the landscape itself sets a floor on which keys
+    // a frontier node accepts (the key still sets the sector's ACTUAL
+    // tier — this only refuses keys below the local minimum). Within
+    // graceRadius of the Bay everything stays open; past it the minimum
+    // climbs one tier per ringWidth hexes, forever. Hot zones are
+    // deterministic pockets (hotZoneSize-hex blocks, hotZoneDensity of
+    // them, never inside the grace radius) demanding hotZoneBonusTiers
+    // more than their surroundings. Demanding land also PAYS: nodes grant
+    // bonus loot quantity per minimum tier (quantPerMinTier, the same
+    // axis key mods use) plus a flat hotZoneQuantBonus inside a hot zone.
+    // Gates and the apex ignore territory — they demand their exact band
+    // key already.
+    "territory": {
+      "graceRadius": 6,
+      "ringWidth": 4,
+      "hotZoneSize": 5,
+      "hotZoneDensity": 0.12,
+      "hotZoneBonusTiers": 4,
+      "quantPerMinTier": 0.03,
+      "hotZoneQuantBonus": 0.15
+    },
     // every Sector Key modifier: quant is the loot-bonus % it contributes;
     // the rest are magnitudes applied to the sector when a key carrying
     // this mod is socketed (spawnMult/hpMult multiply, dmgAdd/fovPenalty/

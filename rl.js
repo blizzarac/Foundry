@@ -92,6 +92,11 @@ function validateConfig(cfg) {
       req(Array.isArray(sec.eliteBumpTiers) && sec.eliteBumpTiers.length > 0,
         "levelGen.sector.eliteBumpTiers must be a non-empty array");
     }
+    req(lg.territory, "levelGen.territory missing");
+    if (lg.territory)
+      for (const k of ["graceRadius", "ringWidth", "hotZoneSize", "hotZoneDensity",
+        "hotZoneBonusTiers", "quantPerMinTier", "hotZoneQuantBonus"])
+        req(typeof lg.territory[k] === "number", `levelGen.territory.${k} missing or not a number`);
     req(Array.isArray(lg.keyMods) && lg.keyMods.length > 0, "levelGen.keyMods must be a non-empty array");
     if (Array.isArray(lg.keyMods)) {
       lg.keyMods.forEach((m, i) => {
@@ -800,6 +805,34 @@ function worldCell(q, r) {
   return { kind: site ? "site" : "field", biome };
 }
 
+/* Territory minimums: the landscape sets a floor on which keys a
+   frontier node accepts — the key still sets the sector's ACTUAL tier,
+   geography only refuses keys below the local minimum. Derived purely
+   from the atlas seed and coordinates (never stored), so old saves and
+   fresh reveals agree forever. The Bay's grace pocket is swept clean:
+   no minimums, no hot zones. Gates/apex ignore all of this — they
+   already demand their exact band key. */
+function territoryIsHot(q, r) {
+  const tc = CFG.levelGen.territory;
+  if (hexDist(q, r, 0, 0) <= tc.graceRadius) return false;
+  const s = ((profile && profile.atlas && profile.atlas.seed) | 0) ^ 0x7e44;
+  return hash2(Math.floor(q / tc.hotZoneSize), Math.floor(r / tc.hotZoneSize), s) < tc.hotZoneDensity;
+}
+function territoryMinTier(q, r) {
+  const tc = CFG.levelGen.territory;
+  const dist = hexDist(q, r, 0, 0);
+  let min = 1;
+  if (dist > tc.graceRadius) min += Math.ceil((dist - tc.graceRadius) / tc.ringWidth);
+  if (territoryIsHot(q, r)) min += tc.hotZoneBonusTiers;
+  return min;
+}
+// demanding land pays: bonus loot quantity on the same axis key mods use
+function territoryQuant(q, r) {
+  const tc = CFG.levelGen.territory;
+  return tc.quantPerMinTier * (territoryMinTier(q, r) - 1) +
+    (territoryIsHot(q, r) ? tc.hotZoneQuantBonus : 0);
+}
+
 /* Sector Key modifiers: every danger mod also raises loot quantity.
    Normal keys carry 0 mods, Magic up to 2, Rare up to 4 — crafted with
    the same currency orbs as gear. All mods stay deterministic. Table and
@@ -1096,7 +1129,7 @@ const GAME_VERSION = "2026-08-23-config";
 // static site to bake in a real deploy timestamp, so this is it. Shown
 // as a footer note on the intro/menu page, so it's always clear which
 // build a given browser tab is actually running before you dive in.
-const DEPLOY_TIME = "2026-08-29T07:12:10Z";
+const DEPLOY_TIME = "2026-08-29T07:23:28Z";
 function showDeployBadge() {
   const el = document.getElementById("deploy-badge");
   if (!el) return;
@@ -3550,13 +3583,20 @@ function enterNode(q, r, keyId) {
     log(`The ${node.state === "apex" ? "apex" : "gate"} only accepts a T${node.band} key.`, "warn");
     return false;
   }
+  // territory minimum: the land itself refuses keys below its floor —
+  // the key still sets the sector's actual tier once it's deep enough
+  if (!isGate && profile.atlas.keys[ki].tier < territoryMinTier(q, r)) {
+    log(`This territory demands a T${territoryMinTier(q, r)}+ key.`, "warn");
+    return false;
+  }
   const skey = profile.atlas.keys.splice(ki, 1)[0];
   const tier = skey.tier;   // the key alone sets the sector's tier
   // aggregate the key's sector modifiers
   const mod = { spawnMult: 1, hpMult: 1, dmgAdd: 0, extraElites: 0,
     fovPenalty: 0, flaskPenalty: 0, volatile: false };
   for (const a of skey.affixes) KEY_MOD_BY[a.mod].apply(mod);
-  const quant = keyQuant(skey);
+  // deep/hot territory pays a quantity bonus on top of the key's own mods
+  const quant = keyQuant(skey) + (isGate ? 0 : territoryQuant(q, r));
   run.mode = "sector";
   run.sectorNode = nk;
   run.actionLog = [];   // a fresh sector is a fresh attempt for recordOutcome's account
@@ -4483,17 +4523,33 @@ function renderOverworld(t) {
       ctx.fillText((n.clearedTier ? "T" + n.clearedTier + " " : "") + "✓", x, y + 3);
     } else {
       const col = BIOMES[n.biome].color;
-      ctx.fillStyle = "#0f1a22";
+      const hot = territoryIsHot(q, r);
+      const minT = territoryMinTier(q, r);
+      ctx.fillStyle = hot ? "#211208" : "#0f1a22";
       ctx.fill();
+      // a hot zone burns an extra amber ring so contested pockets read
+      // from map scale, before you ever tap the node
+      if (hot) {
+        hexPath(ctx, x, y, 0.78);
+        ctx.strokeStyle = "#e8a040";
+        ctx.lineWidth = 1.3;
+        ctx.stroke();
+      }
       hexPath(ctx, x, y, 0.92);
       ctx.globalAlpha = pulse;
-      ctx.strokeStyle = col;
+      ctx.strokeStyle = hot ? "#e8a040" : col;
       ctx.lineWidth = 2;
       ctx.stroke();
       ctx.globalAlpha = 1;
       ctx.fillStyle = col;
       ctx.font = "bold 9px monospace";
       ctx.fillText(BIOMES[n.biome].abbr, x, y + 3);
+      // territory floor: which keys this land even accepts
+      if (minT > 1) {
+        ctx.fillStyle = hot ? "#e8a040" : "#8fa3b2";
+        ctx.font = "8px monospace";
+        ctx.fillText("T" + minT + "+", x, y - 10);
+      }
       if (n.event) {
         ctx.fillStyle = "#ffd45c";
         ctx.font = "10px monospace";
@@ -5822,12 +5878,21 @@ function openNodePanel(q, r) {
     title.textContent = BIOMES[node.biome].name;
     desc.textContent = `Purged at T${node.clearedTier || "?"} and sealed. Nothing moves in there anymore.`;
   } else {
-    title.textContent = BIOMES[node.biome].name + (node.event ? ` ${EVENT_GLYPH[node.event]} ${EVENT_NAME[node.event]}` : "");
+    const minT = territoryMinTier(q, r);
+    const hot = territoryIsHot(q, r);
+    const terrQuant = territoryQuant(q, r);
+    title.textContent = BIOMES[node.biome].name + (hot ? " ⚠ HOT ZONE" : "") +
+      (node.event ? ` ${EVENT_GLYPH[node.event]} ${EVENT_NAME[node.event]}` : "");
     desc.textContent = BIOMES[node.biome].desc +
       (node.event ? " " + EVENT_DESC[node.event] : "") +
       (node.wreck > 0 ? ` Your wreck holds ${node.wreck} cores in there.` : "") +
-      " Any Sector Key opens it — the key sets the danger and the reward.";
-    // plain keys grouped by tier; modified keys listed individually
+      (minT > 1
+        ? ` ${hot ? "A hot zone deep in contested territory" : "Deep territory"} — only a T${minT}+ key can open it,` +
+          ` and the land pays +${Math.round(terrQuant * 100)}% loot on top of the key's own.`
+        : " Any Sector Key opens it — the key sets the danger and the reward.");
+    // plain keys grouped by tier; modified keys listed individually. Keys
+    // below the territory minimum stay visible but disabled — the panel
+    // teaches the requirement instead of hiding options
     const normals = {};
     const modded = [];
     for (const kk of profile.atlas.keys) {
@@ -5839,8 +5904,9 @@ function openNodePanel(q, r) {
       offered++;
       const b = document.createElement("button");
       b.className = "shop-item";
+      b.disabled = Number(t) < minT;
       b.innerHTML = `<b style="color:${tierColor(t)}">Socket T${t} Sector Key</b>` +
-        `<span>runs this sector at T${t}</span><em>×${normals[t].length}</em>`;
+        `<span>${Number(t) < minT ? `territory demands T${minT}+` : `runs this sector at T${t}`}</span><em>×${normals[t].length}</em>`;
       b.addEventListener("click", () => enterNode(q, r, normals[t][0].id));
       box.appendChild(b);
     }
@@ -5849,8 +5915,10 @@ function openNodePanel(q, r) {
       const mods = kk.affixes.map(a => KEY_MOD_BY[a.mod].desc).join(" · ");
       const b = document.createElement("button");
       b.className = "shop-item";
+      b.disabled = kk.tier < minT;
       b.innerHTML = `<b style="color:${RARITY[kk.rarity].color}">${keyDisplayName(kk)}</b>` +
-        `<span>${mods || "no modifiers"}</span><em>+${Math.round(keyQuant(kk) * 100)}% loot</em>`;
+        `<span>${kk.tier < minT ? `territory demands T${minT}+` : mods || "no modifiers"}</span>` +
+        `<em>+${Math.round((keyQuant(kk) + terrQuant) * 100)}% loot</em>`;
       b.addEventListener("click", () => enterNode(q, r, kk.id));
       box.appendChild(b);
     }
@@ -6282,6 +6350,7 @@ window.RL = {
   enterOverworld, enterNode, extractToOverworld, fabricateKey,
   sectorComplete, revealArea, worldCell, keyFabCost, BIOMES, TIER_CAP,
   makeKey, addKeyMod, keyQuant, keyDisplayName, canApplyOrbKey, applyOrbToKey, KEY_MODS, keyDropCap,
+  territoryMinTier, territoryIsHot, territoryQuant,
   donutHexes, laneHexes, gateCleared, spawnGateNode, atlasCap, tierColor,
   ringHexes, barrageHexes, laneHexesLen, wardenAct, crucibleAct, primeAct,
   resolveNewBossStrike, spawnApexNode, apexCleared, ensureApexNode, GATE_BOSS_TYPES,

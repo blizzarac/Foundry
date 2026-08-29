@@ -178,6 +178,19 @@ function check(name, cond) {
     delete deepBad3.enemies.scaling.postLadder;
     out.validatorRejectsMissingPostLadderScaling = RL.validateConfig(deepBad3)
       .some(e => e.includes("postLadder"));
+
+    // territory minimums: validator-enforced, and the formula reads the
+    // live config object (mutating ringWidth moves the answer)
+    const terrBad = JSON.parse(JSON.stringify(CFG));
+    delete terrBad.levelGen.territory;
+    out.validatorRejectsMissingTerritory = RL.validateConfig(terrBad)
+      .some(e => e.includes("territory"));
+    const minBefore = RL.territoryMinTier(40, 0);
+    const savedRW = CFG.levelGen.territory.ringWidth;
+    CFG.levelGen.territory.ringWidth = savedRW * 4;
+    const minAfter = RL.territoryMinTier(40, 0);
+    CFG.levelGen.territory.ringWidth = savedRW;
+    out.territoryReadsLiveConfig = minAfter < minBefore;
     const ds = CFG.items.affixDeepScaling;
     const mkd = (() => { let a = 11; return () => { a = (a * 1664525 + 1013904223) >>> 0; return a / 4294967296; }; })();
     const topDmgAffix = depth => {

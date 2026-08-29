@@ -308,6 +308,41 @@ function check(name, cond) {
     RL.profile.atlas.tierCap = capBefore;
     RL.profile.atlas.keys = RL.profile.atlas.keys.filter(k => k.tier <= capBefore);
 
+    // territory minimums: the Bay's grace pocket is entirely open (no
+    // floors, no hot zones), then the minimum climbs with distance per
+    // config — and hot zones bump it by exactly their configured bonus
+    const tc = RL.CFG.levelGen.territory;
+    let graceClean = true;
+    for (let gq = -tc.graceRadius; gq <= tc.graceRadius; gq++)
+      for (let gr = -tc.graceRadius; gr <= tc.graceRadius; gr++)
+        if (RL.hexDist(gq, gr, 0, 0) <= tc.graceRadius &&
+            (RL.territoryMinTier(gq, gr) !== 1 || RL.territoryIsHot(gq, gr))) graceClean = false;
+    out.territoryGraceOpen = graceClean;
+    const ringBase = d => 1 + Math.ceil((d - tc.graceRadius) / tc.ringWidth);
+    let formulaHolds = true, sawHot = false;
+    for (let dq = tc.graceRadius + 1; dq <= 45; dq++) {
+      const expected = ringBase(dq) + (RL.territoryIsHot(dq, 0) ? tc.hotZoneBonusTiers : 0);
+      if (RL.territoryMinTier(dq, 0) !== expected) formulaHolds = false;
+      if (RL.territoryIsHot(dq, 0)) sawHot = true;
+    }
+    out.territoryMinFollowsConfigFormula = formulaHolds;
+    out.territoryHotZonesExist = sawHot;   // dense enough that a 39-hex ray hits one
+
+    // the land refuses keys below its floor, accepts them at it, and pays
+    // its quantity bonus on top of the key's own
+    RL.profile.atlas.nodes["30,0"] = { state: "frontier", biome: "scrapyard", wreck: 0, event: null };
+    const minDeep = RL.territoryMinTier(30, 0);
+    out.territoryDemandIsReal = minDeep > 1;
+    const kTooLow = RL.makeKey(minDeep - 1), kMeets = RL.makeKey(minDeep);
+    RL.profile.atlas.keys.push(kTooLow, kMeets);
+    out.territoryRefusesLowKey = !RL.enterNode(30, 0, kTooLow.id) && RL.run.mode === "overworld";
+    out.territoryAcceptsFitKey = RL.enterNode(30, 0, kMeets.id) && RL.run.floorConf.tier === minDeep;
+    out.territoryPaysQuant = Math.abs(RL.run.floorConf.lootBonus - RL.territoryQuant(30, 0)) < 1e-9 &&
+      RL.run.floorConf.lootBonus > 0;
+    RL.extractToOverworld();
+    delete RL.profile.atlas.nodes["30,0"];
+    RL.profile.atlas.keys = RL.profile.atlas.keys.filter(k => k.id !== kTooLow.id);
+
     // reveals respect the landscape: no interactive node on a ridge or
     // channel, and cascaded FIELD ground connects the sectors it opened
     const nn = RL.profile.atlas.nodes;
