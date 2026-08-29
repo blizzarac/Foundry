@@ -144,6 +144,38 @@ function check(name, cond) {
     }
     out.targetsMatchPredicate = agree;
 
+    // --- landing-danger classification: the targeting overlay colors dash
+    // rings by what happens if you land there, and this is the truth it
+    // renders. A due (timer-1) windup covering a landing hex is "now" — the
+    // strike resolves in the same endTurn the dash triggers, so landing
+    // there is a guaranteed hit. A slower windup or a chained amber preview
+    // is "soon". Clear ground is null.
+    p = arena();
+    {
+      const mk = (q, r, extra) => {
+        const e = Object.assign({
+          type: "scrapper", q, r, hp: 50, maxHp: 50, dmg: 3, elite: false,
+          awake: true, state: "idle", windupTimer: 0, windupHexes: [],
+          windupNext: null, stagger: 0, rest: 0, dir: 0,
+        }, extra);
+        RL.run.enemies.push(e);
+        return e;
+      };
+      mk(p.q - 3, p.r, { state: "windup", windupTimer: 1,
+        windupHexes: [(p.q + 1) + "," + p.r] });
+      mk(p.q + 3, p.r, { type: "mortar", state: "windup", windupTimer: 2,
+        windupHexes: [(p.q - 1) + "," + p.r] });
+      mk(p.q, p.r + 3, { type: "warden", windupNext: [p.q + "," + (p.r - 1)] });
+      out.dangerNowOnDueMark = RL.dashDangerAt(p.q + 1, p.r) === "now";
+      out.dangerSoonOnSlowMark = RL.dashDangerAt(p.q - 1, p.r) === "soon";
+      out.dangerSoonOnAmberPreview = RL.dashDangerAt(p.q, p.r - 1) === "soon";
+      out.dangerNullOnClearGround = RL.dashDangerAt(p.q + 1, p.r - 1) === null;
+      // proof of the "now" semantics: dashing onto the due mark takes the
+      // hit the moment the dash resolves — this is why the ring is red
+      const hp0 = p.hp;
+      out.dashOntoNowMarkIsHit = RL.actRoll(1, 0) && p.hp === hp0 - 3;
+    }
+
     // --- a real generated floor still offers dashes from the start tile
     RL.startRun(4242);
     RL.run.player.st = RL.run.player.maxSt;

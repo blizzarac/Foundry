@@ -11,7 +11,7 @@ Combat is **deterministic and fully telegraphed**. Every machine shows exactly w
 ## The toolkit
 
 - **Power** drives strikes (1), dashes (2) and deflects (2). Moving restores 1, venting heat restores 2. Overdraw your capacitor and all you can do is walk.
-- **Dash** to any hex within two — you pick the direction *and* the distance, not a fixed hop down one of six axes. Thrusters carry you straight through bodies and threatened ground, but never through bulkheads and never around a corner: the lane has to be a straight shot. Armed targets ring in cyan, brightest at full range.
+- **Dash** to any hex within two — you pick the direction *and* the distance, not a fixed hop down one of six axes. Thrusters carry you straight through bodies and threatened ground, but never through bulkheads and never around a corner: the lane has to be a straight shot. Armed targets ring in cyan, brightest at full range — but a ring turns **red** when a strike lands on that hex the moment you arrive, and **amber** when a slower or chained telegraph covers it next turn. Cyan means genuinely clear.
 - **Deflect** as an adjacent machine swings: the hit is negated and the attacker overloads for a cycle — then counterstrike for double. A deflect into empty air wastes the turn.
 - **Exposed cores**: machines have facing; strike from the rear arc for critical damage.
 - **Repair cells** restore integrity but injecting one costs the turn — patching yourself inside a telegraph gets you exactly what you deserve.

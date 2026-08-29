@@ -1129,7 +1129,7 @@ const GAME_VERSION = "2026-08-23-config";
 // static site to bake in a real deploy timestamp, so this is it. Shown
 // as a footer note on the intro/menu page, so it's always clear which
 // build a given browser tab is actually running before you dive in.
-const DEPLOY_TIME = "2026-08-29T07:58:42Z";
+const DEPLOY_TIME = "2026-08-29T08:22:31Z";
 function showDeployBadge() {
   const el = document.getElementById("deploy-badge");
   if (!el) return;
@@ -2011,6 +2011,25 @@ function dashTargets() {
     }
   }
   return out;
+}
+/* Is this landing hex about to be hit? "now" = a windup with 1 turn left
+   covers it, so it fires the same endTurn the dash triggers — landing
+   there is a guaranteed hit. "soon" = a slower windup (mortar lob, WARDEN
+   barrage) or a chained amber preview covers it: safe to land, but it
+   fires after your NEXT action. The targeting overlays use this to color
+   landing rings, because the cyan ring is painted over the danger fill —
+   exactly when the player is picking a spot — and used to hide it. */
+function dashDangerAt(q, r) {
+  const k = key(q, r);
+  let soon = false;
+  for (const e of run.enemies) {
+    if (e.state === "windup" && e.windupHexes.some(h => h === k)) {
+      if (e.windupTimer <= 1) return "now";
+      soon = true;
+    }
+    if (e.windupNext && e.windupNext.some(h => h === k)) soon = true;
+  }
+  return soon ? "soon" : null;
 }
 function actRoll(dq, dr) {
   const p = run.player;
@@ -4286,14 +4305,20 @@ function render(now) {
     }
   }
 
-  /* dash targets */
+  /* dash targets — colored by what happens if you LAND there: red rings
+     mark hexes a due windup hits the instant the dash ends (a guaranteed
+     hit — the strike resolves in the same turn), amber rings mark hexes a
+     slower or chained telegraph covers next turn, cyan is genuinely clear.
+     Without this the bright cyan ring painted over the danger fill hid it
+     at the exact moment the player was picking a landing spot. */
   if (ui.rollMode && run.player.st >= run.player.rollCost) {
     for (const [q, r] of dashTargets()) {
       // the far ring reads brighter, so the longest hop stays easy to pick
       const far = hexDist(run.player.q, run.player.r, q, r) >= run.player.dashRange;
+      const danger = dashDangerAt(q, r);
       hexPath(ctx, hexX(q, r), hexY(q, r), 0.7);
-      ctx.strokeStyle = "#4fd6e8";
-      ctx.globalAlpha = far ? 1 : 0.45;
+      ctx.strokeStyle = danger === "now" ? "#e0503c" : danger === "soon" ? "#e6aa46" : "#4fd6e8";
+      ctx.globalAlpha = danger === "now" || far ? 1 : 0.45;
       ctx.lineWidth = 2.5;
       ctx.stroke();
       ctx.globalAlpha = 1;
@@ -4302,12 +4327,15 @@ function render(now) {
 
   /* special-attack targets: Rail Charge (landing hexes) and Barrage
      Volley (every hex the aimed lane could pass through) share the same
-     lane-highlight look, distinct from the dash ring's cyan */
+     lane-highlight look, distinct from the dash ring's cyan. Charge moves
+     the player, so its landing hexes get the same red guaranteed-hit
+     warning as dash targets. */
   if (ui.specialMode && run.player.st >= CFG.combat.special.cost) {
     const hexes = ui.specialMode === "charge" ? chargeTargets() : barrageTargets();
     for (const [q, r] of hexes) {
       hexPath(ctx, hexX(q, r), hexY(q, r), 0.7);
-      ctx.strokeStyle = "#f0a840";
+      ctx.strokeStyle = ui.specialMode === "charge" && dashDangerAt(q, r) === "now"
+        ? "#e0503c" : "#f0a840";
       ctx.lineWidth = 2.5;
       ctx.stroke();
     }
@@ -6401,7 +6429,7 @@ window.RL = {
   get run() { return run; },
   newRun, startRun, descend,
   actStep, actWait, actAttack, actRoll, actParry, actFlask, actRest,
-  dashPath, canDashTo, dashTargets, DASH_RANGE,
+  dashPath, canDashTo, dashTargets, dashDangerAt, DASH_RANGE,
   actSlam, actCharge, actBarrage, chargeTargets, canChargeTo, barrageTargets, specialLabel,
   get fx() { return fx; },
   spawnEnemy, endTurn, bfsDist, updateFov, hexDist, hexX, hexY,
