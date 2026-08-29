@@ -113,7 +113,6 @@ function validateConfig(cfg) {
     if (Array.isArray(ec.upgrades))
       ec.upgrades.forEach((u, i) => req(u.id && typeof u.base === "number" && typeof u.cap === "number" && u.delta,
         `economy.upgrades[${i}] missing id/base/cap/delta`));
-    req(Array.isArray(ec.restocks) && ec.restocks.length > 0, "economy.restocks must be a non-empty array");
     req(Array.isArray(ec.orbs) && ec.orbs.length > 0, "economy.orbs must be a non-empty array");
     req(Array.isArray(ec.orbDropWeights) && ec.orbDropWeights.length > 0,
       "economy.orbDropWeights must be a non-empty array");
@@ -264,6 +263,27 @@ function validateConfig(cfg) {
       "events.convoy missing totalHaulers/entryInCycles");
     req(ev.corrupted && typeof ev.corrupted.radius === "number" && typeof ev.corrupted.dmgAdd === "number",
       "events.corrupted missing radius/dmgAdd");
+  }
+
+  req(cfg.skills, "skills missing");
+  if (cfg.skills) {
+    const sk = cfg.skills;
+    for (const k of ["slots", "maxLevel", "fuseRefundCores", "migrateRefundPerExtra", "chestChance"])
+      req(typeof sk[k] === "number", "skills." + k + " missing or not a number");
+    req(sk.defs && typeof sk.defs === "object", "skills.defs missing");
+    if (sk.defs) {
+      const SKILL_IDS = ["shockDart", "powerCell", "magGrapple", "arcMine", "kineticWard", "empBurst"];
+      for (const id of SKILL_IDS) {
+        const d = sk.defs[id];
+        req(d && typeof d.cost === "number" && typeof d.cooldown === "number" &&
+          d.base && typeof d.base === "object" && d.perLevel && typeof d.perLevel === "object",
+          "skills.defs." + id + " missing cost/cooldown/base/perLevel");
+      }
+      // rl.js implements exactly this closed set — an unknown chip id in
+      // config would be dead data with no combat code behind it
+      for (const id in sk.defs)
+        req(SKILL_IDS.includes(id), "skills.defs." + id + " has no implementation in rl.js");
+    }
   }
   return errors;
 }
@@ -673,18 +693,50 @@ function rollOrbKind(rng, depth) {
 }
 function rollChestContents(rng, depth, elite) {
   const r = rng();
-  if (!elite && r < 0.22) {
-    return { kind: "supply", supply: rng() < 0.6 ? "dart" : "cell", n: 1 + (depth >= 3 && rng() < 0.4 ? 1 : 0) };
+  if (!elite && r < CFG.skills.chestChance) {
+    // a skill chip: a new subroutine, or a duplicate that fuses for +1 level
+    return { kind: "chip", skill: SKILL_IDS[(rng() * SKILL_IDS.length) | 0] };
   }
   if (!elite && r < 0.52) {
     return { kind: "currency", orb: rollOrbKind(rng, depth), n: 1 + (rng() < 0.4 ? 1 : 0) };
   }
   return { kind: "item", item: rollItemLoot(rng, depth, elite) };
 }
-const CONSUMABLE_DESC = {
-  dart: "Hurl down a clear lane: 4 damage to the first machine, up to 4 hexes. Costs the turn.",
-  cell: "Restore all power and 2 integrity. Costs the turn.",
+/* ------------------------------ skill chips ------------------------------
+   Found combat subroutines, PoE-gem-shaped: chips drop from caches, a
+   duplicate find fuses into your copy for +1 level, and known chips
+   socket into HUD slots (keys 1/2) to fire mid-fight for power on a
+   per-chip turn cooldown — the mechanism that replaced the counted
+   dart/cell consumables buried in the gear panel. All NUMBERS live in
+   config.js (skills.defs base/perLevel); identity — names, glyphs,
+   targeting kinds, descriptions — and the combat code live here, keyed
+   by this closed set (the validator rejects config chips without an
+   implementation). */
+const SKILLS = CFG.skills;
+const SKILL_IDS = ["shockDart", "powerCell", "magGrapple", "arcMine", "kineticWard", "empBurst"];
+function skillStat(id, stat, lv) {
+  const d = SKILLS.defs[id];
+  return (d.base[stat] || 0) + ((d.perLevel && d.perLevel[stat]) || 0) * (Math.max(1, lv || 1) - 1);
+}
+const SKILL_DEFS = {
+  shockDart: { name: "Shock Dart", glyph: "⚡", target: "lane",
+    desc: lv => `Hurl down a clear lane: ${skillStat("shockDart", "dmg", lv)} damage to the first machine within ${skillStat("shockDart", "range", lv)} hexes.` },
+  powerCell: { name: "Power Cell", glyph: "▮", target: "self",
+    desc: lv => `Vent a stored cell: +${skillStat("powerCell", "power", lv)} power, +${skillStat("powerCell", "heal", lv)} integrity.` },
+  magGrapple: { name: "Mag Grapple", glyph: "⚓", target: "lane",
+    desc: lv => `Reel the first machine down a clear lane (up to ${skillStat("magGrapple", "range", lv)} hexes) to your side: ${skillStat("magGrapple", "dmg", lv)} damage and a ${skillStat("magGrapple", "stagger", lv)}-turn stagger.` },
+  arcMine: { name: "Arc Mine", glyph: "◆", target: "hex",
+    desc: lv => `Plant a charge on an adjacent open hex: the first machine to step on it takes ${skillStat("arcMine", "dmg", lv)} damage.` },
+  kineticWard: { name: "Kinetic Ward", glyph: "⛨", target: "self",
+    desc: lv => `Raise a field that soaks the next ${skillStat("kineticWard", "absorb", lv)} damage before your hull takes any.` },
+  empBurst: { name: "EMP Burst", glyph: "❋", target: "self",
+    desc: lv => `Overload everything within ${skillStat("empBurst", "radius", lv)} hexes: windups cancel, machines stagger ${skillStat("empBurst", "stagger", lv)} turns${skillStat("empBurst", "dmg", lv) > 0 ? ` and take ${skillStat("empBurst", "dmg", lv)} damage` : ""}.` },
 };
+function defaultSkills() { return { levels: { shockDart: 1 }, slots: ["shockDart", null] }; }
+function skillLevel(id) {
+  const s = run.player.skills;
+  return (s && s.levels[id]) || 0;
+}
 
 /* ============================== THE FOUNDRY =============================
    Endgame overworld (PoE2 Atlas style). After the OVERSEER falls, the
@@ -955,8 +1007,6 @@ function grantTreePoints(n) {
 function treeApplies() {
   return !!(profile && profile.tree && run && run.mode !== "campaign");
 }
-// consumable restocks: repeatable, so the bay stays worth a visit forever
-const SHOP_RESTOCKS = CFG.economy.restocks;
 // currency orbs at a premium over drop rates: cores flow into crafting
 const SHOP_ORBS = CFG.economy.orbs;
 // prototype gamble: a blind-rolled Rare in a chosen slot. Depth tracks the
@@ -1069,6 +1119,38 @@ function migrateProfile(pr) {
     pr.tree.nodes = [...installed];
     pr.v = 6;
   }
+  // v6 -> v7: counted dart/cell consumables retired for skill chips.
+  // Owning any darts grants the Shock Dart chip, any cells the Power
+  // Cell chip (both at level 1, socketed); each spare beyond the first
+  // refunds cores, since they were bought or found with real value.
+  if (pr.v < 7) {
+    const c = pr.character;
+    if (c) {
+      const cons = c.consumables || {};
+      const sk = { levels: {}, slots: [null, null] };
+      let refund = 0;
+      if ((cons.dart || 0) > 0) {
+        sk.levels.shockDart = 1;
+        sk.slots[0] = "shockDart";
+        refund += (cons.dart - 1) * CFG.skills.migrateRefundPerExtra;
+      }
+      if ((cons.cell || 0) > 0) {
+        sk.levels.powerCell = 1;
+        sk.slots[sk.slots[0] ? 1 : 0] = "powerCell";
+        refund += (cons.cell - 1) * CFG.skills.migrateRefundPerExtra;
+      }
+      // a frame that never held a dart still knows the basic subroutine —
+      // same baseline a fresh prologue run starts with
+      if (!sk.levels.shockDart && !sk.levels.powerCell) {
+        sk.levels.shockDart = 1;
+        sk.slots[0] = "shockDart";
+      }
+      c.skills = sk;
+      c.souls += refund;
+      delete c.consumables;
+    }
+    pr.v = 7;
+  }
   return pr;
 }
 let profile = loadProfile();
@@ -1104,8 +1186,14 @@ function resumeRun() {
   if (!cp) return false;
   run = cp.run;
   run.tiles = new Map(run.tiles.map(t => [key(t.q, t.r), t]));
+  // checkpoints from before the skill-chip system predate these fields
+  if (!run.player.skills) run.player.skills = defaultSkills();
+  if (!run.player.skillCd) run.player.skillCd = {};
+  if (run.player.ward === undefined) run.player.ward = 0;
+  if (!run.mines) run.mines = [];
+  delete run.player.consumables;
   ui.screen = "game";
-  ui.rollMode = false; ui.throwDart = false; ui.walking = null; ui.specialMode = null;
+  ui.rollMode = false; ui.skillMode = null; ui.walking = null; ui.specialMode = null;
   document.body.classList.remove("overworld");
   for (const id of ["menu", "death", "win", "shop", "terminal", "inv", "node"])
     document.getElementById(id).classList.add("hidden");
@@ -1130,7 +1218,7 @@ const GAME_VERSION = "2026-08-23-config";
 // static site to bake in a real deploy timestamp, so this is it. Shown
 // as a footer note on the intro/menu page, so it's always clear which
 // build a given browser tab is actually running before you dive in.
-const DEPLOY_TIME = "2026-08-29T08:27:14Z";
+const DEPLOY_TIME = "2026-08-29T09:10:05Z";
 function showDeployBadge() {
   const el = document.getElementById("deploy-badge");
   if (!el) return;
@@ -1225,13 +1313,13 @@ function newRun(seed) {
       baseMaxHp: 12, baseMaxSt: 3, bonusDmg: 0,
       items: [], equip: { weapon: null, plating: null, sensor: null, drive: null, utility: null },
       currency: { transmute: 2, aug: 1, alch: 1, regal: 0, exalt: 0, chaos: 0 },
-      consumables: { dart: 1, cell: 0 },
+      skills: defaultSkills(), skillCd: {}, ward: 0,
       flask: 3, maxFlask: 3, souls: 0, parry: false, parryHit: false, dead: false,
     },
     tiles: new Map(),
     enemies: [],
     shards: [],
-    chests: [], groundLoot: [],
+    chests: [], groundLoot: [], mines: [],
     stairs: null, bay: null, bloodstain: null, terminal: null,
     turn: 0, kills: 0, over: false, won: false,
     log: [], actionLog: [],
@@ -1557,6 +1645,7 @@ function genFloor() {
   run.shards = [];
   run.chests = [];
   run.groundLoot = [];
+  run.mines = [];
   run.bloodstain = null;
   run.terminal = null;
   run.event = { type: (run.mode === "sector" && f.eventType) || null };
@@ -2249,39 +2338,177 @@ function spendGearTurn() {
   }
   return false;
 }
-function useConsumable(kind, target) {
+/* skill chip combat: each cast costs the chip's power, starts its turn
+   cooldown, and ends the turn — a real action, not a freebie. Lane chips
+   (dart, grapple) fly the old shock dart's flight rule: down one of the
+   six axes, rock stops it, the FIRST body catches it. */
+function socketedSkill(slot) {
   const p = run.player;
-  if (run.over || (p.consumables[kind] || 0) <= 0) return false;
-  if (kind === "cell") {
-    p.st = p.maxSt;
-    p.hp = Math.min(p.maxHp, p.hp + 2);
-    p.consumables.cell--;
-    log("Power cell spent. Capacitors full.", "good");
-    sfx("repair");
-    endTurn();
-    return true;
+  const id = p.skills && p.skills.slots ? p.skills.slots[slot] : null;
+  return id && SKILL_DEFS[id] ? id : null;
+}
+function canUseSkill(slot) {
+  const p = run.player;
+  const id = socketedSkill(slot);
+  if (!id || run.over) return null;
+  if ((p.skillCd && p.skillCd[id]) > 0) return null;
+  if (p.st < SKILLS.defs[id].cost) return null;
+  return id;
+}
+function spendSkill(id) {
+  const p = run.player;
+  p.st -= SKILLS.defs[id].cost;
+  if (!p.skillCd) p.skillCd = {};
+  // +1 because the cast's own endTurn ticks cooldowns immediately: a
+  // stored N means N full player actions before the chip lights again
+  p.skillCd[id] = SKILLS.defs[id].cooldown + 1;
+}
+function laneVictim(range, tq, tr) {
+  const p = run.player;
+  const d = axisDir(p.q, p.r, tq, tr);
+  if (d < 0 || hexDist(p.q, p.r, tq, tr) > range) return null;
+  let q = p.q, r = p.r;
+  for (let i = 0; i < range; i++) {
+    q += DIRS[d][0]; r += DIRS[d][1];
+    const t = run.tiles.get(key(q, r));
+    if (!t || t.rock) break;
+    const e = run.enemies.find(o => o.q === q && o.r === r);
+    if (e) return { e, d };
   }
-  if (kind === "dart") {
-    if (!target) return false;
-    const d = axisDir(p.q, p.r, target.q, target.r);
-    if (d < 0 || hexDist(p.q, p.r, target.q, target.r) > 4) return false;
-    // fly down the line: rock stops it, the FIRST body catches it
-    let q = p.q, r = p.r, victim = null;
-    for (let i = 0; i < 4; i++) {
-      q += DIRS[d][0]; r += DIRS[d][1];
-      const t = run.tiles.get(key(q, r));
-      if (!t || t.rock) break;
-      victim = run.enemies.find(e => e.q === q && e.r === r);
-      if (victim) break;
-    }
-    if (!victim) return false;
-    p.consumables.dart--;
+  return null;
+}
+// lane-targeted casts (Shock Dart, Mag Grapple) resolve on a clicked hex
+function actSkillShot(slot, tq, tr) {
+  const p = run.player;
+  const id = canUseSkill(slot);
+  if (!id || SKILL_DEFS[id].target !== "lane") return false;
+  const lv = skillLevel(id);
+  const hit = laneVictim(skillStat(id, "range", lv), tq, tr);
+  if (!hit) return false;
+  logAction("skill", { id, lv, at: [p.q, p.r], target: [hit.e.q, hit.e.r] });
+  spendSkill(id);
+  if (id === "shockDart") {
+    fx.push({ type: "chargeStreak", x1: hexX(p.q, p.r), y1: hexY(p.q, p.r),
+      x2: hexX(hit.e.q, hit.e.r), y2: hexY(hit.e.q, hit.e.r), color: "95,224,240", t: 0, dur: 0.25 });
     sfx("strike");
-    hurtEnemy(victim, 4, null);
-    if (!run.over) endTurn();
-    return true;
+    hurtEnemy(hit.e, skillStat(id, "dmg", lv), "shock dart");
+  } else {
+    // Mag Grapple: reel the victim down its lane to your side, zap and
+    // stagger it — repositioning is the payload, the damage is a bonus
+    const e = hit.e;
+    fx.push({ type: "chargeStreak", x1: hexX(e.q, e.r), y1: hexY(e.q, e.r),
+      x2: hexX(p.q, p.r), y2: hexY(p.q, p.r), color: "240,168,64", t: 0, dur: 0.3 });
+    const lq = p.q + DIRS[hit.d][0], lr = p.r + DIRS[hit.d][1];
+    if (!occupied(lq, lr) || (e.q === lq && e.r === lr)) { e.q = lq; e.r = lr; }
+    // being yanked off its feet interrupts whatever it was charging
+    e.state = "idle"; e.windupHexes = []; e.windupNext = null;
+    e.stagger = Math.max(e.stagger || 0, skillStat(id, "stagger", lv));
+    sfx("block");
+    hurtEnemy(e, skillStat(id, "dmg", lv), "mag grapple");
   }
-  return false;
+  if (!run.over) endTurn();
+  refreshHud();
+  return true;
+}
+// Arc Mine: plant on a clicked adjacent open hex; detonates underfoot
+function mineAt(q, r) { return run.mines && run.mines.find(m => m.q === q && m.r === r); }
+function canPlantMine(q, r) {
+  const p = run.player;
+  return hexDist(p.q, p.r, q, r) === 1 && walkable(q, r) && !occupied(q, r) && !mineAt(q, r);
+}
+function actSkillMine(slot, q, r) {
+  const p = run.player;
+  const id = canUseSkill(slot);
+  if (id !== "arcMine" || !canPlantMine(q, r)) return false;
+  const lv = skillLevel(id);
+  logAction("skill", { id, lv, at: [p.q, p.r], target: [q, r] });
+  spendSkill(id);
+  if (!run.mines) run.mines = [];
+  run.mines.push({ q, r, dmg: skillStat(id, "dmg", lv) });
+  log("Arc mine armed.", "good");
+  sfx("core");
+  endTurn();
+  refreshHud();
+  return true;
+}
+// self-cast chips (Power Cell, Kinetic Ward, EMP Burst) fire on the button
+function actSkillInstant(slot) {
+  const p = run.player;
+  const id = canUseSkill(slot);
+  if (!id || SKILL_DEFS[id].target !== "self") return false;
+  const lv = skillLevel(id);
+  logAction("skill", { id, lv, at: [p.q, p.r] });
+  spendSkill(id);
+  if (id === "powerCell") {
+    p.st = Math.min(p.maxSt, p.st + skillStat(id, "power", lv));
+    p.hp = Math.min(p.maxHp, p.hp + skillStat(id, "heal", lv));
+    log("Power cell vented. Capacitors surge.", "good");
+    addFloat(p.q, p.r, "+" + skillStat(id, "power", lv) + " power", "#7fe6f4");
+    sfx("repair");
+  } else if (id === "kineticWard") {
+    p.ward = skillStat(id, "absorb", lv);
+    log("Kinetic ward raised — " + p.ward + " damage will break on it.", "good");
+    addFloat(p.q, p.r, "ward " + p.ward, "#7fe6f4");
+    fx.push({ type: "slamRing", x: hexX(p.q, p.r), y: hexY(p.q, p.r), color: "127,230,244", t: 0, dur: 0.35 });
+    sfx("block");
+  } else {
+    // EMP Burst: everything in the radius drops its windup and staggers
+    const radius = skillStat(id, "radius", lv);
+    const stag = skillStat(id, "stagger", lv);
+    const dmg = skillStat(id, "dmg", lv);
+    let hitCount = 0;
+    for (const e of [...run.enemies]) {
+      if (hexDist(e.q, e.r, p.q, p.r) > radius) continue;
+      e.state = "idle"; e.windupHexes = []; e.windupNext = null;
+      e.stagger = Math.max(e.stagger || 0, stag);
+      addFloat(e.q, e.r, "overloaded", "#f0c060");
+      if (dmg > 0) { hurtEnemy(e, dmg, "EMP"); if (run.over) return true; }
+      hitCount++;
+    }
+    log(hitCount ? `EMP burst overloads ${hitCount} machine${hitCount === 1 ? "" : "s"}.` : "EMP burst finds nothing to fry.",
+      hitCount ? "good" : "");
+    fx.push({ type: "slamRing", x: hexX(p.q, p.r), y: hexY(p.q, p.r), color: "240,200,95", t: 0, dur: 0.45 });
+    shake = Math.max(shake, 4);
+    sfx("slam");
+  }
+  if (!run.over) endTurn();
+  refreshHud();
+  return true;
+}
+// HUD entry point: self chips cast now, targeted chips toggle click-a-hex
+// aiming exactly like Dash and the lattice specials
+function triggerSkill(slot) {
+  const id = canUseSkill(slot);
+  if (!id) { refreshHud(); return false; }
+  if (SKILL_DEFS[id].target === "self") return actSkillInstant(slot);
+  ui.skillMode = ui.skillMode && ui.skillMode.slot === slot ? null : { slot, id };
+  refreshHud();
+  return true;
+}
+// picking up a chip: learn it (auto-socketing into a free slot), fuse a
+// duplicate for +1 level, or strip a maxed duplicate for cores
+function gainChip(id) {
+  const p = run.player;
+  if (!SKILL_DEFS[id]) return;
+  if (!p.skills) p.skills = defaultSkills();
+  const name = SKILL_DEFS[id].name;
+  const lv = p.skills.levels[id] || 0;
+  logAction("pickup", { kind: "chip", skill: id, at: [p.q, p.r], lv: Math.min(SKILLS.maxLevel, lv + 1) });
+  if (!lv) {
+    p.skills.levels[id] = 1;
+    const free = p.skills.slots.indexOf(null);
+    if (free >= 0) p.skills.slots[free] = id;
+    log("Chip found: " + name + (free >= 0 ? " — socketed." : " — sockets full, see Gear."), "good");
+    addFloat(p.q, p.r, name, "#c88aff");
+  } else if (lv < SKILLS.maxLevel) {
+    p.skills.levels[id] = lv + 1;
+    log("Duplicate " + name + " fused — level " + (lv + 1) + ".", "good");
+    addFloat(p.q, p.r, name + " Lv" + (lv + 1), "#c88aff");
+  } else {
+    p.souls += SKILLS.fuseRefundCores;
+    log(name + " is already at peak calibration — stripped for " + SKILLS.fuseRefundCores + " cores.", "good");
+    addFloat(p.q, p.r, "+" + SKILLS.fuseRefundCores + " cores", "#7fe0f4");
+  }
 }
 
 function afterPlayerMove() {
@@ -2330,12 +2557,14 @@ function afterPlayerMove() {
       logAction("pickup", { kind: "chest-currency", at: [p.q, p.r], orb: chest.contents.orb, n: chest.contents.n });
       log("Cache open: " + chest.contents.n + "× " + label + ".", "good");
       addFloat(p.q, p.r, "+" + chest.contents.n + " " + label, "#c9a24b");
+    } else if (chest.contents.kind === "chip") {
+      log("Cache open: a skill chip.", "good");
+      gainChip(chest.contents.skill);
     } else {
-      const label = chest.contents.supply === "dart" ? "Shock Dart" : "Power Cell";
-      p.consumables[chest.contents.supply] = (p.consumables[chest.contents.supply] || 0) + chest.contents.n;
-      logAction("pickup", { kind: "chest-supply", at: [p.q, p.r], supply: chest.contents.supply, n: chest.contents.n });
-      log("Cache open: " + chest.contents.n + "× " + label + ".", "good");
-      addFloat(p.q, p.r, "+" + chest.contents.n + " " + label, "#8fe0f0");
+      // legacy "supply" chests from a pre-chip checkpoint: the counted
+      // consumables are gone, so the cache pays out the matching chip
+      log("Cache open: a skill chip.", "good");
+      gainChip(chest.contents.supply === "cell" ? "powerCell" : "shockDart");
     }
     sfx("core");
   }
@@ -2459,6 +2688,15 @@ function hurtPlayer(e, dmg) {
     sfx("parry");
     return;
   }
+  // Kinetic Ward chip: the field breaks before the hull does
+  if (p.ward > 0 && dmg > 0) {
+    const soak = Math.min(p.ward, dmg);
+    p.ward -= soak;
+    dmg -= soak;
+    addFloat(p.q, p.r, "-" + soak + " ward", "#7fe6f4");
+    if (p.ward <= 0) log("The kinetic ward shatters.", "warn");
+    if (dmg <= 0) { sfx("block"); return; }
+  }
   logAction("hurt", { source: e.type, at: [p.q, p.r], dmg, hpAfter: p.hp - dmg });
   p.hp -= dmg;
   addFloat(p.q, p.r, "-" + dmg, "#e06060");
@@ -2509,6 +2747,23 @@ function endTurn() {
     aiAct(e, flow);
     if (run.over) return;
   }
+
+  // 3. armed mines detonate under whatever ended its move on them
+  if (run.mines && run.mines.length) {
+    for (let i = run.mines.length - 1; i >= 0; i--) {
+      const m = run.mines[i];
+      const victim = run.enemies.find(e => e.q === m.q && e.r === m.r);
+      if (!victim) continue;
+      run.mines.splice(i, 1);
+      burst(hexX(m.q, m.r), hexY(m.q, m.r), "#f0c060", 12, 90);
+      log("Arc mine detonates under the " + ENEMY[victim.type].name + ".", "good");
+      sfx("slam");
+      hurtEnemy(victim, m.dmg, "arc mine");
+      if (run.over) return;
+    }
+  }
+  // chip cooldowns tick once per cycle
+  if (p.skillCd) for (const k in p.skillCd) if (p.skillCd[k] > 0) p.skillCd[k]--;
 
   updateFov();
   tickEvents();
@@ -3213,7 +3468,7 @@ function winRun() {
   if (run.mode === "campaign") {
     const first = !profile || !profile.atlas.unlocked;
     if (!profile) {
-      profile = { v: 6, character: snapshotCharacter(p), tree: { pts: 0, nodes: [] },
+      profile = { v: 7, character: snapshotCharacter(p), tree: { pts: 0, nodes: [] },
         atlas: { seed: (Math.random() * 1e9) | 0, unlocked: false, nodes: {}, keys: [], tierCap: CFG.levelGen.startingTierCap } };
     } else {
       profile.character = snapshotCharacter(p);
@@ -3235,14 +3490,15 @@ function snapshotCharacter(p) {
   return {
     baseMaxHp: p.baseMaxHp, baseMaxSt: p.baseMaxSt, bonusDmg: p.bonusDmg,
     maxFlask: p.maxFlask, souls: p.souls,
-    items: p.items, equip: p.equip, currency: p.currency, consumables: p.consumables,
+    items: p.items, equip: p.equip, currency: p.currency, skills: p.skills,
   };
 }
 function characterToPlayer(c) {
   return {
     q: 0, r: 0, hp: 1, st: 1,
     baseMaxHp: c.baseMaxHp, baseMaxSt: c.baseMaxSt, bonusDmg: c.bonusDmg,
-    items: c.items, equip: c.equip, currency: c.currency, consumables: c.consumables,
+    items: c.items, equip: c.equip, currency: c.currency,
+    skills: c.skills || defaultSkills(), skillCd: {}, ward: 0,
     flask: c.maxFlask, maxFlask: c.maxFlask, souls: c.souls,
     parry: false, parryHit: false, dead: false,
   };
@@ -3254,7 +3510,7 @@ function syncProfileFromPlayer() {
   const p = run.player, c = profile.character;
   c.baseMaxHp = p.baseMaxHp; c.baseMaxSt = p.baseMaxSt; c.bonusDmg = p.bonusDmg;
   c.maxFlask = p.maxFlask; c.souls = p.souls;
-  c.items = p.items; c.equip = p.equip; c.currency = p.currency; c.consumables = p.consumables;
+  c.items = p.items; c.equip = p.equip; c.currency = p.currency; c.skills = p.skills;
 }
 /* ============================ FOUNDRY ANOMALIES =========================
    Endgame node events. Rolled once, permanently, the moment a frontier
@@ -3595,7 +3851,7 @@ function enterOverworld() {
   const p = run.player;
   p.hp = p.maxHp; p.st = p.maxSt; p.flask = p.maxFlask;
   ui.screen = "overworld";
-  ui.rollMode = false; ui.throwDart = false; ui.walking = null; ui.specialMode = null;
+  ui.rollMode = false; ui.skillMode = null; ui.walking = null; ui.specialMode = null;
   document.body.classList.add("overworld");
   for (const id of ["menu", "death", "win", "shop", "terminal", "inv", "node"])
     document.getElementById(id).classList.add("hidden");
@@ -3642,6 +3898,8 @@ function enterNode(q, r, keyId) {
   run.seed = (profile.atlas.seed ^ (q * 73856093) ^ (r * 19349663) ^ (tier * 2654435761)) >>> 0;
   run.floor = tier + 1;   // drives loot depth (affix tiers, rarity weights)
   run.over = false; run.won = false; run.turn = 0; run.kills = 0;
+  // a fresh sector jacks in with cold chips and no standing field
+  run.player.skillCd = {}; run.player.ward = 0;
   const sg = CFG.levelGen.sector;
   if (isGate) {
     // boss arena: open ground, a few pillars, one guardian. Which one is
@@ -3690,7 +3948,7 @@ function enterNode(q, r, keyId) {
   run.floorConf.keyMods = skey.affixes.map(a => a.mod);
   genFloor();
   ui.screen = "game";
-  ui.rollMode = false; ui.throwDart = false; ui.walking = null; ui.specialMode = null;
+  ui.rollMode = false; ui.skillMode = null; ui.walking = null; ui.specialMode = null;
   document.body.classList.remove("overworld");
   document.getElementById("node").classList.add("hidden");
   centerCam();
@@ -3863,7 +4121,7 @@ function extractToOverworld() {
   const p = run.player;
   p.hp = p.maxHp; p.st = p.maxSt; p.flask = p.maxFlask; p.parry = false; p.dead = false;
   ui.screen = "overworld";
-  ui.rollMode = false; ui.throwDart = false; ui.walking = null; ui.specialMode = null;
+  ui.rollMode = false; ui.skillMode = null; ui.walking = null; ui.specialMode = null;
   document.body.classList.add("overworld");
   // land the map view on the sector you just left, not back at the Bay —
   // the frontier you're pushing stays under your thumb
@@ -4295,25 +4553,54 @@ function render(now) {
     }
   }
 
-  /* shock-dart targets: first machine down each clear lane */
-  if (ui.throwDart) {
-    for (let d = 0; d < 6; d++) {
-      let q = run.player.q, r = run.player.r;
-      for (let i = 0; i < 4; i++) {
-        q += DIRS[d][0]; r += DIRS[d][1];
-        const tl = run.tiles.get(key(q, r));
-        if (!tl || tl.rock) break;
-        const e = run.enemies.find(o => o.q === q && o.r === r);
-        if (e) {
-          if (visible.has(key(q, r))) {
-            hexPath(ctx, hexX(q, r), hexY(q, r), 0.75);
-            ctx.strokeStyle = "#5fe0f0";
-            ctx.lineWidth = 2.5;
-            ctx.stroke();
+  /* skill-chip targeting: lane chips ring the first machine down each
+     clear lane (cyan for Shock Dart, amber for Mag Grapple); Arc Mine
+     rings the adjacent open hexes it can arm */
+  if (ui.skillMode) {
+    const m = ui.skillMode;
+    if (SKILL_DEFS[m.id].target === "lane") {
+      const range = skillStat(m.id, "range", skillLevel(m.id));
+      for (let d = 0; d < 6; d++) {
+        let q = run.player.q, r = run.player.r;
+        for (let i = 0; i < range; i++) {
+          q += DIRS[d][0]; r += DIRS[d][1];
+          const tl = run.tiles.get(key(q, r));
+          if (!tl || tl.rock) break;
+          const e = run.enemies.find(o => o.q === q && o.r === r);
+          if (e) {
+            if (visible.has(key(q, r))) {
+              hexPath(ctx, hexX(q, r), hexY(q, r), 0.75);
+              ctx.strokeStyle = m.id === "magGrapple" ? "#f0a840" : "#5fe0f0";
+              ctx.lineWidth = 2.5;
+              ctx.stroke();
+            }
+            break;
           }
-          break;
         }
       }
+    } else if (m.id === "arcMine") {
+      for (const [dq, dr] of DIRS) {
+        const q = run.player.q + dq, r = run.player.r + dr;
+        if (!canPlantMine(q, r)) continue;
+        hexPath(ctx, hexX(q, r), hexY(q, r), 0.7);
+        ctx.strokeStyle = "#f0c060";
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+      }
+    }
+  }
+
+  /* armed arc mines: a diamond on the hex, so the trap stays readable */
+  if (run.mines) {
+    for (const m of run.mines) {
+      const x = hexX(m.q, m.r), y = hexY(m.q, m.r);
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(Math.PI / 4);
+      const pu = 3.5 + Math.sin(t * 5) * 0.8;
+      ctx.fillStyle = "rgba(240,192,96,0.9)";
+      ctx.fillRect(-pu, -pu, pu * 2, pu * 2);
+      ctx.restore();
     }
   }
 
@@ -4636,6 +4923,14 @@ function drawPlayer(p, t) {
   p.bumpY = (p.bumpY || 0) * 0.82;
   pos.x += p.bumpX;
   pos.y += p.bumpY;
+  // an active kinetic ward reads as a humming cyan shell — standing state
+  // the player can always see, per the no-hidden-information rule
+  if (p.ward > 0) {
+    hexPath(ctx, pos.x, pos.y, 0.82 + Math.sin(t * 4) * 0.03);
+    ctx.strokeStyle = "rgba(127,230,244,0.75)";
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+  }
   // chassis
   hexPath(ctx, pos.x, pos.y, 0.62);
   ctx.fillStyle = "#b6c6d2";
@@ -4936,7 +5231,7 @@ function drawStain(b, t) {
 }
 
 /* ================================= UI =================================== */
-const ui = { screen: "game", rollMode: false, throwDart: false, walking: null, specialMode: null, keys: {}, gearTab: "equip" };
+const ui = { screen: "game", rollMode: false, skillMode: null, walking: null, specialMode: null, keys: {}, gearTab: "equip" };
 
 function refreshHud() {
   const p = run.player;
@@ -4983,6 +5278,22 @@ function refreshHud() {
       : `Discharge down a lane at range, no reach required (${CFG.combat.special.cost} power) [S]`;
     specBtn.classList.toggle("active", !!ui.specialMode);
     specBtn.disabled = p.st < CFG.combat.special.cost || run.over;
+  }
+  // skill-chip sockets: hidden while empty, live counters while cooling
+  for (let slot = 0; slot < 2; slot++) {
+    const btn = document.getElementById("btn-skill-" + slot);
+    const id = socketedSkill(slot);
+    btn.classList.toggle("hidden", !id || ui.screen !== "game");
+    if (!id) continue;
+    const d = SKILLS.defs[id];
+    const cd = (p.skillCd && p.skillCd[id]) || 0;
+    const lv = skillLevel(id);
+    btn.textContent = SKILL_DEFS[id].glyph + " " + SKILL_DEFS[id].name +
+      (lv > 1 ? " Lv" + lv : "") + (cd > 0 ? " · " + cd : "");
+    btn.title = SKILL_DEFS[id].desc(lv) +
+      ` ${d.cost ? d.cost + " power · " : ""}${d.cooldown}-cycle cooldown [${slot + 1}]`;
+    btn.classList.toggle("active", !!(ui.skillMode && ui.skillMode.slot === slot));
+    btn.disabled = cd > 0 || p.st < d.cost || run.over;
   }
   const b = run.bay;
   document.getElementById("btn-rest").classList.toggle("hidden",
@@ -5101,19 +5412,6 @@ function showShop(feedback) {
       `<em>${t ? t.pts : 0} pts · ${spent}/${TREE_NODES.length}</em>`, () => {
         document.getElementById("shop").classList.add("hidden");
         showTree();
-      });
-  }
-
-  // repeatable restocks keep the bay useful after the upgrades cap out —
-  // there is no other way to refill darts and cells
-  head("Restock");
-  for (const s of SHOP_RESTOCKS) {
-    offer(p.souls < s.cost,
-      `<b>${s.name}</b><span>${s.desc}</span><em>${s.cost} cores</em>`, () => {
-        if (p.souls < s.cost) return;
-        p.consumables[s.kind] = (p.consumables[s.kind] || 0) + 1;
-        log(s.name + " fabricated.", "good");
-        paid(s.cost, "+1 " + s.name + " — " + s.cost + " cores");
       });
   }
 
@@ -5851,35 +6149,48 @@ function refreshGearKeys() {
     el.appendChild(card);
   }
 }
+/* the chip library: every known skill chip with its level and live
+   numbers, plus socket controls. Combat casting never comes through
+   here — that's the HUD's job — this is loadout only. */
 function refreshGearTools() {
   const p = run.player;
   const el = document.getElementById("gear-tools");
   el.innerHTML = "";
-  const rows = [
-    { kind: "dart", label: "Shock Dart", desc: CONSUMABLE_DESC.dart, n: p.consumables.dart || 0 },
-    { kind: "cell", label: "Power Cell", desc: CONSUMABLE_DESC.cell, n: p.consumables.cell || 0 },
-  ];
-  for (const row of rows) {
+  if (!p.skills) p.skills = defaultSkills();
+  const known = SKILL_IDS.filter(id => (p.skills.levels[id] || 0) > 0);
+  if (!known.length) {
+    el.innerHTML = `<div class="item-card"><div class="item-info"><b>No skill chips</b>` +
+      `<span>Caches drop combat subroutines — find one and it sockets here.</span></div></div>`;
+    return;
+  }
+  for (const id of known) {
+    const lv = p.skills.levels[id];
+    const d = SKILLS.defs[id];
+    const slot = p.skills.slots.indexOf(id);
     const card = document.createElement("div");
     card.className = "item-card";
-    card.innerHTML = `<div class="item-info"><b>${row.label} ×${row.n}</b><span>${row.desc}</span></div>`;
+    card.innerHTML = `<div class="item-info">` +
+      `<b>${SKILL_DEFS[id].glyph} ${SKILL_DEFS[id].name} · Lv${lv}${lv >= SKILLS.maxLevel ? " (max)" : ""}` +
+      `${slot >= 0 ? ` <span style="color:#7fe6f4">— socket ${slot + 1}</span>` : ""}</b>` +
+      `<span>${SKILL_DEFS[id].desc(lv)} ${d.cost ? d.cost + " power · " : ""}${d.cooldown}-cycle cooldown. ` +
+      `Duplicates fuse for +1 level.</span></div>`;
     const btns = document.createElement("div"); btns.className = "item-btns";
-    const btn = document.createElement("button");
-    if (row.kind === "dart") {
-      btn.textContent = "Throw";
-      btn.disabled = row.n <= 0 || run.over;
-      btn.addEventListener("click", () => {
-        ui.throwDart = true;
-        closeGear();
-        showMsg("Pick a target down a clear lane.");
-        refreshHud();
-      });
+    if (slot >= 0) {
+      const b = document.createElement("button");
+      b.textContent = "Unsocket";
+      b.addEventListener("click", () => { p.skills.slots[slot] = null; refreshGear(); refreshHud(); });
+      btns.appendChild(b);
     } else {
-      btn.textContent = "Use";
-      btn.disabled = row.n <= 0 || run.over;
-      btn.addEventListener("click", () => { useConsumable("cell"); closeGear(); refreshHud(); });
+      for (let i = 0; i < SKILLS.slots; i++) {
+        const b = document.createElement("button");
+        const cur = p.skills.slots[i];
+        b.textContent = "Socket " + (i + 1) + (cur ? " ⟲" : "");
+        b.title = cur ? "Replaces " + SKILL_DEFS[cur].name : "";
+        b.addEventListener("click", () => { p.skills.slots[i] = id; refreshGear(); refreshHud(); });
+        btns.appendChild(b);
+      }
     }
-    btns.appendChild(btn); card.appendChild(btns);
+    card.appendChild(btns);
     el.appendChild(card);
   }
 }
@@ -6104,9 +6415,15 @@ function tryPlayerAction(q, r) {
     refreshHud();
     return;
   }
-  if (ui.throwDart) {
-    ui.throwDart = false;
-    if (enemy) { if (!useConsumable("dart", enemy)) log("No clear lane for the dart.", "warn"); }
+  if (ui.skillMode) {
+    const m = ui.skillMode;
+    ui.skillMode = null;
+    if (SKILL_DEFS[m.id].target === "lane") {
+      if (enemy && !actSkillShot(m.slot, q, r)) log("No clear lane.", "warn");
+    } else if (m.id === "arcMine") {
+      actSkillMine(m.slot, q, r);
+    }
+    // a tap anywhere invalid just cancels, same as a missed dash target
     refreshHud();
     return;
   }
@@ -6255,6 +6572,8 @@ function triggerSpecial() {
   refreshHud();
 }
 document.getElementById("btn-special").addEventListener("click", triggerSpecial);
+document.getElementById("btn-skill-0").addEventListener("click", () => triggerSkill(0));
+document.getElementById("btn-skill-1").addEventListener("click", () => triggerSkill(1));
 document.getElementById("btn-parry").addEventListener("click", () => { actParry(); refreshHud(); });
 document.getElementById("btn-flask").addEventListener("click", () => { actFlask(); refreshHud(); });
 document.getElementById("btn-wait").addEventListener("click", () => { actWait(); refreshHud(); });
@@ -6291,9 +6610,11 @@ window.addEventListener("keydown", ev => {
   else if (k === "f") actParry();
   else if (k === "h" || k === "q") actFlask();
   else if (k === "s") triggerSpecial();
+  else if (k === "1") triggerSkill(0);
+  else if (k === "2") triggerSkill(1);
   else if (k === "b" || k === "i") { if (gearOpen()) closeGear(); else openGear(); }
   else if (k === " ") { ev.preventDefault(); actWait(); }
-  else if (k === "escape") { ui.rollMode = false; ui.throwDart = false; ui.specialMode = null; closeGear(); }
+  else if (k === "escape") { ui.rollMode = false; ui.skillMode = null; ui.specialMode = null; closeGear(); }
   refreshHud();
 });
 
@@ -6327,7 +6648,7 @@ function showMenu() {
   document.getElementById("menu").classList.remove("hidden");
 }
 function startRun(seed) {
-  ui.throwDart = false;
+  ui.skillMode = null;
   ui.rollMode = false;
   ui.screen = "game";
   document.body.classList.remove("overworld");
@@ -6448,13 +6769,16 @@ window.RL = {
   persist, savePersist, cam,
   ENEMY, BASE_TYPES, BARE_FISTS, SLOTS, SLOT_LABEL, RARITY, STAT_KEYS,
   PREFIXES, SUFFIXES, UNIQUES, CURRENCY, CORRUPT_MODS, KEY_MOD_CAP, FOV_R, playerFovR, FLASK_HEAL,
-  genItem, genUnique, genArmoryItem, genCorruptedItem, rollItemLoot, rollRarity,
+  genItem, genUnique, genArmoryItem, genCorruptedItem, rollItemLoot, rollRarity, rollChestContents,
   rollImplicit, implicitMidpoint,
   equipItem, unequipItem, dropItem, sellItem, sellValue, sellKey, keySalvageValue,
   itemById, equippedItem, isEquipped, itemEffect,
   activeWeaponItem, getActiveWeaponType,
   canApplyOrb, applyOrb, grantOrbs, rollOrbKind, orbChoices,
-  useConsumable, inCombat, recalc, canReach,
+  inCombat, recalc, canReach,
+  SKILL_IDS, SKILL_DEFS, skillStat, skillLevel, defaultSkills, gainChip,
+  socketedSkill, canUseSkill, canPlantMine, mineAt, laneVictim,
+  triggerSkill, actSkillShot, actSkillMine, actSkillInstant,
   get profile() { return profile; },
   enterOverworld, enterNode, extractToOverworld, fabricateKey,
   sectorComplete, revealArea, worldCell, keyFabCost, BIOMES, TIER_CAP,
@@ -6473,7 +6797,7 @@ window.RL = {
   placeSurge, placeVault, placeConvoy, placeCorruptZone,
   ui,
   buildDebugBundle, exportDebugState, importDebugState, downloadJSON, GAME_VERSION,
-  AFFIX_TIER_BANDS, SHOP_RESTOCKS, SHOP_ORBS, GAMBLE_COST, showShop,
+  AFFIX_TIER_BANDS, SHOP_ORBS, GAMBLE_COST, showShop,
   TREE_NODES, TREE_NODE_BY_ID, treeState, treeApplies, canAllocateNode, allocateNode,
   canRefundNode, refundNode, grantTreePoints, showTree, refreshHud, refreshGear,
   CFG, CFG_ERRORS, validateConfig,

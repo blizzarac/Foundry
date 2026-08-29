@@ -312,7 +312,7 @@ function check(name, cond) {
   const r4 = await page.evaluate(() => {
     const RL = window.RL;
     const out = {};
-    out.migrated = RL.profile.v === 6;   // v4 events backfill + v5 frame lattice + v6 keystone exclusivity
+    out.migrated = RL.profile.v === 7;   // v4 events backfill + v5 frame lattice + v6 keystone exclusivity + v7 skill chips
     out.frontierNodesHaveEventField = Object.values(RL.profile.atlas.nodes)
       .filter(n => n.state === "frontier")
       .every(n => n.event !== undefined);

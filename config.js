@@ -160,10 +160,6 @@ window.IRONHEX_CONFIG = {
       { "id": "dmg",   "name": "Weapon calibration",    "desc": "+1 weapon damage", "base": 60, "cap": 3, "delta": { "bonusDmg": 1 } },
       { "id": "flask", "name": "Nanite reservoir",      "desc": "+1 repair cell",   "base": 40, "cap": 2, "delta": { "maxFlask": 1, "flask": 1 } }
     ],
-    "restocks": [
-      { "kind": "dart", "name": "Shock Dart", "desc": "+1 shock dart", "cost": 40 },
-      { "kind": "cell", "name": "Power Cell", "desc": "+1 power cell", "cost": 60 }
-    ],
     "orbs": [
       { "kind": "transmute", "cost": 30 },
       { "kind": "aug",       "cost": 50 },
@@ -720,5 +716,29 @@ window.IRONHEX_CONFIG = {
     "vault": { "lockdownCycles": 9, "sightRange": 7 },
     "convoy": { "totalHaulers": 3, "entryInCycles": 3 },
     "corrupted": { "radius": 3, "dmgAdd": 1 }
+  },
+
+  // Skill chips: found combat subroutines, socketed into HUD slots and
+  // fired mid-fight for power — the mechanism that replaced the counted
+  // dart/cell consumables. Finding a chip you already know fuses into it
+  // for +1 level; each level adds the chip's perLevel numbers on top of
+  // base. Names, descriptions, targeting kinds and the combat code live
+  // in rl.js (identity/behavior); every NUMBER lives here. cooldown is
+  // in turns after the cast; cost is power. chestChance is the slice of
+  // non-elite chest rolls that pay a chip (it replaced the supply slice).
+  "skills": {
+    "slots": 2,
+    "maxLevel": 5,
+    "fuseRefundCores": 25,
+    "migrateRefundPerExtra": 10,
+    "chestChance": 0.14,
+    "defs": {
+      "shockDart":   { "cost": 1, "cooldown": 2, "base": { "range": 4, "dmg": 4 },              "perLevel": { "dmg": 2 } },
+      "powerCell":   { "cost": 0, "cooldown": 8, "base": { "power": 4, "heal": 2 },             "perLevel": { "power": 1, "heal": 1 } },
+      "magGrapple":  { "cost": 2, "cooldown": 4, "base": { "range": 4, "dmg": 1, "stagger": 1 },"perLevel": { "dmg": 1, "range": 1 } },
+      "arcMine":     { "cost": 2, "cooldown": 4, "base": { "dmg": 5 },                          "perLevel": { "dmg": 2 } },
+      "kineticWard": { "cost": 2, "cooldown": 6, "base": { "absorb": 4 },                       "perLevel": { "absorb": 2 } },
+      "empBurst":    { "cost": 3, "cooldown": 6, "base": { "radius": 2, "stagger": 2, "dmg": 0 },"perLevel": { "dmg": 2 } }
+    }
   }
 };

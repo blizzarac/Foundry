@@ -393,11 +393,6 @@ function check(name, cond) {
       document.getElementById("shop-sub").textContent.includes("uplink");
     const shopBtn = t => [...document.querySelectorAll("#shop-items .shop-item")]
       .find(b => b.textContent.includes(t));
-    const dartsBefore = p.consumables.dart || 0;
-    shopBtn("Shock Dart").click();
-    out.uplinkBuyPersists = (p.consumables.dart || 0) === dartsBefore + 1 &&
-      RL.profile.character.souls === p.souls &&
-      (RL.profile.character.consumables.dart || 0) === dartsBefore + 1;
     // the prototype gamble rolls at the atlas tier cap (8 after the gate)
     out.uplinkGambleAtCap =
       shopBtn("Prototype weapon").textContent.includes("T8 depth");

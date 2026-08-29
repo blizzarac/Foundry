@@ -26,10 +26,15 @@
   so exponential tiers beat linear gear and every build hits a wall
   eventually; levelGen.territory sets the map's minimum-key-tier
   geography — grace radius, ring width, hot-zone density/bonus, and the
-  loot-quantity bonus demanding land pays), the whole
-  economy (restocks, orb prices, orb loot-drop weights, gamble cost, key
+  loot-quantity bonus demanding land pays), skill chips (slots, max
+  level, fuse/migration core refunds, chest-drop odds, and every chip's
+  cost/cooldown/base+perLevel numbers — chip *identity* (names, glyphs,
+  descriptions, targeting kind) and the combat code live in rl.js, keyed
+  by the closed SKILL_IDS set the validator enforces, same pattern as the
+  lattice's TREE_MECH_KEYS), the whole
+  economy (orb prices, orb loot-drop weights, gamble cost, key
   fab curve, item/key salvage formulas, plus the retired shop upgrades
-  kept only as migration-refund data), the frame lattice (points per
+  and restocks kept only as migration-refund data), the frame lattice (points per
   purge/gate and every tree node: branch, edges, stat magnitudes, each
   notable's or special's mech key + power — the mech *implementations*
   are combat code in rl.js, keyed by the closed TREE_MECH_KEYS set the
@@ -81,8 +86,12 @@
   `node tests/dash-smoke.js` (free-form thruster dash geometry),
   `node tests/config-smoke.js` (proves config.js is the real source of the
   numbers it claims to hold, and that a broken config fails loudly),
-  and `node tests/balance-smoke.js` (power-curve regression harness —
-  prints a TTK/HTD table per tier, run it after any balance change).
+  `node tests/balance-smoke.js` (power-curve regression harness —
+  prints a TTK/HTD table per tier, run it after any balance change),
+  and `node tests/skills-smoke.js` (skill chips: learn/fuse/max-refund on
+  pickup, chest drop wiring, every chip's real combat resolution inside a
+  sector, HUD socket/cooldown display, and the v6→v7 consumable-to-chip
+  migration).
   Set `CHROMIUM_PATH` if Playwright can't find a browser.
 - Ask a player for a debug export (🐞 icon in-game, or "Export debug state"
   on the menu/death screen) to reproduce a reported bug exactly: import it

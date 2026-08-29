@@ -330,7 +330,7 @@ function check(name, cond) {
     out.migrationDropsRanks = migrated.character.upgrades === undefined;
     out.migrationGrantsRetroPoints = migrated.tree &&
       migrated.tree.pts === 2 * CFG.frameTree.pointsPerPurge + CFG.frameTree.pointsPerGate;
-    out.migrationBumpsVersion = migrated.v === 6;
+    out.migrationBumpsVersion = migrated.v === 7;
     // an already-current profile is left alone
     const fresh = RL.migrateProfile(JSON.parse(JSON.stringify(migrated)));
     out.migrationIdempotent = fresh.character.souls === migrated.character.souls &&
@@ -371,7 +371,7 @@ function check(name, cond) {
     const removedCount = beforeCount - migrated6.tree.nodes.length;
     out.migrationRefundsStrippedPoints = removedCount === 6 &&
       migrated6.tree.pts === v5Save.tree.pts + 6;
-    out.migrationV5ToV6BumpsVersion = migrated6.v === 6;
+    out.migrationV5ToV6BumpsVersion = migrated6.v === 7;
 
     // --- the exclusivity rule itself: a second keystone is refused live ---
     // both branches' pre-keystone chains installed, so svK's ONLY blocker
