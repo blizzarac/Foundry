@@ -59,7 +59,17 @@ function check(name, cond, detail) {
     // clusters are unreachable no matter how many points you have — the
     // real achievable ceiling, not the sum of three mutually exclusive builds
     function maxTree() {
-      const lockedOut = ["svK", "svJ", "svc1", "svc2", "svc3", "syK", "syJ", "syc1", "syc2", "syc3"];
+      // exclusivity carves out: the two non-chosen keystones with their tip
+      // clusters AND the generated deep vaults hanging past those clusters,
+      // plus the two non-chosen root specials with their amplifier tails —
+      // this allocation bypasses canAllocateNode, so illegal content has to
+      // be excluded by hand or the ceiling models an impossible character
+      const lockedOut = [
+        "svK", "svJ", "svc1", "svc2", "svc3", "svv1", "svv2", "svv3", "svvN",
+        "syK", "syJ", "syc1", "syc2", "syc3", "syv1", "syv2", "syv3", "syvN",
+        "spCharge", "spBarrage", "spChargeA1", "spChargeA2", "spChargeA3",
+        "spBarrageA1", "spBarrageA2", "spBarrageA3",
+      ];
       RL.profile.tree = { pts: 0, nodes: RL.TREE_NODES.filter(n => !lockedOut.includes(n.id)).map(n => n.id) };
       RL.recalc();
     }
@@ -135,10 +145,12 @@ function check(name, cond, detail) {
     out.checks.gearedTTKBand = geared.filter(ladder).every(s => s.ttk >= 1 && s.ttk <= 8);
     out.checks.gearedHTDBand = geared.filter(ladder).every(s => s.htd >= 3 && s.htd <= 20);
 
-    // even the impossible everything-lattice build stays inside a sane
-    // band: the full tree is a climb's worth of milestones, not a cheat
+    // even the full-allocation build stays inside a sane band. With the
+    // 300+ node tree that ceiling is a several-hundred-purge lifetime
+    // chase, so the band is generous — the compounding deep tiers are what
+    // actually cap it, and the deep checks below prove they still do
     out.checks.fullLatticeTTKBand = latticed.filter(ladder).every(s => s.ttk >= 1 && s.ttk <= 6);
-    out.checks.fullLatticeHTDBand = latticed.filter(ladder).every(s => s.htd >= 3 && s.htd <= 30);
+    out.checks.fullLatticeHTDBand = latticed.filter(ladder).every(s => s.htd >= 3 && s.htd <= 40);
 
     // the enemy curve itself must actually steepen by the documented
     // multipliers: hp ~6.9x from T1->T15 (1 + 0.42*14), dmg step +1/2 tiers
@@ -174,8 +186,11 @@ function check(name, cond, detail) {
     const treeTotals = {};
     for (const n of RL.TREE_NODES) if (n.effect)
       for (const k in n.effect) treeTotals[k] = (treeTotals[k] || 0) + n.effect[k];
-    out.checks.latticeDmgBounded = (treeTotals.dmg || 0) <= 10;
-    out.checks.latticeHpBounded = (treeTotals.maxHpBonus || 0) <= 35;
+    // budgets for the 300+ node tree (the whole-table sum, including the
+    // mutually-exclusive content no one character can hold): raw damage
+    // stays scarce on purpose — the tree's bulk is utility and integrity
+    out.checks.latticeDmgBounded = (treeTotals.dmg || 0) <= 20;
+    out.checks.latticeHpBounded = (treeTotals.maxHpBonus || 0) <= 130;
 
     return out;
   }, TIERS);

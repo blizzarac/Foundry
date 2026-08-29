@@ -58,6 +58,12 @@
   names, descriptions, and the cleave/reach flags that gate real
   attack-code branches) stays in `rl.js` alongside terrain generators,
   boss attack patterns, and AI, which are behavior and always will be.
+- **`tools/gen-tree.js`**: deterministic generator that grew the frame
+  lattice from its 64-node hand-authored skeleton to 310 nodes, splicing
+  its output between GENERATED-…-BEGIN/END markers in config.js (node
+  data) and rl.js (layout coords). The generated blocks are committed;
+  rerun the tool only to change its rules — never hand-edit inside the
+  markers.
 - **Hexfoundry** (legacy tower defense): `hexfoundry.html`, `style.css`, `game.js`.
 - Acceptance suites: `npm install playwright-core && node tests/item-smoke.js`
   (items), `node tests/atlas-smoke.js` (Foundry overworld/endgame),

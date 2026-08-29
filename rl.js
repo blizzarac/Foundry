@@ -1129,7 +1129,7 @@ const GAME_VERSION = "2026-08-23-config";
 // static site to bake in a real deploy timestamp, so this is it. Shown
 // as a footer note on the intro/menu page, so it's always clear which
 // build a given browser tab is actually running before you dive in.
-const DEPLOY_TIME = "2026-08-29T07:49:33Z";
+const DEPLOY_TIME = "2026-08-29T07:58:42Z";
 function showDeployBadge() {
   const el = document.getElementById("deploy-badge");
   if (!el) return;
@@ -5173,6 +5173,49 @@ const TREE_LAYOUT = (() => {
     sy5: [-140, 530], syt3: [-215, 495], sy6: [-90, 615], syN3: [-10, 675],
     sy7: [70, 740], sy8: [140, 815], syt4: [215, 780], syK: [80, 895],
     syJ: [10, 965], syc1: [-70, 1015], syc2: [60, 1045], syc3: [-15, 1095],
+    /* GENERATED-LAYOUT-BEGIN (emitted by tools/gen-tree.js, same branch-space as above) */
+    chg1a1: [-223, 263], chg1a2: [-294, 296], chg1a3: [-359, 338], chg1a4: [-422, 384], chg1a5: [-484, 432], chg1a6: [-542, 484],
+    chg1a7: [-596, 540], chg1a8: [-652, 594], chg1at1: [-312, 362], chg1at2: [-346, 422], chg1au1: [-502, 498], chg1au2: [-536, 558],
+    chg1b1: [-77, 263], chg1b2: [-8, 300], chg1b3: [54, 347], chg1b4: [117, 393], chg1b5: [181, 437], chg1b6: [240, 488],
+    chg1b7: [297, 541], chg1b8: [355, 593], chg1bt1: [10, 366], chg1bt2: [44, 426], chg1bu1: [199, 503], chg1bu2: [233, 563],
+    chg1x: [-152, 385], chg2a1: [-11, 477], chg2a2: [-78, 517], chg2a3: [-138, 567], chg2a4: [-196, 619], chg2a5: [-255, 670],
+    chg2a6: [-316, 719], chg2a7: [-377, 768], chg2a8: [-437, 817], chg2at1: [-96, 583], chg2at2: [-130, 643], chg2au1: [-273, 736],
+    chg2au2: [-307, 796], chg2b1: [134, 471], chg2b2: [204, 505], chg2b3: [267, 551], chg2b4: [330, 597], chg2b5: [394, 642],
+    chg2b6: [459, 685], chg2b7: [523, 729], chg2b8: [586, 775], chg2bt1: [222, 571], chg2bt2: [256, 631], chg2bu1: [412, 708],
+    chg2bu2: [446, 768], chg2x: [65, 601], chg3a1: [-119, 676], chg3a2: [-192, 702], chg3a3: [-260, 740], chg3a4: [-330, 775],
+    chg3a5: [-394, 819], chg3a6: [-456, 867], chg3a7: [-510, 924], chg3a8: [-558, 985], chg3at1: [-210, 768], chg3at2: [-244, 828],
+    chg3au1: [-412, 885], chg3au2: [-446, 945], chg3b1: [26, 682], chg3b2: [97, 714], chg3b3: [169, 745], chg3b4: [239, 779],
+    chg3b5: [303, 824], chg3b6: [366, 869], chg3b7: [425, 921], chg3b8: [482, 973], chg3bt1: [115, 780], chg3bt2: [149, 840],
+    chg3bu1: [321, 890], chg3bu2: [355, 950], chg3x: [-45, 785], chv1: [-12, 1080], chv2: [10, 1160], chv3: [11, 1240],
+    chvN: [0, 1330], svg1a1: [-132, 295], svg1a2: [-200, 332], svg1a3: [-269, 369], svg1a4: [-334, 413], svg1a5: [-392, 466],
+    svg1a6: [-451, 516], svg1a7: [-510, 567], svg1a8: [-572, 615], svg1at1: [-218, 398], svg1at2: [-252, 458], svg1au1: [-410, 532],
+    svg1au2: [-444, 592], svg1b1: [11, 297], svg1b2: [78, 338], svg1b3: [146, 375], svg1b4: [217, 407], svg1b5: [287, 442],
+    svg1b6: [352, 485], svg1b7: [411, 536], svg1b8: [471, 586], svg1bt1: [96, 404], svg1bt2: [130, 464], svg1bu1: [305, 508],
+    svg1bu2: [339, 568], svg1x: [-61, 414], svg2a1: [-31, 547], svg2a2: [-89, 598], svg2a3: [-138, 659], svg2a4: [-190, 717],
+    svg2a5: [-233, 783], svg2a6: [-266, 853], svg2a7: [-291, 927], svg2a8: [-306, 1004], svg2at1: [-107, 664], svg2at2: [-141, 724],
+    svg2au1: [-251, 849], svg2au2: [-285, 909], svg2b1: [105, 539], svg2b2: [171, 580], svg2b3: [235, 625], svg2b4: [298, 672],
+    svg2b5: [353, 727], svg2b6: [399, 790], svg2b7: [436, 859], svg2b8: [461, 933], svg2bt1: [189, 646], svg2bt2: [223, 706],
+    svg2bu1: [371, 793], svg2bu2: [405, 853], svg2x: [49, 684], svg3a1: [-111, 772], svg3a2: [-183, 802], svg3a3: [-251, 840],
+    svg3a4: [-318, 881], svg3a5: [-386, 919], svg3a6: [-454, 956], svg3a7: [-524, 991], svg3a8: [-594, 1026], svg3at1: [-201, 868],
+    svg3at2: [-235, 928], svg3au1: [-404, 985], svg3au2: [-438, 1045], svg3b1: [29, 777], svg3b2: [92, 823], svg3b3: [153, 872],
+    svg3b4: [216, 917], svg3b5: [274, 969], svg3b6: [333, 1020], svg3b7: [385, 1079], svg3b8: [434, 1139], svg3bt1: [110, 889],
+    svg3bt2: [144, 949], svg3bu1: [292, 1035], svg3bu2: [326, 1095], svg3x: [-49, 898], svv1: [-23, 1255], svv2: [19, 1335],
+    svv3: [-18, 1415], svvN: [0, 1505], syg1a1: [86, 270], syg1a2: [13, 297], syg1a3: [-56, 333], syg1a4: [-127, 366],
+    syg1a5: [-192, 410], syg1a6: [-248, 463], syg1a7: [-307, 514], syg1a8: [-365, 567], syg1at1: [-5, 363], syg1at2: [-39, 423],
+    syg1au1: [-210, 476], syg1au2: [-244, 536], syg1b1: [227, 285], syg1b2: [289, 332], syg1b3: [348, 383], syg1b4: [400, 441],
+    syg1b5: [451, 500], syg1b6: [498, 563], syg1b7: [539, 629], syg1b8: [577, 697], syg1bt1: [307, 398], syg1bt2: [341, 458],
+    syg1bu1: [469, 566], syg1bu2: [503, 626], syg1x: [146, 400], syg2a1: [-143, 482], syg2a2: [-214, 514], syg2a3: [-287, 542],
+    syg2a4: [-359, 571], syg2a5: [-428, 608], syg2a6: [-493, 651], syg2a7: [-555, 699], syg2a8: [-611, 753], syg2at1: [-232, 580],
+    syg2at2: [-266, 640], syg2au1: [-446, 674], syg2au2: [-480, 734], syg2b1: [-1, 492], syg2b2: [60, 540], syg2b3: [121, 589],
+    syg2b4: [183, 636], syg2b5: [245, 683], syg2b6: [308, 730], syg2b7: [367, 780], syg2b8: [423, 835], syg2bt1: [78, 606],
+    syg2bt2: [112, 666], syg2bu1: [263, 749], syg2bu2: [297, 809], syg2x: [-83, 608], syg3a1: [-80, 710], syg3a2: [-144, 754],
+    syg3a3: [-200, 809], syg3a4: [-247, 870], syg3a5: [-297, 931], syg3a6: [-345, 992], syg3a7: [-391, 1055], syg3a8: [-431, 1122],
+    syg3at1: [-162, 820], syg3at2: [-196, 880], syg3au1: [-315, 997], syg3au2: [-349, 1057], syg3b1: [62, 706], syg3b2: [132, 740],
+    syg3b3: [202, 773], syg3b4: [271, 811], syg3b5: [335, 855], syg3b6: [400, 898], syg3b7: [462, 946], syg3b8: [525, 992],
+    syg3bt1: [150, 806], syg3bt2: [184, 866], syg3bu1: [353, 921], syg3bu2: [387, 981], syg3x: [1, 833], syv1: [6, 1175],
+    syv2: [-35, 1255], syv3: [-10, 1335], syvN: [-15, 1425], spSlamA1: [-128, 140], spSlamA2: [-70, 162], spSlamA3: [-12, 140],
+    spChargeA1: [-58, 155], spChargeA2: [0, 177], spChargeA3: [58, 155], spBarrageA1: [12, 140], spBarrageA2: [70, 162], spBarrageA3: [128, 140],
+    /* GENERATED-LAYOUT-END */
   };
   const ANGLES = { chassis: 150, servos: -90, systems: 30, root: 90 };
   const pos = {};
@@ -5186,7 +5229,13 @@ const TREE_LAYOUT = (() => {
   }
   return pos;
 })();
-const TREE_R = 1250;           // world half-extent the viewBox pans within
+// world half-extent the viewBox pans within — derived from the layout so
+// the generated expansion (however far its arms sprawl) always fits
+const TREE_R = (() => {
+  let m = 0;
+  for (const id in TREE_LAYOUT) m = Math.max(m, Math.hypot(TREE_LAYOUT[id][0], TREE_LAYOUT[id][1]));
+  return m + 200;
+})();
 const SVGNS = "http://www.w3.org/2000/svg";
 let treeView = null;           // current viewBox; survives re-renders, reset on open
 let treePanMoved = false;      // true while the last gesture was a drag, not a tap
