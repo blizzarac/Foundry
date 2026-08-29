@@ -163,6 +163,34 @@ function check(name, cond) {
     out.validatorRejectsMissingImplicitScaling = RL.validateConfig(implBad2)
       .some(e => e.includes("implicitScaling"));
 
+    // --- open-ended endgame: both knobs are validator-enforced config, and
+    // the affix deep-scaling coefficient provably feeds the rolled numbers
+    // (the T-band tables stay exact at the ladder, grow past it)
+    const deepBad1 = JSON.parse(JSON.stringify(CFG));
+    delete deepBad1.items.affixDeepScaling;
+    out.validatorRejectsMissingAffixDeepScaling = RL.validateConfig(deepBad1)
+      .some(e => e.includes("affixDeepScaling"));
+    const deepBad2 = JSON.parse(JSON.stringify(CFG));
+    delete deepBad2.levelGen.sector.keyDropAheadPostLadder;
+    out.validatorRejectsMissingDropAhead = RL.validateConfig(deepBad2)
+      .some(e => e.includes("keyDropAheadPostLadder"));
+    const ds = CFG.items.affixDeepScaling;
+    const mkd = (() => { let a = 11; return () => { a = (a * 1664525 + 1013904223) >>> 0; return a / 4294967296; }; })();
+    const topDmgAffix = depth => {
+      let top = 0;
+      for (let i = 0; i < 250; i++) {
+        const it = RL.genItem(mkd, "cleaver", "rare", depth);
+        for (const a of it.affixes) if (a.stat === "dmg") top = Math.max(top, a.effect.dmg);
+      }
+      return top;
+    };
+    const dmgTierTable = CFG.items.prefixes.find(p => p.stat === "dmg").tiers;
+    const atLadder = topDmgAffix(ds.startDepth);
+    const deepDepth = ds.startDepth + 20;
+    out.deepScalingIdleThroughLadder = atLadder === dmgTierTable[dmgTierTable.length - 1];
+    out.deepScalingGrowsPastLadder = topDmgAffix(deepDepth) ===
+      Math.round(dmgTierTable[dmgTierTable.length - 1] * (1 + ds.growthPerDepth * 20));
+
     // --- Blessed Orb (reroll implicits): CURRENCY entry, shop price, and
     // loot-drop weight all trace back to config.js, not a hardcoded copy
     out.blessCurrencyDefined = !!RL.CURRENCY.bless && !!RL.CURRENCY.bless.name;

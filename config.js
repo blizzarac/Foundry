@@ -98,7 +98,13 @@ window.IRONHEX_CONFIG = {
       // and the key's own loot bonus; odds a dropped key is one tier deeper
       "keyDropSecondChanceEliteWeight": 0.3,
       "keyDropBumpTierChance": 0.35,
-      "keyDropMagicChanceAtTier2Plus": 0.2
+      "keyDropMagicChanceAtTier2Plus": 0.2,
+      // once the gate ladder is complete (live cap at levelGen.tierCap),
+      // found keys stop clamping to the cap: a tier-n sector can drop a
+      // key up to n + this far ahead, forever — tiers are open-ended and
+      // progression past the ladder is sustained by drops, not the Bay
+      // (fabrication stays capped at the ladder ceiling)
+      "keyDropAheadPostLadder": 1
     },
     // every Sector Key modifier: quant is the loot-bonus % it contributes;
     // the rest are magnitudes applied to the sector when a key carrying
@@ -327,6 +333,14 @@ window.IRONHEX_CONFIG = {
     // ranges (rollCostDelta/parryCostDelta benefits) scale the same way,
     // which grows their magnitude correctly since the sign never flips.
     "implicitScaling": { "growthPerDepthTier": 0.06 },
+    // affix magnitudes past the gate ladder: a rolled affix's tier value is
+    // multiplied by 1 + growthPerDepth * max(0, depth - startDepth), the
+    // same linear shape implicits use — so once tiers go open-ended (see
+    // levelGen.sector.keyDropAheadPostLadder) gear keeps pace forever
+    // instead of flatlining at the tier-5 tables above. startDepth 16 is
+    // T15's own depth: everything through the ladder rolls exactly the
+    // tuned tables, growth begins at T16.
+    "affixDeepScaling": { "startDepth": 16, "growthPerDepth": 0.06 },
     "bareFists": { "dmg": 1, "atkCost": 1, "rollCost": 2, "bsBonus": 0 },
     // affix pools: prefixes carry raw power, suffixes carry utility. Five
     // tiers each; deeper sectors roll higher tiers per affixTierBands.

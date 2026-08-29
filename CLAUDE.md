@@ -18,7 +18,10 @@
 - **`config.js`**: enemy base stats/scaling, prologue floor tables, Foundry
   sector-generation coefficients (pack density, elite bump tiers, chest/
   terminal odds, key-drop odds, gate jump size, the band→gate-boss
-  mapping, apex-node tuning, key mods), the whole
+  mapping, apex-node tuning, key mods, and the post-ladder open-endgame
+  rule: once the tier cap tops out, keyDropAheadPostLadder lets a tier-n
+  sector drop keys up to n+1 uncapped — tiers are infinite, sustained by
+  drops while fabrication stays capped at the ladder), the whole
   economy (restocks, orb prices, orb loot-drop weights, gamble cost, key
   fab curve, item/key salvage formulas, plus the retired shop upgrades
   kept only as migration-refund data), the frame lattice (points per
@@ -31,7 +34,9 @@
   tables (base type stats,
   every implicit's roll range plus the depth-scaling coefficient that
   widens it, prefix/suffix pools and their tier magnitudes — plus a slot
-  restriction each could carry, currently unused — corrupted-downside
+  restriction each could carry, currently unused — the affix deep-scaling
+  coefficient that grows those magnitudes linearly past the ladder's
+  depth, corrupted-downside
   mods, affix-tier depth bands, uniques, crafting caps), small combat constants
   (dash range, FOV, dash/deflect cost bounds, repair-cell heal, the shared
   detonation-on-death damage, the root specials' shared power cost/range/

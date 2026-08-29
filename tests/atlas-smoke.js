@@ -283,6 +283,31 @@ function check(name, cond) {
     out.fabAboveCapFails = !RL.fabricateKey(9);
     RL.extractToOverworld();
 
+    // infinite tiers: while the ladder is climbing, found keys clamp to the
+    // live cap — but once the cap tops out at levelGen.tierCap, a tier-n
+    // sector can drop keys up to n+1, forever. Fabrication stays capped at
+    // the ladder ceiling either way: deep tiers are found, not bought.
+    out.dropsClampDuringLadder = RL.keyDropCap(8) === 8 && RL.keyDropCap(20) === 8;
+    const capBefore = RL.profile.atlas.tierCap;
+    RL.profile.atlas.tierCap = RL.CFG.levelGen.tierCap;
+    out.dropsOpenPastLadder = RL.keyDropCap(15) === 16 && RL.keyDropCap(30) === 31;
+    out.fabStillCappedPastLadder = !RL.fabricateKey(16);
+    // a FOUND above-ladder key sockets and generates like any other: enter
+    // a T16 sector, purge it, and its own key drops may reach T17
+    const kDeep = RL.makeKey(16);
+    RL.profile.atlas.keys.push(kDeep);
+    const fkDeep = Object.keys(RL.profile.atlas.nodes).find(k => RL.profile.atlas.nodes[k].state === "frontier");
+    const [qDp, rDp] = fkDeep.split(",").map(Number);
+    out.deepKeyEnters = RL.enterNode(qDp, rDp, kDeep.id) && RL.run.floorConf.tier === 16;
+    const keysBeforeDeep = RL.profile.atlas.keys.length;
+    for (const e of [...RL.run.enemies]) if (e.elite) RL.hurtEnemy(e, 999999);
+    const deepDrops = RL.profile.atlas.keys.slice(keysBeforeDeep);
+    out.deepDropsNotClampedToLadder = deepDrops.length >= 1 && deepDrops.every(k => k.tier >= 16);
+    RL.extractToOverworld();
+    // put the ladder state back so the rest of the suite sees what it expects
+    RL.profile.atlas.tierCap = capBefore;
+    RL.profile.atlas.keys = RL.profile.atlas.keys.filter(k => k.tier <= capBefore);
+
     // reveals respect the landscape: no interactive node on a ridge or
     // channel, and cascaded FIELD ground connects the sectors it opened
     const nn = RL.profile.atlas.nodes;
@@ -311,7 +336,7 @@ function check(name, cond) {
     const out = {};
     out.profileRestored = RL.profile && RL.profile.atlas.unlocked;
     out.mapRestored = Object.values(RL.profile.atlas.nodes)
-      .filter(n => n.state === "cleared").length === 4; // T1 sector + death-after-purge sector + T4 sector + gate
+      .filter(n => n.state === "cleared").length === 5; // T1 sector + death-after-purge sector + T4 sector + gate + T16 deep sector
     out.tierCapRestored = RL.profile.atlas.tierCap === 8;
     out.moddedKeysRestored = RL.profile.atlas.keys
       .some(k => k.rarity !== "normal" && k.affixes.length > 0);

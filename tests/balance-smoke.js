@@ -38,7 +38,7 @@ function check(name, cond, detail) {
   await page.goto(url);
   await page.waitForTimeout(400);
 
-  const TIERS = [1, 4, 8, 12, 15];
+  const TIERS = [1, 4, 8, 12, 15, 25, 40];   // 25/40 sample the open-ended post-ladder curve
 
   const result = await page.evaluate(tiers => {
     const RL = window.RL;
@@ -76,7 +76,10 @@ function check(name, cond, detail) {
     // sample a grunt's REAL tier-scaled stats by entering an actual sector
     function sampleTier(tier, souls) {
       RL.run.player.souls = 999999;
-      RL.fabricateKey(tier);
+      // fabrication caps at the ladder ceiling; deeper tiers exist only as
+      // found keys, so the harness plants one directly
+      if (tier <= RL.TIER_CAP) RL.fabricateKey(tier);
+      else RL.profile.atlas.keys.push(RL.makeKey(tier));
       const key = RL.profile.atlas.keys.filter(k => k.tier === tier && k.rarity === "normal").pop();
       const fk = Object.keys(RL.profile.atlas.nodes).find(k => RL.profile.atlas.nodes[k].state === "frontier");
       RL.profile.atlas.nodes[fk].biome = "scrapyard";   // consistent grunt: scrapper
@@ -126,19 +129,34 @@ function check(name, cond, detail) {
     // a real fight — the band is loose on purpose; a wide gap from real
     // play is a modeling limit, not a balance problem, unless it widens
     // further from here
-    out.checks.gearedTTKBand = geared.every(s => s.ttk >= 1 && s.ttk <= 8);
-    out.checks.gearedHTDBand = geared.every(s => s.htd >= 3 && s.htd <= 20);
+    // the tight playable bands govern the LADDER (T1-T15) — the tuned,
+    // guardian-gated climb every run goes through
+    const ladder = s => s.tier <= RL.TIER_CAP;
+    out.checks.gearedTTKBand = geared.filter(ladder).every(s => s.ttk >= 1 && s.ttk <= 8);
+    out.checks.gearedHTDBand = geared.filter(ladder).every(s => s.htd >= 3 && s.htd <= 20);
 
     // even the impossible everything-lattice build stays inside a sane
     // band: the full tree is a climb's worth of milestones, not a cheat
-    out.checks.fullLatticeTTKBand = latticed.every(s => s.ttk >= 1 && s.ttk <= 6);
-    out.checks.fullLatticeHTDBand = latticed.every(s => s.htd >= 3 && s.htd <= 30);
+    out.checks.fullLatticeTTKBand = latticed.filter(ladder).every(s => s.ttk >= 1 && s.ttk <= 6);
+    out.checks.fullLatticeHTDBand = latticed.filter(ladder).every(s => s.htd >= 3 && s.htd <= 30);
 
     // the enemy curve itself must actually steepen by the documented
     // multipliers: hp ~6.9x from T1->T15 (1 + 0.42*14), dmg step +1/2 tiers
-    const t1 = bare[0], t15 = bare[bare.length - 1];
+    const byTier = (rows, t) => rows.find(s => s.tier === t);
+    const t1 = bare[0], t15 = byTier(bare, 15);
     out.checks.hpCurveSteep = Math.abs(t15.enemyHp / t1.enemyHp - 6.9) < 0.6;
     out.checks.dmgCurveSteep = t15.enemyDmg - t1.enemyDmg >= 5;
+
+    // past the ladder the game is open-ended: enemies must keep growing on
+    // the same formulas with no ceiling, deep gear must keep growing with
+    // them (affix/implicit deep scaling), and the curve should tilt ever
+    // more hostile — an endless climb that eventually out-scales any build
+    // is the point, but T40 must still be a fight, not a wall
+    const [b25, b40] = [byTier(bare, 25), byTier(bare, 40)];
+    out.checks.deepEnemiesKeepScaling = b25.enemyHp > t15.enemyHp && b40.enemyHp > b25.enemyHp &&
+      b25.enemyDmg > t15.enemyDmg && b40.enemyDmg > b25.enemyDmg;
+    out.checks.deepGearKeepsScaling = byTier(geared, 40).playerMaxHp > byTier(geared, 15).playerMaxHp;
+    out.checks.deepStillPlayable = byTier(latticed, 40).ttk <= 12 && byTier(latticed, 40).htd >= 3;
 
     // affix tiers 4/5 are the T8+/T12+ chase — confirm the weights exist
     const bands = RL.AFFIX_TIER_BANDS;

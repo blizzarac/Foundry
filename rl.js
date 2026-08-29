@@ -84,7 +84,7 @@ function validateConfig(cfg) {
     if (sec) {
       for (const k of ["baseR", "bigRAtTier", "gateArenaR", "packGrowthEveryNTiers", "packGrowthPct",
         "chestBonusAtTier", "chestPerLootBonus", "terminalChance", "keyDropSecondChanceEliteWeight",
-        "keyDropBumpTierChance", "keyDropMagicChanceAtTier2Plus"])
+        "keyDropBumpTierChance", "keyDropMagicChanceAtTier2Plus", "keyDropAheadPostLadder"])
         req(typeof sec[k] === "number", `levelGen.sector.${k} missing or not a number`);
       req(Array.isArray(sec.eliteBumpTiers) && sec.eliteBumpTiers.length > 0,
         "levelGen.sector.eliteBumpTiers must be a non-empty array");
@@ -197,6 +197,9 @@ function validateConfig(cfg) {
     }
     req(it.implicitScaling && typeof it.implicitScaling.growthPerDepthTier === "number",
       "items.implicitScaling missing growthPerDepthTier");
+    req(it.affixDeepScaling && typeof it.affixDeepScaling.startDepth === "number" &&
+      typeof it.affixDeepScaling.growthPerDepth === "number",
+      "items.affixDeepScaling missing startDepth/growthPerDepth");
     req(it.bareFists && typeof it.bareFists.dmg === "number", "items.bareFists missing or malformed");
     const VALID_SLOTS = ["weapon", "plating", "sensor", "drive", "utility"];
     for (const key of ["prefixes", "suffixes"]) {
@@ -505,10 +508,20 @@ function rollAffix(rng, item, kind, depth) {
   if (!pool.length) return null;
   const def = pool[(rng() * pool.length) | 0];
   const tier = rollTier(rng, depth);
+  // past the gate ladder the five tier tables stop being a ceiling: the
+  // rolled magnitude keeps growing linearly with depth (items.
+  // affixDeepScaling), the same shape implicits already scale by — depth
+  // at or below startDepth multiplies by exactly 1, so ladder-era loot is
+  // untouched. Negative magnitudes (cost-delta suffixes) grow more
+  // negative, correctly stronger; the combat cost clamps still bound them.
+  const ds = CFG.items.affixDeepScaling;
+  const scale = 1 + ds.growthPerDepth * Math.max(0, (depth || 1) - ds.startDepth);
+  const base = def.tiers[tier - 1];
+  const v = def.stat === "salvageMult" ? base * scale : Math.round(base * scale);
   return {
     id: ++itemSeq, kind, stat: def.stat, tier,
     label: def.names[tier - 1],
-    effect: { [def.stat]: def.tiers[tier - 1] },
+    effect: { [def.stat]: v },
   };
 }
 // add one affix of whichever kind has room (random when both do)
@@ -675,11 +688,24 @@ const CONSUMABLE_DESC = {
    neighbors. Dying consumes the key and leaves your cores as a wreck in
    the node. Character, gear, currency and map all persist.
    ========================================================================= */
-const TIER_CAP = CFG.levelGen.tierCap;   // absolute ceiling; SENTINEL gates raise the live cap
+// the gate ladder's ceiling — NOT the game's. Guardians band the climb to
+// here; past it, tiers are open-ended (see keyDropCap below).
+const TIER_CAP = CFG.levelGen.tierCap;
 const TIER_COLOR = ["#c8d4de", "#6fa8ff", "#ffd45c", "#ff9040"];
 function tierColor(t) { return TIER_COLOR[(t - 1) % 4]; }
 function atlasCap() {
   return (profile && profile.atlas && profile.atlas.tierCap) || CFG.levelGen.startingTierCap;
+}
+// ceiling for keys FOUND inside a tier-t sector. While the gate ladder is
+// still climbing, drops clamp to the live cap — a guardian is the only way
+// up a band. Once the ladder tops out, the clamp opens: a tier-n sector
+// can always yield a key up to n+keyDropAheadPostLadder, so the climb goes
+// on forever, sustained by drops (the Bay still only fabricates up to the
+// ladder ceiling — deep tiers must be found, not bought).
+function keyDropCap(t) {
+  return atlasCap() >= TIER_CAP
+    ? Math.max(t + CFG.levelGen.sector.keyDropAheadPostLadder, atlasCap())
+    : atlasCap();
 }
 const BIOMES = {
   scrapyard: { name: "Scrapyard", abbr: "SCRP", color: "#e8875a", rock: 0.30, terrain: "clumps",
@@ -1067,7 +1093,7 @@ const GAME_VERSION = "2026-08-23-config";
 // static site to bake in a real deploy timestamp, so this is it. Shown
 // as a footer note on the intro/menu page, so it's always clear which
 // build a given browser tab is actually running before you dive in.
-const DEPLOY_TIME = "2026-08-23T17:47:25Z";
+const DEPLOY_TIME = "2026-08-29T07:07:04Z";
 function showDeployBadge() {
   const el = document.getElementById("deploy-badge");
   if (!el) return;
@@ -2306,7 +2332,7 @@ function hurtEnemy(e, dmg, label) {
       const lrng = mulberry32((run.seed ^ e.id * 37) >>> 0);
       grantOrbs(lrng, 1, run.floor);
       if (run.mode === "sector" && lrng() < 0.4) {
-        const drop = makeKey(clamp(run.floorConf.tier, 1, atlasCap()));
+        const drop = makeKey(clamp(run.floorConf.tier, 1, keyDropCap(run.floorConf.tier)));
         profile.atlas.keys.push(drop);
         log("Hauler cargo: " + keyDisplayName(drop) + " recovered.", "good");
         syncProfileFromPlayer();
@@ -3607,7 +3633,7 @@ function sectorComplete() {
   const sg = CFG.levelGen.sector;
   const drops = 1 + (craftRng() < sg.keyDropSecondChanceEliteWeight * run.eliteTotal + (run.floorConf.lootBonus || 0) ? 1 : 0);
   for (let i = 0; i < drops; i++) {
-    const kt = clamp(t + (craftRng() < sg.keyDropBumpTierChance ? 1 : 0), 1, atlasCap());
+    const kt = clamp(t + (craftRng() < sg.keyDropBumpTierChance ? 1 : 0), 1, keyDropCap(t));
     const drop = makeKey(kt);
     if (kt >= 2 && craftRng() < sg.keyDropMagicChanceAtTier2Plus) { drop.rarity = "magic"; addKeyMod(craftRng, drop); }
     profile.atlas.keys.push(drop);
@@ -6242,7 +6268,7 @@ window.RL = {
   get profile() { return profile; },
   enterOverworld, enterNode, extractToOverworld, fabricateKey,
   sectorComplete, revealArea, worldCell, keyFabCost, BIOMES, TIER_CAP,
-  makeKey, addKeyMod, keyQuant, keyDisplayName, canApplyOrbKey, applyOrbToKey, KEY_MODS,
+  makeKey, addKeyMod, keyQuant, keyDisplayName, canApplyOrbKey, applyOrbToKey, KEY_MODS, keyDropCap,
   donutHexes, laneHexes, gateCleared, spawnGateNode, atlasCap, tierColor,
   ringHexes, barrageHexes, laneHexesLen, wardenAct, crucibleAct, primeAct,
   resolveNewBossStrike, spawnApexNode, apexCleared, ensureApexNode, GATE_BOSS_TYPES,
