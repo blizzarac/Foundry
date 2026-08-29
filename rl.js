@@ -54,6 +54,9 @@ function validateConfig(cfg) {
       req(typeof s[k] === "number", `enemies.scaling.${k} missing or not a number`);
     req(s.elitePromotion && typeof s.elitePromotion.hpMult === "number" && typeof s.elitePromotion.dmgAdd === "number",
       "enemies.scaling.elitePromotion missing hpMult/dmgAdd");
+    req(s.postLadder && typeof s.postLadder.hpMultPerTier === "number" &&
+      typeof s.postLadder.dmgMultPerTier === "number",
+      "enemies.scaling.postLadder missing hpMultPerTier/dmgMultPerTier");
   }
 
   req(cfg.campaign && Array.isArray(cfg.campaign.floors) && cfg.campaign.floors.length === 5,
@@ -1093,7 +1096,7 @@ const GAME_VERSION = "2026-08-23-config";
 // static site to bake in a real deploy timestamp, so this is it. Shown
 // as a footer note on the intro/menu page, so it's always clear which
 // build a given browser tab is actually running before you dive in.
-const DEPLOY_TIME = "2026-08-29T07:07:04Z";
+const DEPLOY_TIME = "2026-08-29T07:12:10Z";
 function showDeployBadge() {
   const el = document.getElementById("deploy-badge");
   if (!el) return;
@@ -1764,6 +1767,16 @@ function spawnEnemy(type, q, r) {
     const sc = CFG.enemies.scaling;
     e.hp = e.maxHp = Math.round(d.hp * (1 + sc.hpGrowthPerTier * (t - 1)) * (f.hpMult || 1));
     e.dmg = d.dmg + (t >= sc.dmgFreeTiers ? 1 + Math.floor((t - sc.dmgFreeTiers) / sc.dmgStepEveryNTiers) : 0) + (f.dmgAdd || 0);
+    // past the ladder the linear formulas gain a compounding per-tier
+    // multiplier (enemies.scaling.postLadder). Gear's deep scaling is
+    // linear, so tiers outpace any build eventually — the deep climb is
+    // guaranteed to end somewhere, and where is these two config numbers
+    if (t > TIER_CAP) {
+      const deep = t - TIER_CAP;
+      const pl = sc.postLadder;
+      e.hp = e.maxHp = Math.round(e.maxHp * Math.pow(pl.hpMultPerTier, deep));
+      e.dmg = Math.round(e.dmg * Math.pow(pl.dmgMultPerTier, deep));
+    }
   }
   run.enemies.push(e);
   return e;

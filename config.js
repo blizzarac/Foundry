@@ -45,7 +45,14 @@ window.IRONHEX_CONFIG = {
       "dmgFreeTiers": 1,
       "dmgStepEveryNTiers": 2,
       // a promoted Prime unit (any sector): hp *= hpMult, dmg += dmgAdd
-      "elitePromotion": { "hpMult": 1.5, "dmgAdd": 1 }
+      "elitePromotion": { "hpMult": 1.5, "dmgAdd": 1 },
+      // past the gate ladder (tier > levelGen.tierCap) enemy stats gain a
+      // COMPOUNDING multiplier per deep tier on top of the linear formulas
+      // above. Gear's deep scaling is linear (items.affixDeepScaling), so
+      // exponential-vs-linear guarantees the tiers outpace any build
+      // eventually — the wall is a mathematical certainty, and these two
+      // numbers set how deep it lands
+      "postLadder": { "hpMultPerTier": 1.05, "dmgMultPerTier": 1.02 }
     }
   },
 

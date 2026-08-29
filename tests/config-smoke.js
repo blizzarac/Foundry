@@ -174,6 +174,10 @@ function check(name, cond) {
     delete deepBad2.levelGen.sector.keyDropAheadPostLadder;
     out.validatorRejectsMissingDropAhead = RL.validateConfig(deepBad2)
       .some(e => e.includes("keyDropAheadPostLadder"));
+    const deepBad3 = JSON.parse(JSON.stringify(CFG));
+    delete deepBad3.enemies.scaling.postLadder;
+    out.validatorRejectsMissingPostLadderScaling = RL.validateConfig(deepBad3)
+      .some(e => e.includes("postLadder"));
     const ds = CFG.items.affixDeepScaling;
     const mkd = (() => { let a = 11; return () => { a = (a * 1664525 + 1013904223) >>> 0; return a / 4294967296; }; })();
     const topDmgAffix = depth => {

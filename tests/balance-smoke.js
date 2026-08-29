@@ -147,16 +147,20 @@ function check(name, cond, detail) {
     out.checks.hpCurveSteep = Math.abs(t15.enemyHp / t1.enemyHp - 6.9) < 0.6;
     out.checks.dmgCurveSteep = t15.enemyDmg - t1.enemyDmg >= 5;
 
-    // past the ladder the game is open-ended: enemies must keep growing on
-    // the same formulas with no ceiling, deep gear must keep growing with
-    // them (affix/implicit deep scaling), and the curve should tilt ever
-    // more hostile — an endless climb that eventually out-scales any build
-    // is the point, but T40 must still be a fight, not a wall
+    // past the ladder the game is open-ended AND rigged against the
+    // player on purpose: enemies compound per deep tier while gear only
+    // grows linearly, so every build has a tier that finally stops it.
+    // T25 must still be a real fight; by T40 the wall should be visibly
+    // closing in (enemy growth strictly outpacing gear growth).
     const [b25, b40] = [byTier(bare, 25), byTier(bare, 40)];
     out.checks.deepEnemiesKeepScaling = b25.enemyHp > t15.enemyHp && b40.enemyHp > b25.enemyHp &&
       b25.enemyDmg > t15.enemyDmg && b40.enemyDmg > b25.enemyDmg;
     out.checks.deepGearKeepsScaling = byTier(geared, 40).playerMaxHp > byTier(geared, 15).playerMaxHp;
-    out.checks.deepStillPlayable = byTier(latticed, 40).ttk <= 12 && byTier(latticed, 40).htd >= 3;
+    out.checks.deepT25StillPlayable = byTier(latticed, 25).ttk <= 12 && byTier(latticed, 25).htd >= 3;
+    const enemyHpGrowth = b40.enemyHp / t15.enemyHp;
+    const gearHpGrowth = byTier(geared, 40).playerMaxHp / byTier(geared, 15).playerMaxHp;
+    out.checks.deepTiersOutpaceGear = enemyHpGrowth > gearHpGrowth * 1.5 &&
+      byTier(latticed, 40).ttk > byTier(latticed, 25).ttk;
 
     // affix tiers 4/5 are the T8+/T12+ chase — confirm the weights exist
     const bands = RL.AFFIX_TIER_BANDS;

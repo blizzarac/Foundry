@@ -21,7 +21,10 @@
   mapping, apex-node tuning, key mods, and the post-ladder open-endgame
   rule: once the tier cap tops out, keyDropAheadPostLadder lets a tier-n
   sector drop keys up to n+1 uncapped — tiers are infinite, sustained by
-  drops while fabrication stays capped at the ladder), the whole
+  drops while fabrication stays capped at the ladder; past it enemy
+  stats also gain the compounding enemies.scaling.postLadder multiplier,
+  so exponential tiers beat linear gear and every build hits a wall
+  eventually), the whole
   economy (restocks, orb prices, orb loot-drop weights, gamble cost, key
   fab curve, item/key salvage formulas, plus the retired shop upgrades
   kept only as migration-refund data), the frame lattice (points per
