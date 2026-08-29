@@ -396,7 +396,7 @@ function check(name, cond) {
   // known implicit + four affixes, so its diff against the starting
   // plating should surface every one of those stats
   await page.click('#gear-tabs button[data-tab="pack"]');
-  const cmpBtn = await page.evaluateHandle(() =>
+  let cmpBtn = await page.evaluateHandle(() =>
     [...document.querySelectorAll("#gear-pack .item-card")]
       .find(c => c.textContent.includes(window.__modsTestItem.name))
       .querySelector(".compare-btn"));
@@ -415,6 +415,37 @@ function check(name, cond) {
   }));
   check("compareDoesNotEquip", await page.evaluate(() =>
     window.RL.run.player.equip.plating !== window.__modsTestItem.id));
+  // an open diff survives the full card rebuild every gear action
+  // triggers: salvage a throwaway item (one-click for normals) and the
+  // panel must still be open — with a freshly rendered diff, not a stale one
+  await page.evaluate(() => {
+    const RL = window.RL;
+    window.__compareSurvivalFodder = RL.genItem(() => 0.5, "servo", "normal", 1);
+    RL.run.player.items.push(window.__compareSurvivalFodder);
+    RL.refreshGear();
+  });
+  check("compareStaysOpenAcrossRerender", await page.evaluate(() => {
+    const card = [...document.querySelectorAll("#gear-pack .item-card")]
+      .find(c => c.textContent.includes(window.__modsTestItem.name));
+    const panel = card.closest(".item-card-wrap").querySelector(".item-compare");
+    return !panel.classList.contains("hidden") && panel.querySelectorAll(".diff-row").length >= 4 &&
+      card.querySelector(".compare-btn").textContent === "Hide diff";
+  }));
+  check("compareStaysOpenAfterSalvage", await page.evaluate(() => {
+    const RL = window.RL;
+    // sell the fodder the way the Salvage button does: sellItem + rebuild
+    if (!RL.sellItem(window.__compareSurvivalFodder.id)) return false;
+    RL.refreshGear();
+    if (RL.itemById(window.__compareSurvivalFodder.id)) return false;   // must actually be gone
+    const card = [...document.querySelectorAll("#gear-pack .item-card")]
+      .find(c => c.textContent.includes(window.__modsTestItem.name));
+    return !card.closest(".item-card-wrap").querySelector(".item-compare").classList.contains("hidden");
+  }));
+  // the old button handle died with the rebuild — re-grab it for the toggle
+  cmpBtn = await page.evaluateHandle(() =>
+    [...document.querySelectorAll("#gear-pack .item-card")]
+      .find(c => c.textContent.includes(window.__modsTestItem.name))
+      .querySelector(".compare-btn"));
   await cmpBtn.click();
   check("compareTogglesHidden", await page.evaluate(() => {
     const card = [...document.querySelectorAll("#gear-pack .item-card")]

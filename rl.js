@@ -1129,7 +1129,7 @@ const GAME_VERSION = "2026-08-23-config";
 // static site to bake in a real deploy timestamp, so this is it. Shown
 // as a footer note on the intro/menu page, so it's always clear which
 // build a given browser tab is actually running before you dive in.
-const DEPLOY_TIME = "2026-08-29T07:34:57Z";
+const DEPLOY_TIME = "2026-08-29T07:49:33Z";
 function showDeployBadge() {
   const el = document.getElementById("deploy-badge");
   if (!el) return;
@@ -5490,6 +5490,9 @@ function itemModsHTML(item) {
 }
 // derived-stat fields worth showing on a backpack-vs-equipped diff, plus
 // which direction counts as an upgrade (cost stats are better lower)
+// item ids whose Compare diff is currently expanded — DOM-independent so
+// the panels survive the full card rebuild every gear action triggers
+const compareOpen = new Set();
 const COMPARE_STATS = [
   { key: "dmg", label: "dmg" },
   { key: "atkCost", label: "power/strike", invert: true },
@@ -5581,23 +5584,28 @@ function itemCardEl(item, equippedSlot) {
     eq.addEventListener("click", () => { if (equipItem(item.id)) { refreshGear(); refreshHud(); } });
     btns.appendChild(eq);
     // backpack items diff against whatever's currently in that slot, so
-    // it's clear whether picking this up is actually an upgrade
+    // it's clear whether picking this up is actually an upgrade. Which
+    // panels are open lives in compareOpen (by item id), OUTSIDE the DOM:
+    // every action in the gear screen rebuilds all cards via refreshGear,
+    // and an open diff should survive that — reopening with fresh numbers,
+    // so applying an orb (or salvaging something else) updates the diff in
+    // place instead of slamming it shut
     const cmp = document.createElement("button");
     cmp.className = "compare-btn";
-    cmp.textContent = "Compare";
     comparePanel = document.createElement("div");
     comparePanel.className = "item-compare hidden";
+    const renderCompare = () => {
+      const open = compareOpen.has(item.id);
+      cmp.textContent = open ? "Hide diff" : "Compare";
+      comparePanel.classList.toggle("hidden", !open);
+      if (open) comparePanel.innerHTML = compareHTML(item);
+    };
     cmp.addEventListener("click", () => {
-      const showing = !comparePanel.classList.contains("hidden");
-      if (showing) {
-        comparePanel.classList.add("hidden");
-        cmp.textContent = "Compare";
-      } else {
-        comparePanel.innerHTML = compareHTML(item);
-        comparePanel.classList.remove("hidden");
-        cmp.textContent = "Hide diff";
-      }
+      if (compareOpen.has(item.id)) compareOpen.delete(item.id);
+      else compareOpen.add(item.id);
+      renderCompare();
     });
+    renderCompare();
     btns.appendChild(cmp);
     const val = sellValue(item);
     const sell = document.createElement("button");
@@ -6378,7 +6386,7 @@ window.RL = {
   buildDebugBundle, exportDebugState, importDebugState, downloadJSON, GAME_VERSION,
   AFFIX_TIER_BANDS, SHOP_RESTOCKS, SHOP_ORBS, GAMBLE_COST, showShop,
   TREE_NODES, TREE_NODE_BY_ID, treeState, treeApplies, canAllocateNode, allocateNode,
-  canRefundNode, refundNode, grantTreePoints, showTree, refreshHud,
+  canRefundNode, refundNode, grantTreePoints, showTree, refreshHud, refreshGear,
   CFG, CFG_ERRORS, validateConfig,
   paletteFor, mixColor, BIOME_PALETTES, CAMPAIGN_THEMES,
   resize, resetZoom, syncBarHeight,
