@@ -218,14 +218,18 @@ function check(name, cond) {
     RL.hurtPlayer(RL.run.enemies.find(e => !e.elite) || RL.run.enemies[0], 9999);
     const deadNode = RL.profile.atlas.nodes[q2 + "," + r2q];
     out.wreckStored = deadNode.wreck === 77 && RL.run.player.souls === 0;
-    out.deathOverlay = document.getElementById("death-retry").textContent === "Return to the Bay";
+    out.deathOverlay = document.getElementById("death-retry").textContent === "Return to the Foundry";
     RL.enterOverworld();
+    // dying lands the map view on the node you died in, not back at the Bay
+    out.deathLandsOnNode = RL.cam.x === RL.hexX(q2, r2q) && RL.cam.y === RL.hexY(q2, r2q);
     RL.run.player.souls = 500;
     RL.fabricateKey(1);
     const kw = RL.profile.atlas.keys.find(k => k.tier === 1 && k.rarity === "normal");
     RL.enterNode(q2, r2q, kw.id);
     out.wreckPlaced = !!RL.run.bloodstain && RL.run.bloodstain.souls === 77;
     RL.extractToOverworld();
+    // so does extracting
+    out.extractLandsOnNode = RL.cam.x === RL.hexX(q2, r2q) && RL.cam.y === RL.hexY(q2, r2q);
 
     // purging a cap-tier sector surfaces a SENTINEL gate node
     RL.run.player.souls = 99999;

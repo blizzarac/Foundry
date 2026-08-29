@@ -1129,7 +1129,7 @@ const GAME_VERSION = "2026-08-23-config";
 // static site to bake in a real deploy timestamp, so this is it. Shown
 // as a footer note on the intro/menu page, so it's always clear which
 // build a given browser tab is actually running before you dive in.
-const DEPLOY_TIME = "2026-08-29T07:23:28Z";
+const DEPLOY_TIME = "2026-08-29T07:34:57Z";
 function showDeployBadge() {
   const el = document.getElementById("deploy-badge");
   if (!el) return;
@@ -3161,7 +3161,7 @@ function dieRun(killer) {
       : "The sector was already purged, so your " + carried + " cores ride back with you.";
     document.getElementById("death-stats").textContent =
       `T${run.floorConf.tier} ${run.floorConf.biomeName} · ${run.kills} scrapped · cycle ${run.turn}`;
-    document.getElementById("death-retry").textContent = "Return to the Bay";
+    document.getElementById("death-retry").textContent = "Return to the Foundry";
   } else {
     per.best = Math.max(per.best || 0, run.floor);
     if (p.souls > 0) per.stain = { floor: run.floor, souls: p.souls };
@@ -3546,6 +3546,11 @@ function revealArea(q0, r0) {
 }
 function enterOverworld() {
   if (!profile || !profile.atlas.unlocked) return false;
+  // finishing a sector in ANY way — extraction handles itself, this path
+  // is the death flow — lands the map view on the node you just played,
+  // not back at the Bay: the wreck (and the frontier you were pushing)
+  // stays right under you
+  const backAt = run && run.mode === "sector" && run.sectorNode ? unkey(run.sectorNode) : null;
   run = {
     mode: "overworld", floorConf: null, sectorNode: null,
     eliteTotal: 0, eliteKilled: 0,
@@ -3563,9 +3568,12 @@ function enterOverworld() {
   document.body.classList.add("overworld");
   for (const id of ["menu", "death", "win", "shop", "terminal", "inv", "node"])
     document.getElementById(id).classList.add("hidden");
-  cam.x = 0; cam.y = 0; cam.tx = 0; cam.ty = 0; cam.zoom = 1;
+  cam.x = backAt ? hexX(backAt[0], backAt[1]) : 0;
+  cam.y = backAt ? hexY(backAt[0], backAt[1]) : 0;
+  cam.tx = cam.x; cam.ty = cam.y; cam.zoom = 1;
   ensureApexNode();   // saves that topped the cap before the apex existed
-  log("The Bay. Socket a Sector Key into a frontier node.", "sys");
+  log(backAt ? "Your rebuilt frame deploys to the sector where the last one fell."
+             : "The Bay. Socket a Sector Key into a frontier node.", "sys");
   renderLog();
   refreshHud();
   clearRunCheckpoint();
@@ -3816,6 +3824,7 @@ function extractToOverworld() {
   if (run.mode !== "sector") return false;
   const node = profile.atlas.nodes[run.sectorNode];
   if (node && node.state === "cleared") node.wreck = 0;  // unclaimed wreck in a purged node is gone
+  const [bq, br] = unkey(run.sectorNode);
   run.mode = "overworld";
   run.sectorNode = null;
   run.enemies = [];
@@ -3825,8 +3834,11 @@ function extractToOverworld() {
   ui.screen = "overworld";
   ui.rollMode = false; ui.throwDart = false; ui.walking = null; ui.specialMode = null;
   document.body.classList.add("overworld");
-  cam.tx = 0; cam.ty = 0;
-  log("Extraction. The Bay repairs your frame.", "good");
+  // land the map view on the sector you just left, not back at the Bay —
+  // the frontier you're pushing stays under your thumb
+  cam.x = hexX(bq, br); cam.y = hexY(bq, br);
+  cam.tx = cam.x; cam.ty = cam.y;
+  log("Extraction. Your frame is repaired on the surface.", "good");
   clearRunCheckpoint();
   syncProfileFromPlayer();
   saveProfile();
@@ -6335,7 +6347,7 @@ window.RL = {
   dashPath, canDashTo, dashTargets, DASH_RANGE,
   actSlam, actCharge, actBarrage, chargeTargets, canChargeTo, barrageTargets, specialLabel,
   get fx() { return fx; },
-  spawnEnemy, endTurn, bfsDist, updateFov, hexDist,
+  spawnEnemy, endTurn, bfsDist, updateFov, hexDist, hexX, hexY,
   persist, savePersist, cam,
   ENEMY, BASE_TYPES, BARE_FISTS, SLOTS, SLOT_LABEL, RARITY, STAT_KEYS,
   PREFIXES, SUFFIXES, UNIQUES, CURRENCY, CORRUPT_MODS, KEY_MOD_CAP, FOV_R, playerFovR, FLASK_HEAL,
